@@ -1,0 +1,7 @@
+{
+  "name": "momo-mobile",
+  "display_name": "小莫助理移动端",
+  "description": "小莫助理 iOS / Android Kotlin Multiplatform 客户端工程，覆盖登录、主小莫对话、分身列表与设置。",
+  "version": "0.1.0",
+  "icon": "favicon.svg"
+}

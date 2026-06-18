@@ -1,0 +1,21 @@
+model_provider = "mobiusdefault"
+model = "gpt-5.5"
+model_reasoning_effort = "xhigh"
+network_access = "enabled"
+disable_response_storage = true
+windows_wsl_setup_acknowledged = true
+model_verbosity = "high"
+
+[model_providers.mobiusdefault]
+name = "mobiusdefault"
+base_url = "https://right.codes/codex/v1"
+wire_api = "responses"
+env_key = "RIGHTCODE_API_KEY"
+api_key = "<API_KEY>"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[features]
+apps = false
+enable_mcp_apps = false

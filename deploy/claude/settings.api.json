@@ -1,0 +1,7 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "replace-me-anthropic-auth-token",
+    "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  }
+}

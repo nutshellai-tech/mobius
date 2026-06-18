@@ -1,0 +1,105 @@
+const fs = require('fs');
+const path = require('path');
+const { APP_DIR, EXTENSION_ROOT } = require('../config');
+
+function normalizeAbsPath(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return path.resolve(trimmed);
+}
+
+function isWithinPath(rootPath, targetPath) {
+  const root = normalizeAbsPath(rootPath);
+  const target = normalizeAbsPath(targetPath);
+  if (!root || !target) return false;
+  return target === root || target.startsWith(root + path.sep);
+}
+
+function isAllowedWorkspacePath(project, targetPath) {
+  const bindRoot = normalizeAbsPath(project?.bind_path);
+  const target = normalizeAbsPath(targetPath);
+  if (!bindRoot || !target) return false;
+  if (isWithinPath(bindRoot, target)) return true;
+  return target === path.dirname(bindRoot);
+}
+
+function payloadRootForWorkspace(project, workspacePath) {
+  const bindRoot = normalizeAbsPath(project?.bind_path);
+  const workspaceRoot = normalizeAbsPath(workspacePath);
+  if (workspaceRoot && isAllowedWorkspacePath(project, workspaceRoot)) return workspaceRoot;
+  return bindRoot;
+}
+
+function extensionWorkspacePath(project) {
+  const extensionName = typeof project?.extension_name === 'string' ? project.extension_name.trim() : '';
+  if (!extensionName || !/^[a-z][a-z0-9-]{0,31}$/.test(extensionName)) return '';
+  const base = normalizeAbsPath(EXTENSION_ROOT || path.join(APP_DIR, 'mobius', 'extension'));
+  const target = path.join(base, extensionName);
+  return isWithinPath(base, target) ? target : '';
+}
+
+function defaultCodeServerWorkspace(project) {
+  if (!project?.bind_path) return '';
+  if (project.kind === 'extension') {
+    const extPath = extensionWorkspacePath(project);
+    if (extPath) return extPath;
+  }
+  return normalizeAbsPath(project.bind_path);
+}
+
+function resolveCodeServerWorkspace(project, requestedFolder) {
+  const bindRoot = normalizeAbsPath(project?.bind_path);
+  if (!bindRoot) {
+    return { error: '项目未配置 bind_path', code: 'BIND_PATH_INVALID' };
+  }
+
+  const candidate = normalizeAbsPath(requestedFolder) || defaultCodeServerWorkspace(project);
+  if (!candidate) {
+    return { error: 'VSCode 打开路径为空', code: 'BIND_PATH_INVALID' };
+  }
+  if (!isAllowedWorkspacePath(project, candidate)) {
+    return { error: 'VSCode 打开路径不在项目绑定路径或其上一级目录内', code: 'BIND_PATH_DENIED' };
+  }
+  if (!fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) {
+    return { error: `VSCode 打开路径不存在: ${candidate}`, code: 'BIND_PATH_INVALID' };
+  }
+  return { workspacePath: candidate };
+}
+
+function extractPayloadPath(value) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    const payload = JSON.parse(value);
+    if (!Array.isArray(payload)) return '';
+    for (const command of payload) {
+      if (!Array.isArray(command) || command[0] !== 'openFile') continue;
+      const target = typeof command[1] === 'string' ? command[1] : '';
+      if (!target) continue;
+      const remoteMatch = target.match(/^vscode-remote:\/\/[^/]+(\/.*)$/);
+      return remoteMatch ? remoteMatch[1] : target;
+    }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+function validateCodeServerPayload(project, payloadValue, workspacePath) {
+  const filePath = extractPayloadPath(payloadValue);
+  if (!filePath) return { ok: true };
+  const allowedRoot = payloadRootForWorkspace(project, workspacePath);
+  const target = normalizeAbsPath(filePath);
+  if (!allowedRoot || !target || !isWithinPath(allowedRoot, target)) {
+    return { ok: false, error: 'VSCode 打开文件不在当前允许的工作区内', code: 'BIND_PATH_DENIED' };
+  }
+  return { ok: true };
+}
+
+module.exports = {
+  defaultCodeServerWorkspace,
+  resolveCodeServerWorkspace,
+  validateCodeServerPayload,
+  isAllowedWorkspacePath,
+  isWithinPath,
+};

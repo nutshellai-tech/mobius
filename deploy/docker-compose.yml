@@ -1,0 +1,26 @@
+# docker-compose (minimal) - all configurable values come from .env in this directory
+#
+# The image build installs system/global npm packages, code-server, codex credentials,
+# AND a staged copy of the app source + node_modules at /app_image.
+# On first startup, entrypoint copies /app_image into /app when /app/mobius is missing.
+# This compose file keeps legacy bind mounts for the current deployment; .env pins
+# WORKSPACE_ROOT / CORE_DATA_PATH / CS_* to those legacy mount points to avoid migration.
+#
+# Start the stack: podman compose up -d --build       (docker compose v2 also works)
+
+services:
+  imac:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: imac-mobius:local
+    container_name: imac-mobius
+    restart: "unless-stopped"
+    env_file: .env
+    ports:
+      - "${VITE_PORT}:${VITE_PORT}"
+    volumes:
+      # 当前部署兼容挂载: 对应 deploy/.env 中的显式路径, 不迁移既有数据。
+      - ./host-data/data:/data                      # DB / turn-summaries / model-access / agent runtime JSON
+      - ./host-data/codex:/root/.codex              # codex 凭证/配置 (entrypoint 首次从 /opt/codex-seed 播种)
+      - ./host-data/claude:/root/.claude            # claude-code agent 运行时配置 (settings.api.json)

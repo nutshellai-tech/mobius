@@ -1,0 +1,165 @@
+/**
+ * /aimux_bridge/* → 127.0.0.1:${AIMUX_BRIDGE_PORT} 反向代理.
+ *
+ * 上游协议见 aimux Bridge Server v0.1 (aimux 0.1.3 自带 docs/bridge-protocol.md):
+ *   /api/health, /api/remotes, /api/sessions,
+ *   /api/sessions/{r}/{n}/{send-keys|capture|kill},
+ *   /api/remotes/{r}/files/{stat|read|write|mkdir|list},
+ *   /client/register, /client/events (SSE), /client/result.
+ *
+ * 鉴权两层:
+ *   外部 → mobius auth 中间件 (JWT, 见 backend/middleware/auth.js)
+ *   内部 → 注入 bridge Bearer token (从 runtime.json 读)
+ *
+ * runtime.json 由 aimux bridge broker 自己原子写, 路径来自 env.AIMUX_BRIDGE_RUNTIME.
+ * 每次请求重读文件, 因为 token 在每次 bridge 重启时会变.
+ *
+ * Body 处理:
+ *   server.js 已跳过 express.json() for /aimux_bridge/*, 所以 req 是原始 stream.
+ *   这里手动 buffer + write 给 upstream, 而不是 pipe — pipe 在某些 express 状态下会丢数据.
+ *   SSE 走 GET, 无 body, 走另一条流式 pipe 通路.
+ */
+const express = require('express');
+const fs = require('fs');
+const http = require('http');
+const path = require('path');
+const url = require('url');
+const { auth, authOrQuery } = require('../middleware/auth');
+
+const router = express.Router();
+
+const RUNTIME_PATH = process.env.AIMUX_BRIDGE_RUNTIME ||
+  path.join(process.env.HOME || '/root', '.aimux', 'bridge', 'runtime.json');
+
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade', 'host', 'content-length',
+]);
+
+function readBridgeTarget() {
+  let raw;
+  try {
+    raw = fs.readFileSync(RUNTIME_PATH, 'utf-8');
+  } catch (e) {
+    const err = new Error('aimux bridge broker is not running (runtime.json missing)');
+    err.code = 'BRIDGE_DOWN';
+    throw err;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    const err = new Error('aimux bridge runtime.json is corrupt');
+    err.code = 'BRIDGE_DOWN';
+    throw err;
+  }
+  if (!data || !data.url || !data.token) {
+    const err = new Error('aimux bridge runtime.json missing url/token');
+    err.code = 'BRIDGE_DOWN';
+    throw err;
+  }
+  const parsed = url.parse(data.url);
+  return {
+    baseUrl: data.url.replace(/\/$/, ''),
+    token: data.token,
+    hostname: parsed.hostname || '127.0.0.1',
+    port: parsed.port ? Number(parsed.port) : 80,
+  };
+}
+
+function buildUpstreamPath(req) {
+  return req.url;
+}
+
+function proxyRequest(req, res) {
+  let target;
+  try {
+    target = readBridgeTarget();
+  } catch (e) {
+    return res.status(503).json({
+      error: {
+        kind: 'remote_disconnected',
+        message: e.message,
+        code: 2,
+      },
+    });
+  }
+
+  const upstreamPath = buildUpstreamPath(req);
+  const isSSE = req.method === 'GET' && upstreamPath.startsWith('/client/events');
+
+  const headers = { ...req.headers };
+  for (const h of Object.keys(headers)) {
+    if (HOP_BY_HOP_HEADERS.has(h.toLowerCase())) delete headers[h];
+  }
+  headers.host = `${target.hostname}:${target.port}`;
+  headers.authorization = `Bearer ${target.token}`;
+  headers['x-forwarded-for'] = req.ip || '';
+  headers['x-forwarded-proto'] = req.protocol || 'http';
+
+  if (isSSE) {
+    // GET /client/events: 流式透传, 无 body
+    const upstreamReq = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      method: req.method,
+      path: upstreamPath,
+      headers,
+    }, (upstreamRes) => {
+      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    });
+    upstreamReq.on('error', (err) => {
+      if (res.headersSent) { res.end(); return; }
+      res.status(502).json({
+        error: { kind: 'remote_disconnected', message: `aimux bridge broker is unreachable: ${err.message}`, code: 2 },
+      });
+    });
+    upstreamReq.setTimeout(0);
+    req.on('close', () => upstreamReq.destroy());
+    // SSE 无 body, 直接 end
+    upstreamReq.end();
+    return;
+  }
+
+  // 非 SSE: 完整 buffer body 再转发, 避免 pipe 在 express 下丢数据
+  const bodyChunks = [];
+  let totalLen = 0;
+  req.on('data', (chunk) => { bodyChunks.push(chunk); totalLen += chunk.length; });
+  req.on('error', (err) => {
+    if (res.headersSent) return;
+    res.status(400).json({ error: { kind: 'bad_request', message: `request read error: ${err.message}`, code: 1 } });
+  });
+  req.on('end', () => {
+    const body = Buffer.concat(bodyChunks, totalLen);
+    headers['content-length'] = String(body.length);
+
+    const upstreamReq = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      method: req.method,
+      path: upstreamPath,
+      headers,
+    }, (upstreamRes) => {
+      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      upstreamRes.pipe(res);
+    });
+    upstreamReq.on('error', (err) => {
+      if (res.headersSent) { res.end(); return; }
+      res.status(502).json({
+        error: { kind: 'remote_disconnected', message: `aimux bridge broker is unreachable: ${err.message}`, code: 2 },
+      });
+    });
+    upstreamReq.setTimeout(180000, () => {
+      upstreamReq.destroy(new Error('aimux bridge upstream timeout'));
+    });
+    if (body.length > 0) upstreamReq.write(body);
+    upstreamReq.end();
+  });
+}
+
+// SSE 长连接走 authOrQuery (允许 ?token= 方便 curl 调试), 其余走标准 auth.
+router.get('/client/events', authOrQuery, proxyRequest);
+router.use(auth, proxyRequest);
+
+module.exports = router;

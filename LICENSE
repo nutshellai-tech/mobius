@@ -1,0 +1,123 @@
+# Mobius Open Source License
+
+Copyright (c) 2026 北京果壳智算有限公司 (Beijing Guoke Zhisuan Co., Ltd.)
+All rights reserved.
+
+---
+
+## Summary
+
+Mobius is **source-available** software. You are free to use, study, and
+modify the source code for **non-commercial purposes** under the terms below.
+
+**Any commercial use requires a separate commercial license** obtained from
+北京果壳智算有限公司. For licensing inquiries, please contact:
+
+  business@nutshellai.cn
+
+---
+
+## 1. Definitions
+
+- **"Software"** means the Mobius source code and all associated files in
+  this repository.
+- **"Non-Commercial Use"** means use that is not primarily intended for or
+  directed toward commercial advantage or monetary compensation. This includes
+  personal projects, academic research, education, and internal evaluation.
+- **"Commercial Use"** means any use of the Software, in whole or in part,
+  that is intended for or results in commercial advantage or monetary
+  compensation, including but not limited to:
+    - Deploying the Software to provide services to paying customers;
+    - Incorporating the Software into a commercial product or SaaS offering;
+    - Using the Software to generate revenue directly or indirectly;
+    - Operating the Software on behalf of a for-profit organization as part
+      of its core business operations.
+
+---
+
+## 2. Non-Commercial License Grant
+
+Subject to the terms of this License, 北京果壳智算有限公司 grants You a
+worldwide, royalty-free, non-exclusive, non-sublicensable license to:
+
+  a. Use and run the Software for Non-Commercial Use only;
+  b. Copy and modify the Software for Non-Commercial Use only;
+  c. Distribute copies or modifications of the Software, provided that:
+       - You include this License in full with every copy;
+       - You clearly mark any modifications You have made;
+       - You do not use the distribution for Commercial Use.
+
+---
+
+## 3. Commercial Use Prohibited Without License
+
+You may **not** use the Software for Commercial Use without first obtaining
+a written commercial license from 北京果壳智算有限公司.
+
+Commercial licenses are available for:
+  - Single-tenant self-hosted deployments for enterprises;
+  - Multi-tenant SaaS offerings;
+  - White-label or OEM products;
+  - Any other commercial deployment scenario.
+
+To obtain a commercial license, contact: business@nutshellai.cn
+
+---
+
+## 4. Restrictions
+
+Regardless of whether Your use is commercial or non-commercial, You may not:
+
+  a. Remove or alter any copyright, trademark, or attribution notices in the
+     Software, including the Mobius logo and copyright information in the
+     frontend (the `mobius/frontend/` directory);
+  b. Sublicense, sell, or transfer this License or any rights granted herein
+     to any third party;
+  c. Use the name, logo, or trademarks of 北京果壳智算有限公司 or Mobius to
+     endorse or promote products derived from the Software without prior
+     written consent.
+
+---
+
+## 5. Contributions
+
+By submitting a Contribution (code, documentation, or other material) to
+this repository, You agree that:
+
+  a. Your Contribution is licensed to 北京果壳智算有限公司 under the same
+     terms as this License, and 北京果壳智算有限公司 may use it for any
+     purpose including commercial purposes;
+  b. 北京果壳智算有限公司 may adjust the terms of this License as deemed
+     necessary.
+
+---
+
+## 6. Intellectual Property
+
+The interactive design, user interface layout, and visual elements of this
+product are protected by appearance patent and other intellectual property
+rights owned by 北京果壳智算有限公司.
+
+---
+
+## 7. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+北京果壳智算有限公司 OR ITS CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES,
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+---
+
+## 8. Termination
+
+This License and the rights granted hereunder will terminate automatically
+if You fail to comply with any of its terms. Upon termination, You must
+destroy all copies of the Software in Your possession.
+
+---
+
+(c) 2026 北京果壳智算有限公司 (Beijing Guoke Zhisuan Co., Ltd.)

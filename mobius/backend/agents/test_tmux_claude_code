@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+/**
+ * test_tmux_claude_code — bash-callable CLI wrapper for TmuxClaudeCodeBackend.
+ *
+ * Lets you drive the tmux-claude-code backend from a terminal without going
+ * through mobius's HTTP/WS layer, for manual integration testing of
+ * _spawnWindow / _sendPromptToWindow / terminate / etc.
+ *
+ *   ./test_tmux_claude_code spawn --sessionid=t1 --cwd=/tmp/x --no-proxy --prompt="say hi"
+ *   ./test_tmux_claude_code send  --sessionid=t1 --prompt="next step"
+ *   ./test_tmux_claude_code list
+ *   ./test_tmux_claude_code kill  --sessionid=t1
+ *
+ * WARNING: shares data/hub-runtime.json and the real tmux HUB session with
+ * mobius. Stop mobius (or use --sessionid values it doesn't know) before
+ * doing destructive ops, otherwise persist writes can race.
+ */
+const path = require('path')
+const { TmuxClaudeCodeBackend, HUB } = require('./tmux-claude-code')
+
+function parseArgs(argv) {
+  const out = { _: [] }
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (!a.startsWith('--')) { out._.push(a); continue }
+    const eq = a.indexOf('=')
+    if (eq > 0) { out[a.slice(2, eq)] = a.slice(eq + 1); continue }
+    const key = a.slice(2)
+    const next = argv[i + 1]
+    if (next !== undefined && !next.startsWith('--')) { out[key] = next; i++ }
+    else out[key] = true
+  }
+  return out
+}
+
+function need(args, key) {
+  if (args[key] === undefined || args[key] === '') {
+    console.error(`error: missing required --${key}`)
+    process.exit(2)
+  }
+  return args[key]
+}
+
+function proxyFlag(args) {
+  if (args['no-proxy']) return false
+  if (args['proxy']) return true
+  return undefined
+}
+
+function print(obj) {
+  console.log(typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2))
+}
+
+function help() {
+  console.log(`test_tmux_claude_code — manual CLI for tmux-claude-code backend
+
+Usage:
+  test_tmux_claude_code <command> [options]
+
+Commands:
+  spawn     Start (or reuse) a tmux window running claude. Sends initialPrompt
+            via createNewSession if --prompt is set; otherwise calls
+            _spawnWindow directly (window comes up idle, ready for send).
+            --sessionid=ID --cwd=PATH [--prompt=STR] [--model=NAME]
+            [--proxy | --no-proxy] [--resume=UUID] [--display-name=STR]
+  send      Queue a prompt to an existing session (re-spawns if window died).
+            --sessionid=ID --prompt=STR
+  pause     C-c x3 the running turn; optionally send a new prompt after.
+            --sessionid=ID [--prompt=STR]
+  kill      kill-window + drop runtime entry.
+            --sessionid=ID
+  list      Print all hub windows with backend metadata.
+  status    Print alive / working / accomplished / failed for one session.
+            --sessionid=ID
+  history   Dump jsonl entries for one session.
+            --sessionid=ID [--limit=N]
+  attach    Print the tmux command to attach to the window.
+            --sessionid=ID
+  help
+
+Examples:
+  test_tmux_claude_code spawn --sessionid=t1 --cwd=/tmp/x --no-proxy --prompt="say hi"
+  test_tmux_claude_code send  --sessionid=t1 --prompt="now list files"
+  test_tmux_claude_code status --sessionid=t1
+  test_tmux_claude_code kill  --sessionid=t1
+`)
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2))
+  let cmd = args._[0] || 'help'
+  if (cmd === '-h' || cmd === '--help') cmd = 'help'
+  if (cmd === 'help') { help(); return }
+
+  const backend = new TmuxClaudeCodeBackend()
+
+  switch (cmd) {
+    case 'spawn': {
+      const sessionId = need(args, 'sessionid')
+      const cwd = path.resolve(need(args, 'cwd'))
+      const opts = {
+        sessionId,
+        cwd,
+        model: args.model,
+        useProxy: proxyFlag(args),
+        displayName: args['display-name'],
+        agentSessionId: args.resume,
+      }
+      if (args.prompt) {
+        print(await backend.createNewSession({ ...opts, initialPrompt: args.prompt }))
+      } else {
+        await backend._withLock(sessionId, () => backend._spawnWindow(opts))
+        const e = backend.runtime.get(sessionId)
+        print({ sessionId, agentSessionId: e?.agentSessionId, jsonlPath: e?.jsonlPath })
+      }
+      break
+    }
+    case 'send': {
+      const sessionId = need(args, 'sessionid')
+      const prompt = need(args, 'prompt')
+      await backend.noPauseCurrentAndQueueQueryAtSession({ sessionId, prompt })
+      print({ ok: true, sessionId })
+      break
+    }
+    case 'pause': {
+      const sessionId = need(args, 'sessionid')
+      await backend.pauseCurrentAndResumeFromSession({ sessionId, prompt: args.prompt })
+      print({ ok: true, sessionId })
+      break
+    }
+    case 'kill': {
+      const sessionId = need(args, 'sessionid')
+      print(await backend.terminateSession(sessionId))
+      break
+    }
+    case 'list':
+      print(backend.listSessions())
+      break
+    case 'status': {
+      const sessionId = need(args, 'sessionid')
+      print({
+        sessionId,
+        alive: backend.isAlive(sessionId),
+        working: backend.isWorking(sessionId),
+        accomplished: backend.isJobGoalAccomplished(sessionId),
+        failed: backend.isFailed(sessionId),
+      })
+      break
+    }
+    case 'history': {
+      const sessionId = need(args, 'sessionid')
+      const h = backend.getHistory(sessionId)
+      const limit = Number(args.limit) > 0 ? Number(args.limit) : h.entries.length
+      const entries = limit < h.entries.length ? h.entries.slice(-limit) : h.entries
+      print({ sessionId, total: h.total, truncated: h.truncated, sentinel: h.sentinel, shown: entries.length, entries })
+      break
+    }
+    case 'attach': {
+      const sessionId = need(args, 'sessionid')
+      print(`tmux attach -t ${HUB} \\; select-window -t ${sessionId}`)
+      break
+    }
+    default:
+      console.error(`error: unknown command '${cmd}'`)
+      help()
+      process.exit(2)
+  }
+}
+
+main().then(
+  () => process.exit(0),
+  (e) => { console.error(`error: ${e.message}`); process.exit(1) },
+)

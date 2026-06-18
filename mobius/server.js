@@ -1,0 +1,255 @@
+/**
+ * server.js — IMAC Mobius (主栈, 原 v2 实验栈接管生产)
+ *
+ * 架构 (v1.9 起):
+ *   - 直接通过 tmux 启动 claude CLI 子进程, 输出靠 ~/.claude/projects/<cwd>/<sid>.jsonl 监听
+ *   - 不依赖外部 Bridge 或 @anthropic-ai/claude-agent-sdk
+ *   - 走 backend/agents/ 抽象层, 默认 backend = 'tmux-claude-code' (见 backend/agents/tmux-claude-code.js)
+ *
+ * 端口: 45614 (HTTP+WS)
+ * 启动: python3 start_debug.py / python3 start_product.py
+ */
+
+const express = require('express');
+const cors = require('cors');
+const http = require('http');
+const path = require('path');
+const fs = require('fs');
+const { execFileSync } = require('child_process');
+
+const { PORT, PUBLIC_DIR, TEST_ROOT } = require('./backend/config');
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const VERSION = require('./package.json').version;
+const SERVER_STARTED_AT_MS = Date.now();
+
+function readGitCommit() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: TEST_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim() || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+const GIT_COMMIT = readGitCommit();
+const CODE_VERSION = GIT_COMMIT ? `${VERSION}+${GIT_COMMIT}` : VERSION;
+
+// preflight 已经在 agents/tmux-claude-code.js 模块加载时跑过 (proxy_envs.bash / proxy_claude.conf /
+// tmux / proxychains / claude 缺一不可, 缺则 process.exit(1)). 这里不重复.
+const { db } = require('./db');
+
+// ===== Express =====
+const app = express();
+app.use(cors());
+const defaultJsonParser = express.json({ limit: '10mb' });
+const memoryJsonParser = express.json({ limit: '60mb' });
+function isMemoryApiPath(req) {
+  const p = req.path || '';
+  return p === '/api/memories'
+    || p.startsWith('/api/memories/')
+    || /^\/api\/projects\/[^/]+\/memories(?:\/|$)/.test(p);
+}
+// /aimux_bridge/* 走原生反代, body 必须 byte-for-byte 透传给 bridge, 不能被 express.json() 消费.
+function isAimuxBridgePath(req) {
+  const p = req.path || '';
+  return p === '/aimux_bridge' || p.startsWith('/aimux_bridge/');
+}
+app.use((req, res, next) => {
+  if (isMemoryApiPath(req) || isAimuxBridgePath(req)) return next();
+  return defaultJsonParser(req, res, next);
+});
+
+// ── mount v1 backend/routes (auth/projects/issues/skills/memories/files/health) ──
+// 这些路由读 users/projects/issues 等共享表, 不动 sessions, 完全可复用.
+const authRoutes = require('./backend/routes/auth');
+const tasksRoutes = require('./backend/routes/tasks');
+const messagesRoutes = require('./backend/routes/messages');
+const projectsRoutes = require('./backend/routes/projects');
+const { router: issuesRoutes, projectScoped: issuesUnderProject } = require('./backend/routes/issues');
+const { router: sessionsRoutes, issueScoped: sessionsUnderIssue } = require('./backend/routes/sessions');
+const { router: researchesRoutes, projectScoped: researchesUnderProject, researchScoped: sessionsUnderResearch, blackboardRouter, graphRouter } = require('./backend/routes/researches');
+const { router: skillsRoutes, projectScoped: skillsUnderProject } = require('./backend/routes/skills');
+const { router: memoriesRoutes, projectScoped: memoriesUnderProject } = require('./backend/routes/memories');
+const filesRoutes = require('./backend/routes/files');
+const healthRoutes = require('./backend/routes/health');
+const assistantRoutes = require('./backend/routes/assistant');
+const adminRoutes = require('./backend/routes/admin');
+const extRoutes = require('./backend/routes/ext');
+const aimuxRoutes = require('./backend/routes/aimux');
+const aimuxBridgeProxy = require('./backend/routes/aimux-bridge-proxy');
+const extensionRegistry = require('./backend/services/extension-registry');
+
+app.use('/api/auth', authRoutes);
+app.use('/api/assistant', assistantRoutes);
+app.use('/api/tasks', tasksRoutes);
+app.use('/api/messages', messagesRoutes);
+app.use('/api/projects', projectsRoutes);
+app.use('/api/projects/:projectId/issues', issuesUnderProject);
+app.use('/api/projects/:projectId/researches', researchesUnderProject);
+app.use('/api/projects/:projectId/skills', skillsUnderProject);
+app.use('/api/projects/:projectId/memories', memoryJsonParser, memoriesUnderProject);
+app.use('/api/issues', issuesRoutes);
+app.use('/api/issues/:issueId/sessions', sessionsUnderIssue);
+app.use('/api/researches', researchesRoutes);
+app.use('/api/researches/:researchId/sessions', sessionsUnderResearch);
+app.use('/api/research-blackboard', blackboardRouter);
+app.use('/api/research-graph', graphRouter);
+app.use('/api/sessions', sessionsRoutes);
+app.use('/api/skills', skillsRoutes);
+app.use('/api/memories', memoryJsonParser, memoriesRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/aimux', aimuxRoutes);
+// /aimux_bridge/* → 内置 aimux bridge broker (127.0.0.1:AIMUX_BRIDGE_PORT).
+//   外层走 mobius JWT auth; 转发时注入 bridge Bearer token.
+//   支持 SSE 长连接 (client/events), 见 routes/aimux-bridge-proxy.js.
+app.use('/aimux_bridge', aimuxBridgeProxy);
+// 拓展系统:
+//   /api/extensions/* 元信息 (列表 / manifest / build-status / admin reload)
+//   /api/ext         统一调用入口 (POST, worker_thread 跑 handler)
+//   /extension/*     拓展前端静态资源 (含按需编译 + loading 页 + 共用 SDK)
+app.use('/api/extensions', extRoutes.metaRouter);
+app.use('/api/ext', extRoutes.invokeRouter);
+app.use('/extension', extRoutes.staticRouter);
+// /_next/* (Next.js chunk/runtime 走绝对根路径, 不带 /extension/ 前缀).
+// 见 routes/ext.js 里 unprefixedNextRouter 的注释, 要先于 catchall 之前.
+app.use('/_next', extRoutes.unprefixedNextRouter);
+// files.js 的路由名是相对 /api 写的 (/files, /files/mkdir, /files/read,
+// /files/write, /upload, /download) — 前端 PathPicker/FileManager/上传/下载 全
+// 按 /api/files、/api/files/mkdir、/api/upload、/api/download 调. 故必须挂在
+// /api 而非 /api/files (后者会变成 /api/files/files 一类, 全 404 → "读取目录失败").
+// 放在所有 /api/<具体> 之后: 那些已先匹配响应, 不会落到这里.
+app.use('/api', filesRoutes);
+app.use('/api/health', healthRoutes);
+
+// ===== code-server 反向代理(v1.9 主栈, 从旧 gateway 移植) =====
+// /code-server/<userId>__<projectId>/* → per-(user, project) lazy spawn 的 code-server 进程
+// JWT 鉴权 (cookie cc_cs_jwt 或 ?_jwt=token), 详见 backend/routes/code-server-proxy.js
+const codeServerProxy = require('./backend/routes/code-server-proxy');
+app.use('/code-server', codeServerProxy.router);
+app.use('/api/admin/code-server', codeServerProxy.adminRouter);
+
+// ===== 小莫移动端桌面预览反代 =====
+// /momo_mobile_preview/* → 本机 noVNC (:6088). 支持 WebSocket /websockify,
+// 访问需带 desktopPreview/run-local-preview.sh 生成的 preview_token。
+const momoMobilePreviewProxy = require('./backend/routes/momo-mobile-preview-proxy');
+app.use('/momo_mobile_preview', momoMobilePreviewProxy.router);
+
+// ===== Health =====
+app.get('/api/v2/health', (req, res) => {
+  const now = Date.now();
+  res.json({
+    service: 'imac-mobius',
+    version: VERSION,
+    code_version: CODE_VERSION,
+    git_commit: GIT_COMMIT,
+    git_commit_short: GIT_COMMIT ? GIT_COMMIT.slice(0, 7) : null,
+    started_at: new Date(SERVER_STARTED_AT_MS).toISOString(),
+    started_at_ms: SERVER_STARTED_AT_MS,
+    uptime_ms: now - SERVER_STARTED_AT_MS,
+    env: NODE_ENV,
+    port: PORT,
+    backend: 'agents/tmux-claude-code + jsonl-watcher',
+  });
+});
+
+app.get('/api/v2/hello', (req, res) => {
+  res.json({ msg: 'hello from mobius 🧪', t: new Date().toISOString() });
+});
+
+// DB 体检: 列出 v2 表行数 + 共享表行数, 证明两边不串
+app.get('/api/v2/db-check', (req, res) => {
+  try {
+    const result = {
+      shared_tables: {
+        users: db.prepare('SELECT COUNT(*) as c FROM users').get().c,
+        projects: db.prepare('SELECT COUNT(*) as c FROM projects').get().c,
+        issues: db.prepare('SELECT COUNT(*) as c FROM issues').get().c,
+        researches: db.prepare('SELECT COUNT(*) as c FROM researches').get().c,
+        sessions_v1: db.prepare('SELECT COUNT(*) as c FROM sessions').get().c,
+        messages_v1: db.prepare('SELECT COUNT(*) as c FROM messages').get().c,
+      },
+      v2_tables: {
+        sessions_v2: db.prepare('SELECT COUNT(*) as c FROM sessions_v2').get().c,
+        messages_v2: db.prepare('SELECT COUNT(*) as c FROM messages_v2').get().c,
+      },
+    };
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== Product frontend =====
+// start_product.py runs `npm run build` first, which writes the SPA into
+// mobius/public. Debug mode still uses the Vite dev server on VITE_PORT.
+const PUBLIC_INDEX = path.join(PUBLIC_DIR, 'index.html');
+app.use(express.static(PUBLIC_DIR));
+app.get('*', (req, res, next) => {
+  const p = req.path || '';
+  if (p.startsWith('/api') || p.startsWith('/code-server') || p.startsWith('/extension')) {
+    return next();
+  }
+  if (!fs.existsSync(PUBLIC_INDEX)) return next();
+  return res.sendFile(PUBLIC_INDEX);
+});
+
+// ===== 后台巡检: 被遗忘的 running.flag =====
+const { startForgottenFlagScanner } = require('./backend/services/forgotten-flag-scanner');
+const { startInactiveTmuxCleaner } = require('./backend/services/inactive-tmux-cleaner');
+const { startResearchBlackboardDeliveryScanner } = require('./backend/services/research-blackboard');
+const { startExtensionScheduler } = require('./backend/services/extension-scheduler');
+
+// ===== 启动 =====
+const server = http.createServer(app);
+
+// code-server 需要 HTTP upgrade 反代; Mobius session chat 改为 SSE + HTTP POST.
+server.on('upgrade', (req, socket, head) => {
+  const p = (req.url || '').split('?')[0];
+  if (p.startsWith('/code-server/')) {
+    codeServerProxy.handleUpgrade(req, socket, head);
+  } else if (p === '/momo_mobile_preview' || p.startsWith('/momo_mobile_preview/')) {
+    momoMobilePreviewProxy.handleUpgrade(req, socket, head);
+  } else {
+    socket.destroy();
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`[mobius] IMAC Mobius listening on http://0.0.0.0:${PORT}`);
+  console.log(`[mobius] health: http://0.0.0.0:${PORT}/api/v2/health`);
+  console.log(`[mobius] backend: agents/tmux-claude-code (window-per-session) + jsonl-watcher`);
+  // 拓展系统启动 diff: 扫描 mobius/extension/<name>/extension.json, 与 projects(kind=extension) 同步.
+  try {
+    const r = extensionRegistry.reload();
+    console.log(`[mobius] extension registry: ${r.count} loaded, ${r.errors.length} errors`);
+    for (const e of r.errors) console.warn(`[mobius/ext] ${e.name}: ${e.error}`);
+  } catch (e) {
+    console.warn('[mobius/ext] registry 初始化失败:', e.message);
+  }
+  // 每 60s 扫描所有 session: agent 已停工但 running.flag 未删除, 或 session
+  // 完成/失败 flag 发生变化 → 写 backend_worker_log 并触发小莫回调.
+  startForgottenFlagScanner();
+  // 自动清理 24h 以上无活动的 tmux agent window, 防止后台 TUI 长期挂着占资源.
+  startInactiveTmuxCleaner();
+  // Research Blackboard 独立投递 worker: 扫描 blackboard.jsonl 中未投递记录,
+  // 以纯后端方式批量投递到 research agents.
+  startResearchBlackboardDeliveryScanner();
+  // 拓展通用定时器: 扫描 protected_data/extension/<name>/schedules/*.json,
+  // 到点后以对应用户身份触发该拓展 handler.
+  startExtensionScheduler();
+});
+
+// 优雅退出
+function shutdown(sig) {
+  console.log(`[v2] received ${sig}, shutting down...`);
+  server.close(() => {
+    console.log('[v2] closed.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 5000);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

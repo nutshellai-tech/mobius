@@ -1,0 +1,631 @@
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useStore, api } from '../store'
+import { ChangePasswordModal, AimuxGuideModal } from './modals'
+import { AdminPanel } from './panels'
+import { MobiusLogo } from './mobius-logo'
+import { GuideHelpModal } from './guide-help'
+import { CustomThemePalette } from './custom-theme-palette'
+import { Check, CircleQuestionMark, Moon, Palette, Sliders, Sun, WavesHorizontal } from 'lucide-react'
+import { THEME_OPTIONS, getThemeOption } from '../theme'
+import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
+
+// =====================================================================
+// 主题辅助
+// =====================================================================
+export function tc(theme: string, darkClass: string, lightClass: string) {
+  return theme !== 'light' ? darkClass : lightClass
+}
+
+// =====================================================================
+// 时间相关工具
+// =====================================================================
+export function isRecentlyActive(date: string) {
+  if (!date) return false
+  return (Date.now() - new Date(date).getTime()) < 30000
+}
+
+export function timeAgo(date: string) {
+  if (!date) return ''
+  const diff = Date.now() - new Date(date).getTime()
+  const days = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days <= 7) return `${days}天前`
+  return '更早'
+}
+
+// 精确到分钟的时间显示，用于黑板等需要精确时间的场景
+export function timeAgoPrecise(date: string) {
+  if (!date) return ''
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return ''
+  const now = new Date()
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  if (sameDay) {
+    const diffMs = now.getTime() - d.getTime()
+    if (diffMs < 60 * 1000) return '刚刚'
+    const diffMin = Math.floor(diffMs / 60000)
+    if (diffMin < 60) return `${diffMin}分钟前 ${hhmm}`
+    return `今天 ${hhmm}`
+  }
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (d.getFullYear() === yesterday.getFullYear() && d.getMonth() === yesterday.getMonth() && d.getDate() === yesterday.getDate()) {
+    return `昨天 ${hhmm}`
+  }
+  const mmdd = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  if (d.getFullYear() === now.getFullYear()) return `${mmdd} ${hhmm}`
+  return `${d.getFullYear()}-${mmdd} ${hhmm}`
+}
+
+export function groupTasksByDate(tasks: any[]) {
+  const groups: [string, any[]][] = [['今天', []], ['昨天', []], ['更早', []]]
+  const now = Date.now()
+  for (const t of tasks) {
+    if (!t.last_active) continue
+    const diff = now - new Date(t.last_active).getTime()
+    const days = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
+    if (days === 0) groups[0][1].push(t)
+    else if (days === 1) groups[1][1].push(t)
+    else groups[2][1].push(t)
+  }
+  return groups.filter(([_, items]) => items.length > 0)
+}
+
+// =====================================================================
+// 系统资源指示器 — 位于主题切换按钮左侧
+// 约束: 读取频率不得超过每分钟 1 次 (前端 60s 轮询 + 后端 60s 缓存双重保证)
+// 磁盘占用 > 85%、内存占用 > 70% 时整体显示红色
+// =====================================================================
+type MemInfo = { usedPercent: number; usedMb: number; totalMb: number }
+type DiskInfo = {
+  usedPercent: number
+  usedGb: number
+  totalGb: number
+  availGb: number
+  targetPath?: string
+  mountPath?: string
+}
+type HealthInfo = {
+  version?: string
+  code_version?: string
+  git_commit?: string | null
+  git_commit_short?: string | null
+  started_at?: string
+  started_at_ms?: number
+  uptime_ms?: number
+  sampledAtMs?: number
+}
+
+function compactUptime(ms: number | null | undefined) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '--'
+  const seconds = Math.floor(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h${minutes % 60}m`
+  const days = Math.floor(hours / 24)
+  return `${days}d${hours % 24}h`
+}
+
+function healthVersionLabel(health: HealthInfo | null) {
+  if (!health) return '--'
+  return health.git_commit_short
+    || health.git_commit?.slice(0, 7)
+    || health.code_version?.split('+').pop()?.slice(0, 7)
+    || health.version
+    || '--'
+}
+
+function healthUptimeMs(health: HealthInfo | null) {
+  if (!health) return null
+  if (typeof health.started_at_ms === 'number') return Date.now() - health.started_at_ms
+  if (typeof health.uptime_ms === 'number') {
+    const elapsed = health.sampledAtMs ? Date.now() - health.sampledAtMs : 0
+    return health.uptime_ms + elapsed
+  }
+  return null
+}
+
+function DiskIndicator() {
+  const [disk, setDisk] = useState<DiskInfo | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const d = await api('/api/health/disk')
+        if (alive) setDisk(d)
+      } catch { /* 忽略本次失败, 下个周期重试 */ }
+    }
+    load()
+    const t = setInterval(load, 60 * 1000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+
+  const pct = disk?.usedPercent
+  const danger = pct != null && pct > 85
+  const color = danger ? '#ef4444' : 'var(--text-muted)'
+  const location = disk?.mountPath || disk?.targetPath || '/'
+  const title = disk
+    ? `系统磁盘占用 ${pct}%（${disk.usedGb} / ${disk.totalGb} GB，可用 ${disk.availGb} GB，挂载点 ${location}）`
+    : '系统磁盘占用'
+
+  return (
+    <div
+      className="h-8 px-2 flex items-center gap-1.5 border rounded-lg select-none"
+      title={title}
+      style={{ color, borderColor: danger ? 'rgba(239,68,68,0.4)' : 'var(--border-color)' }}>
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M5.25 4.5h13.5l1.5 8.25v4.5a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25v-4.5L5.25 4.5zM3.75 14.25h16.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M7.5 17.25h.01M10.5 17.25h.01" />
+      </svg>
+      <span className="text-[12px] tabular-nums font-medium">
+        {pct != null ? `${pct}%` : '--'}
+      </span>
+    </div>
+  )
+}
+
+function MemoryIndicator() {
+  const [mem, setMem] = useState<MemInfo | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const d = await api('/api/health/memory')
+        if (alive) setMem(d)
+      } catch { /* 忽略本次失败, 下个周期重试 */ }
+    }
+    load()
+    const t = setInterval(load, 60 * 1000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+
+  const pct = mem?.usedPercent
+  const danger = pct != null && pct > 70
+  const color = danger ? '#ef4444' : 'var(--text-muted)'
+
+  return (
+    <div
+      className="h-8 px-2 flex items-center gap-1.5 border rounded-lg select-none"
+      title={mem ? `服务器内存占用 ${pct}%（${mem.usedMb} / ${mem.totalMb} MB）` : '服务器内存占用'}
+      style={{ color, borderColor: danger ? 'rgba(239,68,68,0.4)' : 'var(--border-color)' }}>
+      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z" />
+      </svg>
+      <span className="text-[12px] tabular-nums font-medium">
+        {pct != null ? `${pct}%` : '--'}
+      </span>
+    </div>
+  )
+}
+
+function VersionIndicator() {
+  const [health, setHealth] = useState<HealthInfo | null>(null)
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const d = await api('/api/v2/health')
+        if (alive) setHealth({ ...d, sampledAtMs: Date.now() })
+      } catch { /* 忽略本次失败, 下个周期重试 */ }
+    }
+    load()
+    const poll = setInterval(load, 30 * 1000)
+    const tick = setInterval(() => setTick(v => v + 1), 10 * 1000)
+    return () => {
+      alive = false
+      clearInterval(poll)
+      clearInterval(tick)
+    }
+  }, [])
+
+  const version = healthVersionLabel(health)
+  const uptime = compactUptime(healthUptimeMs(health))
+  const title = health
+    ? [
+        `版本: ${health.version || '--'}`,
+        `commit: ${health.git_commit || health.code_version || '--'}`,
+        `启动: ${health.started_at || '--'}`,
+        `uptime: ${uptime}`,
+      ].join('\n')
+    : 'Mobius 版本与启动时长'
+
+  return (
+    <div
+      className="h-8 max-w-[210px] px-2 flex items-center gap-1.5 border rounded-lg select-none"
+      title={title}
+      style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+      <span className="text-[10px] font-semibold tracking-wide" style={{ color: 'var(--text-dimmed)' }}>ver</span>
+      <span className="text-[12px] tabular-nums font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
+        {version}
+      </span>
+      <span className="text-[10px]" style={{ color: 'var(--text-dimmed)' }}>up</span>
+      <span className="text-[12px] tabular-nums font-medium" style={{ color: 'var(--text-secondary)' }}>
+        {uptime}
+      </span>
+    </div>
+  )
+}
+
+// =====================================================================
+// 顶部导航 — 所有页面共享
+// 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
+// 管理员通过弹层（覆盖右侧主区域）
+// =====================================================================
+export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
+  const {
+    user,
+    theme,
+    toggleTheme,
+    setTheme,
+    backgroundFlowEnabled,
+    toggleBackgroundFlow,
+    currentProject,
+    currentIssue,
+    currentResearch,
+    logout,
+  } = useStore()
+  const params = useParams()
+  const navigate = useNavigate()
+  const [showChangePw, setShowChangePw] = useState(false)
+  const [showAimuxGuide, setShowAimuxGuide] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showThemeMenu, setShowThemeMenu] = useState(false)
+  const [showGuideHelp, setShowGuideHelp] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
+  // 调色盘里的主题列表与当前激活 id — 在下拉菜单和顶栏按钮里都用到.
+  // 每次打开菜单 / 关闭调色盘 / 主题切换时刷新, 避免在下拉里看到陈旧数据.
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([])
+  const [activeCustomId, setActiveCustomId] = useState<string | null>(null)
+
+  const refreshCustomThemes = () => {
+    const map = loadCustomThemes()
+    setCustomThemes(Object.values(map).sort((a, b) => b.updatedAt - a.updatedAt))
+    setActiveCustomId(loadActiveCustomThemeId())
+  }
+
+  useEffect(() => { refreshCustomThemes() }, [showThemeMenu, showPalette, theme])
+
+  const isDark = theme !== 'light'
+  const currentTheme = getThemeOption(theme)
+  const activeCustom = activeCustomId ? loadCustomThemes()[activeCustomId] : null
+  // 顶栏按钮上要展示的"当前主题":
+  // - 有自定义激活: 用自定义的名称, 用调色盘图标
+  // - 否则回退到基础主题
+  const headerLabel = activeCustom ? activeCustom.name : currentTheme.label
+  const headerIconKey: 'light' | 'dark' | 'palette' = activeCustom
+    ? 'palette'
+    : (theme === 'light' ? 'light' : theme === 'dark' ? 'dark' : 'palette')
+
+  // 关闭用户菜单
+  useEffect(() => {
+    if (!showUserMenu) return
+    const close = () => setShowUserMenu(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [showUserMenu])
+
+  useEffect(() => {
+    if (!showThemeMenu) return
+    const close = () => setShowThemeMenu(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [showThemeMenu])
+
+  const userParam = params.user || user?.id
+  const projectParam = params.project
+  const issueParam = params.issue
+  const researchParam = params.research
+
+  const projectName = currentProject?.name || projectParam
+  const issueTitle = currentIssue?.title || issueParam
+  const researchTitle = currentResearch?.title || researchParam
+
+  return (
+    <>
+      <div className="h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        {/* Logo + 面包屑 */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
+            <MobiusLogo size={28} />
+            <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>Mobius</span>
+          </Link>
+          <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+          <Link to={`/u/${userParam}`} className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+            style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
+            {userParam}
+          </Link>
+          {projectParam && (
+            <>
+              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <Link to={`/u/${userParam}/p/${projectParam}`}
+                className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+                style={{ color: 'var(--text-secondary)', maxWidth: 200 }}>
+                {projectName}
+              </Link>
+            </>
+          )}
+          {issueParam && (
+            <>
+              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <span className="text-[13px] truncate" style={{ color: 'var(--text-primary)', maxWidth: 280 }}>
+                {issueTitle}
+              </span>
+            </>
+          )}
+          {researchParam && (
+            <>
+              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <span className="text-[13px] truncate" style={{ color: 'var(--text-primary)', maxWidth: 280 }}>
+                {researchTitle}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* 右侧操作 */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {rightExtra}
+          <button
+            type="button"
+            onClick={() => setShowGuideHelp(true)}
+            title="帮助与引导"
+            data-tour="top-guide-help"
+            className="h-8 w-8 flex items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+            style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+          >
+            <CircleQuestionMark className="w-3.5 h-3.5" />
+          </button>
+          <div data-tour="top-system-status" className="flex items-center gap-2">
+            <DiskIndicator />
+            <MemoryIndicator />
+            <VersionIndicator />
+          </div>
+          <div className="relative" data-tour="top-theme-toggle">
+            <button
+              type="button"
+              onClick={(event) => {
+                if (event.altKey) {
+                  toggleTheme()
+                  return
+                }
+                event.stopPropagation()
+                setShowThemeMenu(v => !v)
+              }}
+              title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
+              aria-label="选择主题"
+              aria-expanded={showThemeMenu}
+              className="h-8 min-w-[76px] px-2 flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+              style={{
+                color: 'var(--text-muted)',
+                borderColor: 'var(--border-color)',
+              }}
+            >
+              {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5" /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5" />}
+              <span className="text-[12px] font-medium truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
+            </button>
+            {showThemeMenu && (
+              <div
+                className="absolute right-0 top-10 z-50 max-h-[calc(100vh-82px)] w-[260px] overflow-y-auto rounded-lg p-1.5 shadow-xl"
+                style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                onClick={event => event.stopPropagation()}
+              >
+                {THEME_OPTIONS.map(option => {
+                  const selected = !activeCustom && option.name === theme
+                  return (
+                    <button
+                      key={option.name}
+                      type="button"
+                      onClick={() => {
+                        setTheme(option.name)
+                        setShowThemeMenu(false)
+                      }}
+                      className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                      style={{ background: selected ? 'var(--bg-active)' : undefined }}
+                    >
+                      <span className="flex h-5 w-8 shrink-0 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color-strong)' }}>
+                        {option.swatches.map((color, index) => (
+                          <span key={`${option.name}-${color}-${index}`} className="flex-1" style={{ background: color }} />
+                        ))}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>{option.label}</span>
+                        <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>{option.description}</span>
+                      </span>
+                      {selected ? <Check className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-secondary)' }} /> : null}
+                    </button>
+                  )
+                })}
+                <div className="my-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} />
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={backgroundFlowEnabled}
+                  onClick={toggleBackgroundFlow}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <WavesHorizontal className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">背景光流</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                      缓慢色彩流动 · {backgroundFlowEnabled ? '已开启' : '已关闭'}
+                    </span>
+                  </span>
+                  <span
+                    className="relative h-5 w-9 shrink-0 rounded-full border transition-colors"
+                    style={{
+                      background: backgroundFlowEnabled ? 'color-mix(in srgb, var(--accent-primary) 28%, transparent)' : 'var(--input-bg)',
+                      borderColor: backgroundFlowEnabled ? 'color-mix(in srgb, var(--accent-primary) 46%, var(--border-color))' : 'var(--border-color-strong)',
+                    }}
+                  >
+                    <span
+                      className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform"
+                      style={{
+                        left: 2,
+                        background: backgroundFlowEnabled ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        transform: backgroundFlowEnabled ? 'translate(18px, -50%)' : 'translate(0, -50%)',
+                        boxShadow: backgroundFlowEnabled ? '0 0 10px color-mix(in srgb, var(--accent-primary) 38%, transparent)' : 'none',
+                      }}
+                    />
+                  </span>
+                </button>
+                {customThemes.length > 0 && (
+                  <>
+                    <div className="my-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} />
+                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                      自定义主题
+                    </div>
+                    {customThemes.map(t => {
+                      const [bg, accent] = customThemeSwatches(t)
+                      const selected = t.id === activeCustomId
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setTheme(t.base)
+                            saveActiveCustomThemeId(t.id)
+                            // 同步把覆写挂到 :root.style, 让菜单没打开 / 调色盘没挂载时也能即时生效
+                            applyCustomThemeToRoot(t)
+                            setActiveCustomId(t.id)
+                            setShowThemeMenu(false)
+                          }}
+                          className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                          style={{ background: selected ? 'var(--bg-active)' : undefined }}
+                        >
+                          <span className="flex h-5 w-8 shrink-0 overflow-hidden rounded-md border" style={{ borderColor: 'var(--border-color-strong)' }}>
+                            <span className="flex-1" style={{ background: bg }} />
+                            <span className="flex-1" style={{ background: accent }} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[12px] font-semibold leading-4 truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</span>
+                            <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                              基于「{getBaseOption(t.base).label}」· {Object.keys(t.overrides).length} 个覆写
+                            </span>
+                          </span>
+                          {selected ? <Check className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-secondary)' }} /> : null}
+                        </button>
+                      )
+                    })}
+                  </>
+                )}
+                <div className="my-1.5 border-t" style={{ borderColor: 'var(--border-color)' }} />
+                <button
+                  type="button"
+                  onClick={() => { setShowThemeMenu(false); setShowPalette(true) }}
+                  className="w-full rounded-md px-2 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  <Palette className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] font-semibold leading-4">调色盘</span>
+                    <span className="block truncate text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>自由调节主题颜色 · 保存到浏览器</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 用户菜单 */}
+          <div className="relative" data-tour="top-user-menu">
+            <button onClick={(e) => { e.stopPropagation(); setShowUserMenu(s => !s) }}
+              className="h-8 flex items-center gap-2 pl-1 pr-2 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+              style={{ borderColor: 'var(--border-color)' }}>
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
+                {user?.display_name?.[0]}
+              </div>
+              <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>
+              <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {showUserMenu && (
+              <div className="absolute right-0 top-10 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
+                style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+                onClick={e => e.stopPropagation()}>
+                {user?.role === 'admin' && (
+                  <button onClick={() => { setShowUserMenu(false); openOverlay('admin') }}
+                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                    style={{ color: 'var(--text-primary)' }}>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6m6 0h-6m6 0v-6a2 2 0 012-2h2a2 2 0 012 2v6m-6 0h6" /></svg>
+                    管理中心
+                  </button>
+                )}
+                <div className="border-t my-0.5" style={{ borderColor: 'var(--border-color)' }} />
+                <button onClick={() => { setShowUserMenu(false); setShowAimuxGuide(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                  AIMUX 连接指引
+                </button>
+                <button onClick={() => { setShowUserMenu(false); setShowChangePw(true) }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
+                  修改密码
+                </button>
+                <button onClick={() => { setShowUserMenu(false); logout(); navigate('/') }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-red-500/10 flex items-center gap-2"
+                  style={{ color: '#ef4444' }}>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                  退出登录
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
+      {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
+      {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
+      {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
+      <OverlayPanels />
+    </>
+  )
+}
+
+// =====================================================================
+// 全局弹层（Admin）
+// 通过 store 上挂载的方法触发；这种"弹层"覆盖在主内容上
+// =====================================================================
+type OverlayKind = 'admin' | null
+
+let _setOverlay: ((kind: OverlayKind) => void) | null = null
+function openOverlay(kind: OverlayKind) { _setOverlay?.(kind) }
+
+function OverlayPanels() {
+  const [overlay, setOverlay] = useState<OverlayKind>(null)
+  useEffect(() => {
+    _setOverlay = setOverlay
+    return () => { _setOverlay = null }
+  }, [])
+  if (!overlay) return null
+  return (
+    <div className="fixed inset-0 z-40 flex" style={{ background: 'var(--bg-secondary)' }}>
+      {overlay === 'admin' && <AdminPanel onClose={() => setOverlay(null)} />}
+    </div>
+  )
+}
+
+// =====================================================================
+// 简易"加载中"占位
+// =====================================================================
+export function Loading({ text = '加载中...' }: { text?: string } = {}) {
+  return (
+    <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
+      <div className="text-[13px]">{text}</div>
+    </div>
+  )
+}

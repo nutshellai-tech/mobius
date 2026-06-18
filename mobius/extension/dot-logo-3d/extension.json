@@ -1,0 +1,7 @@
+{
+  "name": "dot-logo-3d",
+  "display_name": "3D 光点 ∞ 莫比乌斯空间",
+  "description": "基于 threejs 的 ∞ 形莫比乌斯光点空间：无数光点沿扭成无穷符号的莫比乌斯光带缓缓流动，明暗按呼吸节奏变化，支持自由调整形状、光点密度、调色盘、视角与运动参数。",
+  "version": "0.1.0",
+  "icon": "favicon.svg"
+}

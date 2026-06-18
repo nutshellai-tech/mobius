@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPT Maker</title>
+  <link rel="icon" href="./favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="./favicon.svg" alt="" class="brand-icon">
+        <div class="brand-copy">
+          <h1>PPT Maker</h1>
+          <div id="skillStatus" class="muted">AI 驱动的演示文稿生成 · 基于 ppt-maker</div>
+        </div>
+      </div>
+
+      <nav class="main-nav" aria-label="PPT Maker 页面">
+        <button class="nav-btn" type="button" data-route="compose">创作台</button>
+        <button class="nav-btn" type="button" data-route="templates">模板库</button>
+        <button class="nav-btn" type="button" data-route="history">历史项目</button>
+        <button class="nav-btn" type="button" data-route="http">HTTP 接入</button>
+      </nav>
+
+      <div class="top-search">
+        <input id="globalSearch" type="search" placeholder="搜索历史项目、模板、来源">
+      </div>
+
+      <div class="top-actions">
+        <span id="refreshStatus" class="status">待连接</span>
+        <button id="refreshBtn" class="secondary-btn" type="button">刷新</button>
+        <button id="themeToggleBtn" class="secondary-btn" type="button" aria-pressed="false">深色</button>
+      </div>
+    </header>
+
+    <main id="app" class="app-main" aria-live="polite"></main>
+  </div>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

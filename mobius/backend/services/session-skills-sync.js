@@ -1,0 +1,73 @@
+/**
+ * session-skills-sync.js — 把当前 session 解析后的 effective skills (用户级 + 项目级)
+ * 镜像到 session 工作目录下的 `.imac/skills/<dirName>/`, 让 agent 通过相对路径自取
+ * SKILL.md, 取代之前把整段 SKILL.md 内嵌进首轮 prompt 的做法.
+ *
+ * 同步策略:
+ *   - 整目录复制 (含 SKILL.md 之外的资源文件 / scripts).
+ *   - 每次同步前删掉目标目录中本次未涉及的子目录, 避免上一次留下的过期 skill
+ *     被 agent 误读.
+ *   - 源不存在 / 复制失败的项不抛错, 通过返回值反馈给调用方.
+ */
+const fs = require('fs');
+const path = require('path');
+const { getSourceDir, parseSkillId } = require('./skills-fs');
+
+// 用 POSIX 形式给 agent 看到相对路径, 跨平台时也保持一致.
+const TARGET_SUBDIR = '.imac/skills';
+
+function syncSkillsToWorkspace(workDir, skills) {
+  const results = [];
+  if (!workDir || !Array.isArray(skills)) return results;
+
+  const targetRoot = path.resolve(workDir, TARGET_SUBDIR);
+  try {
+    fs.mkdirSync(targetRoot, { recursive: true });
+  } catch (e) {
+    return results;
+  }
+
+  const keep = new Set();
+  for (const sk of skills) {
+    const parsed = parseSkillId(sk.id);
+    if (!parsed) { results.push({ id: sk.id, ok: false, reason: 'unparseable id' }); continue; }
+    const src = getSourceDir(sk.id);
+    const dest = path.join(targetRoot, parsed.dirName);
+    try {
+      fs.rmSync(dest, { recursive: true, force: true });
+      if (src && fs.existsSync(src)) {
+        fs.cpSync(src, dest, { recursive: true });
+      } else if (sk.body) {
+        fs.mkdirSync(dest, { recursive: true });
+      } else {
+        results.push({ id: sk.id, dirName: parsed.dirName, ok: false, reason: 'source missing' });
+        continue;
+      }
+      if (sk.body) {
+        fs.writeFileSync(path.join(dest, 'SKILL.md'), sk.body, 'utf8');
+      }
+      keep.add(parsed.dirName);
+      results.push({
+        id: sk.id,
+        dirName: parsed.dirName,
+        ok: true,
+        relPath: `${TARGET_SUBDIR}/${parsed.dirName}/SKILL.md`,
+        absPath: path.join(dest, 'SKILL.md'),
+      });
+    } catch (e) {
+      results.push({ id: sk.id, dirName: parsed.dirName, ok: false, reason: e.message });
+    }
+  }
+
+  try {
+    for (const ent of fs.readdirSync(targetRoot, { withFileTypes: true })) {
+      if (ent.isDirectory() && !keep.has(ent.name)) {
+        fs.rmSync(path.join(targetRoot, ent.name), { recursive: true, force: true });
+      }
+    }
+  } catch {}
+
+  return results;
+}
+
+module.exports = { syncSkillsToWorkspace, TARGET_SUBDIR };

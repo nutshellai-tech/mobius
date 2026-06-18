@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D 光点 ∞ 莫比乌斯空间</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="./favicon.svg" alt="" class="brand-icon">
+      <div>
+        <h1>3D 光点 ∞ 莫比乌斯空间</h1>
+        <div class="sub">∞ 形莫比乌斯光点 · 沿带流动 · 呼吸明暗 · 自由调参</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="identity" class="identity">-</span>
+      <button id="pauseBtn" class="btn" title="暂停 / 继续 (Space)">暂停</button>
+      <button id="resetViewBtn" class="btn" title="重置视角 (R)">重置视角</button>
+    </div>
+  </header>
+
+  <div id="stats" class="panel">
+    <div class="row"><span>FPS</span><b id="fpsValue">-</b></div>
+    <div class="row"><span>光点数</span><b id="pointsValue">-</b></div>
+    <div class="row"><span>拖拽</span><b>左键旋转 / 右键平移 / 滚轮缩放</b></div>
+  </div>
+
+  <aside id="controlPanel" class="panel">
+    <div class="panel-header">
+      <span class="panel-title">参数设置</span>
+      <button id="togglePanelBtn" class="btn small toggle-btn" title="折叠 / 展开参数面板">−</button>
+    </div>
+    <div class="panel-content">
+    <div class="panel-section">
+      <h2>形状</h2>
+      <label class="row">
+        <span class="row-label">∞ 跨度 R</span>
+        <input id="radiusInput" type="range"><b id="radiusInputVal" class="row-val">R = 8.0</b>
+      </label>
+      <label class="row">
+        <span class="row-label">带宽 w</span>
+        <input id="widthInput" type="range"><b id="widthInputVal" class="row-val">w = 0.90</b>
+      </label>
+      <label class="row">
+        <span class="row-label">带面半扭</span>
+        <select id="twistInput"></select>
+      </label>
+      <label class="row">
+        <span class="row-label">纵向缩放 z</span>
+        <input id="zScaleInput" type="range"><b id="zScaleInputVal" class="row-val">z = 1.00</b>
+      </label>
+    </div>
+
+    <div class="panel-section">
+      <h2>密度</h2>
+      <label class="row">
+        <span class="row-label">光点数</span>
+        <input id="pointCountInput" type="range"><b id="pointCountInputVal" class="row-val">4500 点</b>
+      </label>
+    </div>
+
+    <div class="panel-section">
+      <h2>调色盘</h2>
+      <label class="row">
+        <span class="row-label">预设</span>
+        <select id="paletteInput"></select>
+      </label>
+      <div id="customColorsRow" class="color-row"></div>
+      <div class="row">
+        <button id="addColorBtn" class="btn small">+ 颜色</button>
+        <button id="removeColorBtn" class="btn small">− 颜色</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h2>动画</h2>
+      <label class="row">
+        <span class="row-label">流速 (可负向)</span>
+        <input id="flowSpeedInput" type="range"><b id="flowSpeedInputVal" class="row-val">0.10</b>
+      </label>
+      <label class="row">
+        <span class="row-label">呼吸频率</span>
+        <input id="breathSpeedInput" type="range"><b id="breathSpeedInputVal" class="row-val">1.00</b>
+      </label>
+      <label class="row">
+        <span class="row-label">呼吸幅度</span>
+        <input id="breathStrengthInput" type="range"><b id="breathStrengthInputVal" class="row-val">65%</b>
+      </label>
+    </div>
+
+    <div class="panel-section">
+      <h2>视图</h2>
+      <label class="row">
+        <span class="row-label">自动旋转</span>
+        <select id="autoRotateInput">
+          <option value="off">关</option>
+          <option value="slow">慢</option>
+          <option value="normal">正常</option>
+          <option value="fast">快</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="panel-section">
+      <h2>渲染</h2>
+      <label class="row">
+        <span class="row-label">光点大小</span>
+        <input id="dotSizeInput" type="range"><b id="dotSizeInputVal" class="row-val">1.20</b>
+      </label>
+      <label class="row">
+        <span class="row-label">外晕强度</span>
+        <input id="glowInput" type="range"><b id="glowInputVal" class="row-val">0.85</b>
+      </label>
+      <label class="row">
+        <span class="row-label">背景亮度</span>
+        <input id="bgInput" type="range"><b id="bgInputVal" class="row-val">0.04</b>
+      </label>
+    </div>
+
+    <div class="panel-section">
+      <h2>预设</h2>
+      <select id="presetSelect"></select>
+      <div class="row">
+        <button id="loadPresetBtn" class="btn small">加载</button>
+        <button id="savePresetBtn" class="btn small">保存当前</button>
+        <button id="deletePresetBtn" class="btn small danger">删除</button>
+      </div>
+    </div>
+
+    <div class="panel-section hint">
+      <div>提示</div>
+      <ul>
+        <li>左键拖拽 · 右键平移 · 滚轮缩放</li>
+        <li>Space 暂停 / 继续</li>
+        <li>R 键重置视角</li>
+        <li>调色板选 "custom" 可自定义颜色</li>
+      </ul>
+    </div>
+    </div><!-- end panel-content -->
+  </aside>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

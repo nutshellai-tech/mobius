@@ -1,0 +1,95 @@
+# Dependencies
+node_modules/
+# 这条不能合并到上面 (上面 node_modules/ 只匹配目录, 这是指向 frontend deps 的 symlink — 实际 v1.9 已替换为真目录, 保留兜底)
+mobius/frontend/node_modules
+
+# Build outputs
+dist/
+build/
+.gradle/
+.next/
+_next/
+out/
+coverage/
+htmlcov/
+mobius/frontend/dist/
+mobius/frontend/.vite/
+.vite/
+
+# Runtime data (主 sqlite + WAL, hub runtime snapshot)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json
+data/turn-summaries/
+
+# Local runtime data (运行期状态、DB、hub 快照, 不提交)
+local_data/
+
+# 用户工作区 (系统运行期生成的用户文件, 每台机不同)
+workspace/
+
+# 用户上传文件 (skill/memory imports, 运行期产物)
+mobius/uploads/
+
+# Runtime task flags (每个 session 的 running.flag 等运行期标记, 非源码)
+.imac/
+accepted_setting.log
+
+# 用户数据 (skill 文件树 + memory 文件树, 含个人 SKILL.md / MEMORY 内容)
+protected_data/
+
+# Logs
+logs/
+*-logs/
+*.log
+
+# OS
+.DS_Store
+
+# Secrets
+.env
+.trash
+mobius/public/index.html
+mobius/public/assets
+mobius/server_tmp_version.js
+mobius/.build/other-versions/
+outputs/
+__pycache__
+*.py[cod]
+mobius/.venv-aimux/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*.swo
+*~
+
+# Local external checkouts / machine-specific helpers
+/jsoncrack
+/jsoncrack-start.sh
+
+# 运行期秘钥 (claude/codex 登录态、代理配置) — 只本地存, 绝不提交
+deploy/secrets/*
+!deploy/secrets/.gitkeep
+
+# minimal 部署 codex 凭证 (含 OPENAI_API_KEY + tokens) — 必须每台机本地填
+deploy/minimal/codex/auth.json
+deploy/minimal/codex/config.toml
+!deploy/minimal/codex/.gitkeep
+!deploy/minimal/codex/config.toml.example
+
+# Claude Code 工具状态 (个人本地)
+.claude/scheduled_tasks.lock
+.claude/
+.imac/session_inputs
+mobius/.build/public.next
+deploy/host-data
+projects/

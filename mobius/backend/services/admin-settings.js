@@ -1,0 +1,330 @@
+/**
+ * admin-settings.js — 管理员面板可配置的单文件 JSON 设置.
+ *
+ * 当前包含:
+ *   - 每个 Session 模型创建新 Session 时检查的提问 / tmux 窗口限制.
+ *   - 每个 Session 模型是否使用 proxychains.
+ *   - 管理员小莫是否接收全站 Session 完成/失败回调.
+ *
+ * 旧 agentBackendDefaults 已移除: 代理只从 modelNetworkProxy.perModel 读取.
+ *
+ * 落盘: MOBIUS_DATA_PATH/admin-settings.json (与 hub-runtime.json 同目录), tmp+rename 原子写.
+ */
+const fs = require('fs')
+const path = require('path')
+const { MOBIUS_DATA_PATH } = require('../config')
+
+const SETTINGS_FILE = path.join(MOBIUS_DATA_PATH, 'admin-settings.json')
+
+const MODEL_PROMPT_LIMIT_WINDOW_HOURS = 5
+const MODEL_PROMPT_LIMIT_WINDOW_MINUTES = 5
+const MODEL_PROMPT_LIMIT_MAX = 100000
+const DEFAULT_MODEL_TMUX_WINDOW_LIMIT = 12
+
+const DEFAULTS = Object.freeze({
+  modelPromptLimits: {
+    windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
+    windowMinutes: MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
+    perModel: {},
+  },
+  modelNetworkProxy: {
+    perModel: {},
+  },
+  adminAssistantCallbacks: {
+    enabledAdminUserIds: [],
+  },
+})
+
+function defaultsClone() {
+  return JSON.parse(JSON.stringify(DEFAULTS))
+}
+
+function normalizeModelLimitForRead(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.min(Math.floor(n), MODEL_PROMPT_LIMIT_MAX)
+}
+
+function normalizeModelLimitForWrite(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error('模型限额必须是非负整数, 留空表示不限')
+  }
+  return Math.min(Math.floor(n), MODEL_PROMPT_LIMIT_MAX)
+}
+
+function normalizeTmuxWindowLimitForRead(value) {
+  const n = normalizeModelLimitForRead(value)
+  return n === null ? DEFAULT_MODEL_TMUX_WINDOW_LIMIT : n
+}
+
+function normalizeTmuxWindowLimitForWrite(value) {
+  if (value === null || value === undefined || value === '') return DEFAULT_MODEL_TMUX_WINDOW_LIMIT
+  return normalizeModelLimitForWrite(value)
+}
+
+function normalizeModelKey(value) {
+  const key = String(value || '').trim()
+  if (!key) throw new Error('模型 key 不能为空')
+  if (key.length > 160) throw new Error('模型 key 最多 160 个字符')
+  if (key.includes('\0')) throw new Error('模型 key 包含非法字符')
+  return key
+}
+
+function normalizeModelLimitConfigForRead(value) {
+  if (typeof value === 'number' || typeof value === 'string' || value === null) {
+    const migrated = normalizeModelLimitForRead(value)
+    return {
+      allUsers5h: null,
+      allUsers5m: null,
+      perUser5h: migrated,
+      perUser5m: null,
+      tmuxWindows: DEFAULT_MODEL_TMUX_WINDOW_LIMIT,
+    }
+  }
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    allUsers5h: normalizeModelLimitForRead(
+      obj.allUsers5h ?? obj.all_users_5h ?? obj.maxPromptsPer5hAllUsers ?? obj.max_prompts_per_5h_all_users,
+    ),
+    allUsers5m: normalizeModelLimitForRead(
+      obj.allUsers5m ?? obj.all_users_5m ?? obj.maxPromptsPer5mAllUsers ?? obj.max_prompts_per_5m_all_users,
+    ),
+    perUser5h: normalizeModelLimitForRead(
+      obj.perUser5h ?? obj.per_user_5h ?? obj.maxPromptsPer5hPerUser ?? obj.max_prompts_per_5h_per_user
+        ?? obj.maxPromptsPerWindow ?? obj.max_prompts_per_5h ?? obj.limit,
+    ),
+    perUser5m: normalizeModelLimitForRead(
+      obj.perUser5m ?? obj.per_user_5m ?? obj.maxPromptsPer5mPerUser ?? obj.max_prompts_per_5m_per_user,
+    ),
+    tmuxWindows: normalizeTmuxWindowLimitForRead(
+      obj.tmuxWindows ?? obj.tmux_windows ?? obj.tmuxWindowLimit ?? obj.tmux_window_limit,
+    ),
+  }
+}
+
+function normalizeModelLimitConfigForWrite(value) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    allUsers5h: normalizeModelLimitForWrite(obj.allUsers5h ?? obj.all_users_5h),
+    allUsers5m: normalizeModelLimitForWrite(obj.allUsers5m ?? obj.all_users_5m),
+    perUser5h: normalizeModelLimitForWrite(obj.perUser5h ?? obj.per_user_5h),
+    perUser5m: normalizeModelLimitForWrite(obj.perUser5m ?? obj.per_user_5m),
+    tmuxWindows: normalizeTmuxWindowLimitForWrite(obj.tmuxWindows ?? obj.tmux_windows),
+  }
+}
+
+function isDefaultModelLimitConfig(cfg) {
+  return cfg.allUsers5h === null
+    && cfg.allUsers5m === null
+    && cfg.perUser5h === null
+    && cfg.perUser5m === null
+    && cfg.tmuxWindows === DEFAULT_MODEL_TMUX_WINDOW_LIMIT
+}
+
+function normalizeModelPromptLimitsForRead(value) {
+  const out = {
+    windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
+    windowMinutes: MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
+    perModel: {},
+  }
+  const rawMap = value?.perModel || value?.models || {}
+  if (rawMap && typeof rawMap === 'object') {
+    for (const [rawKey, rawValue] of Object.entries(rawMap)) {
+      try {
+        const key = normalizeModelKey(rawKey)
+        const cfg = normalizeModelLimitConfigForRead(rawValue)
+        if (!isDefaultModelLimitConfig(cfg)) out.perModel[key] = cfg
+      } catch {}
+    }
+  }
+  return out
+}
+
+function normalizeModelNetworkProxyForRead(value) {
+  const out = { perModel: {} }
+  const rawMap = value?.perModel || value?.models || {}
+  if (rawMap && typeof rawMap === 'object') {
+    for (const [rawKey, rawValue] of Object.entries(rawMap)) {
+      try {
+        const key = normalizeModelKey(rawKey)
+        const value = rawValue && typeof rawValue === 'object'
+          ? (rawValue.useProxy ?? rawValue.use_proxy)
+          : rawValue
+        if (typeof value === 'boolean') out.perModel[key] = value
+      } catch {}
+    }
+  }
+  return out
+}
+
+function normalizeUserId(value) {
+  const id = String(value || '').trim()
+  if (!id) throw new Error('用户 ID 不能为空')
+  if (id.length > 64) throw new Error('用户 ID 最多 64 个字符')
+  if (id.includes('\0')) throw new Error('用户 ID 包含非法字符')
+  return id
+}
+
+function normalizeAdminAssistantCallbacksForRead(value) {
+  const rawIds = Array.isArray(value?.enabledAdminUserIds)
+    ? value.enabledAdminUserIds
+    : (Array.isArray(value?.enabled_admin_user_ids) ? value.enabled_admin_user_ids : [])
+  const ids = []
+  const seen = new Set()
+  for (const rawId of rawIds) {
+    try {
+      const id = normalizeUserId(rawId)
+      if (!seen.has(id)) {
+        seen.add(id)
+        ids.push(id)
+      }
+    } catch {}
+  }
+  ids.sort()
+  return { enabledAdminUserIds: ids }
+}
+
+function writeSettings(next) {
+  const dir = path.dirname(SETTINGS_FILE)
+  fs.mkdirSync(dir, { recursive: true })
+  const tmp = `${SETTINGS_FILE}.imac-tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2))
+  fs.renameSync(tmp, SETTINGS_FILE)
+}
+
+function loadSettings() {
+  if (!fs.existsSync(SETTINGS_FILE)) return defaultsClone()
+  try {
+    const raw = fs.readFileSync(SETTINGS_FILE, 'utf8')
+    const parsed = JSON.parse(raw)
+    const merged = defaultsClone()
+    if (parsed && typeof parsed === 'object' && parsed.modelPromptLimits) {
+      merged.modelPromptLimits = normalizeModelPromptLimitsForRead(parsed.modelPromptLimits)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.modelNetworkProxy) {
+      merged.modelNetworkProxy = normalizeModelNetworkProxyForRead(parsed.modelNetworkProxy)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.adminAssistantCallbacks) {
+      merged.adminAssistantCallbacks = normalizeAdminAssistantCallbacksForRead(parsed.adminAssistantCallbacks)
+    }
+    return merged
+  } catch (e) {
+    console.warn(`[admin-settings] 读取失败, 回退默认值: ${e.message}`)
+    return defaultsClone()
+  }
+}
+
+function getModelPromptLimits() {
+  return loadSettings().modelPromptLimits
+}
+
+function getModelPromptLimit(modelKey) {
+  const key = normalizeModelKey(modelKey)
+  const limits = getModelPromptLimits()
+  return Object.prototype.hasOwnProperty.call(limits.perModel, key) ? limits.perModel[key].perUser5h : null
+}
+
+function getModelPromptLimitConfig(modelKey) {
+  const key = normalizeModelKey(modelKey)
+  const limits = getModelPromptLimits()
+  return Object.prototype.hasOwnProperty.call(limits.perModel, key)
+    ? normalizeModelLimitConfigForRead(limits.perModel[key])
+    : normalizeModelLimitConfigForRead({})
+}
+
+function getModelNetworkProxy(modelKey, fallback = false) {
+  const key = normalizeModelKey(modelKey)
+  const proxy = loadSettings().modelNetworkProxy || normalizeModelNetworkProxyForRead({})
+  return Object.prototype.hasOwnProperty.call(proxy.perModel || {}, key)
+    ? proxy.perModel[key] === true
+    : !!fallback
+}
+
+function setModelNetworkProxy(modelKey, value) {
+  const key = normalizeModelKey(modelKey)
+  if (typeof value !== 'boolean') {
+    throw new Error(`useProxy 必须是 boolean, 收到: ${typeof value}`)
+  }
+  const next = loadSettings()
+  if (!next.modelNetworkProxy) next.modelNetworkProxy = normalizeModelNetworkProxyForRead({})
+  if (!next.modelNetworkProxy.perModel || typeof next.modelNetworkProxy.perModel !== 'object') {
+    next.modelNetworkProxy.perModel = {}
+  }
+  next.modelNetworkProxy.perModel[key] = value
+  writeSettings(next)
+  return next.modelNetworkProxy
+}
+
+function setModelPromptLimit(modelKey, value) {
+  const key = normalizeModelKey(modelKey)
+  const limit = normalizeModelLimitForWrite(value)
+  const current = getModelPromptLimitConfig(key)
+  return setModelPromptLimitConfig(key, { ...current, perUser5h: limit })
+}
+
+function setModelPromptLimitConfig(modelKey, value) {
+  const key = normalizeModelKey(modelKey)
+  const cfg = normalizeModelLimitConfigForWrite(value)
+  const next = loadSettings()
+  if (!next.modelPromptLimits) next.modelPromptLimits = normalizeModelPromptLimitsForRead({})
+  next.modelPromptLimits.windowHours = MODEL_PROMPT_LIMIT_WINDOW_HOURS
+  next.modelPromptLimits.windowMinutes = MODEL_PROMPT_LIMIT_WINDOW_MINUTES
+  if (!next.modelPromptLimits.perModel || typeof next.modelPromptLimits.perModel !== 'object') {
+    next.modelPromptLimits.perModel = {}
+  }
+  if (isDefaultModelLimitConfig(cfg)) delete next.modelPromptLimits.perModel[key]
+  else next.modelPromptLimits.perModel[key] = cfg
+  writeSettings(next)
+  return next.modelPromptLimits
+}
+
+function getAdminAssistantCallbacks() {
+  return loadSettings().adminAssistantCallbacks
+}
+
+function listAdminAssistantCallbackUserIds() {
+  return getAdminAssistantCallbacks().enabledAdminUserIds.slice()
+}
+
+function getAdminAssistantCallbackForUser(userId) {
+  const id = normalizeUserId(userId)
+  return {
+    enabled: listAdminAssistantCallbackUserIds().includes(id),
+  }
+}
+
+function setAdminAssistantCallbackForUser(userId, enabled) {
+  const id = normalizeUserId(userId)
+  if (typeof enabled !== 'boolean') {
+    throw new Error(`enabled 必须是 boolean, 收到: ${typeof enabled}`)
+  }
+  const next = loadSettings()
+  const callbacks = normalizeAdminAssistantCallbacksForRead(next.adminAssistantCallbacks)
+  const ids = new Set(callbacks.enabledAdminUserIds)
+  if (enabled) ids.add(id)
+  else ids.delete(id)
+  next.adminAssistantCallbacks = { enabledAdminUserIds: Array.from(ids).sort() }
+  writeSettings(next)
+  return getAdminAssistantCallbackForUser(id)
+}
+
+module.exports = {
+  MODEL_PROMPT_LIMIT_WINDOW_HOURS,
+  MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
+  DEFAULT_MODEL_TMUX_WINDOW_LIMIT,
+  loadSettings,
+  getModelPromptLimits,
+  getModelPromptLimit,
+  getModelPromptLimitConfig,
+  setModelPromptLimit,
+  setModelPromptLimitConfig,
+  getModelNetworkProxy,
+  setModelNetworkProxy,
+  getAdminAssistantCallbacks,
+  listAdminAssistantCallbackUserIds,
+  getAdminAssistantCallbackForUser,
+  setAdminAssistantCallbackForUser,
+}
