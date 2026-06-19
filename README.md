@@ -10,11 +10,11 @@
 - Git clone with command:
    - `git clone https://github.com/nutshellai-tech/mobius.git && cd mobius`
 - Build image (stage 1, environment only, no code):
-   - `docker build -t imac-mobius:v0 -f deploy/Dockerfile .`
+   - `docker build -t imac-mobius-base:latest -f deploy/Dockerfile .`
 - Build image (stage 2, copy code into image):
-   - `docker build -t imac-mobius:final .`
+   - `docker build -t imac-mobius-exe:latest .`
 - Run image:
-   - `docker-compose up`
+   - `docker compose up`
 
 
 ## 核心工作流
