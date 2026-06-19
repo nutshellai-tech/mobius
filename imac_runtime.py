@@ -90,8 +90,6 @@ RUNTIME_SETTINGS = ordered_unique(
         "CS_READY_TIMEOUT_MS",
         "IMAC_BOOTSTRAP_USERS",
         "NPM_REGISTRY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
     ]
 )
 

@@ -41,22 +41,22 @@ def parse_args(description: str) -> argparse.Namespace:
     parser.add_argument(
         "--other-versions",
         metavar="GIT_HASH",
-        help="product mode only: build and serve Mobius from another git commit hash",
+        help="build and serve Mobius from another git commit hash",
     )
     parser.add_argument(
         "--hard-reset",
         metavar="GIT_HASH",
-        help="product mode only: save current HEAD to discard/<timestamp>, reset hard to the commit, then rebuild in place",
+        help="save current HEAD to discard/<timestamp>, reset hard to the commit, then rebuild in place",
     )
     parser.add_argument(
         "--force-vscode-server-restart",
         action="store_true",
-        help="product mode only: restart code-server even when the existing server is healthy",
+        help="restart code-server even when the existing server is healthy",
     )
     parser.add_argument(
         "--only-update-frontend",
         action="store_true",
-        help="product mode only: compile and replace static frontend without restarting backend",
+        help="compile and replace static frontend without restarting backend",
     )
     return parser.parse_args()
 
@@ -81,9 +81,7 @@ def load_configuration(run_cwd: Path, script_name: str) -> tuple[EnvFileLoader, 
         "VITE_HOST",
         "CODE_SERVER_PORT",
         "CODE_SERVER_CWD",
-        "CS_BIN",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
+        "CS_BIN"
     ]:
         loader.require(key, script_name)
 
@@ -115,20 +113,6 @@ def write_runtime_env_file(file_path: Path, loader: EnvFileLoader, generated_by:
             "generated_by": generated_by,
             "generated_at": utc_timestamp(),
             "env": env,
-        },
-    )
-
-
-def write_claude_api_settings() -> None:
-    file_path = Path.home() / ".claude" / "settings.api.json"
-    write_json_private(
-        file_path,
-        {
-            "env": {
-                "ANTHROPIC_AUTH_TOKEN": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                "ANTHROPIC_BASE_URL": os.environ["ANTHROPIC_BASE_URL"],
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-            }
         },
     )
 
@@ -208,7 +192,7 @@ def start_code_server(*, force_restart: bool = True) -> None:
 
     if not force_restart and code_server_is_healthy():
         print("   code-server 已正常运行，跳过重启")
-        print("   如需强制重启，执行 product.py 时加 --force-vscode-server-restart")
+        print("   如需强制重启，执行 start.py 时加 --force-vscode-server-restart")
         return
 
     if not force_restart:
@@ -251,14 +235,12 @@ def start_code_server(*, force_restart: bool = True) -> None:
     time.sleep(2)
 
 
-def print_health_check(product_mode: bool) -> None:
+def print_health_check() -> None:
     print()
     print("=== [3/3] 端口健康检查 ===")
     time.sleep(3)
 
     ports = [os.environ["CODE_SERVER_PORT"], os.environ["MOBIUS_PORT"]]
-    if not product_mode:
-        ports.append(os.environ["VITE_PORT"])
 
     for port in ports:
         if port_is_listening(port):
@@ -267,23 +249,17 @@ def print_health_check(product_mode: bool) -> None:
             print(f"   ✗ :{port} 未启动")
 
 
-def print_summary(root: Path, product_mode: bool) -> None:
-    frontend_port = os.environ["MOBIUS_PORT"] if product_mode else os.environ["VITE_PORT"]
+def print_summary(root: Path) -> None:
+    frontend_port = os.environ["MOBIUS_PORT"]
 
     print()
     print(f"accepted settings: {root / 'accepted_setting.log'}")
     print(f"前端:           http://0.0.0.0:{frontend_port}")
     print(f"后端 health:    http://0.0.0.0:{os.environ['MOBIUS_PORT']}/api/v2/health")
-    if product_mode:
-        print(f"mobius PM2:     cd {root / 'mobius'} && npx --no-install pm2 logs imac-mobius")
-    else:
-        print("mobius tmux:    tmux attach -t imac-mobius      (后端 + vite 两个 panel)")
+    print(f"mobius PM2:     cd {root / 'mobius'} && npx --no-install pm2 logs imac-mobius")
     print("code-server:    tmux attach -t code-server")
     print("claude code hub: tmux attach -t imac_claude_code_agent_hub  (用户首次发消息时按需起)")
-    if product_mode:
-        print(f"全停:           cd {root / 'mobius'} && npx --no-install pm2 stop imac-mobius; tmux kill-session -t code-server -t imac_claude_code_agent_hub")
-    else:
-        print("全停:           tmux kill-session -t imac-mobius -t code-server -t imac_claude_code_agent_hub")
+    print(f"全停:           cd {root / 'mobius'} && npx --no-install pm2 stop imac-mobius; tmux kill-session -t code-server -t imac_claude_code_agent_hub")
 
 
 def print_frontend_update_summary(root: Path) -> None:
@@ -299,55 +275,35 @@ def print_frontend_update_summary(root: Path) -> None:
         print(f"后端状态:         :{frontend_port} 未监听，本次未启动后端")
 
 
-def attach_to_mobius(product_mode: bool = False) -> None:
+def attach_to_mobius() -> None:
     print()
-    if product_mode:
-        print("product 模式后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs imac-mobius")
-        return
-    print("正在 attach 到 imac-mobius...")
-    if not sys.stdin.isatty():
-        print("当前不是交互终端, 跳过 attach。可手动执行: tmux attach -t imac-mobius")
-        return
-    if os.environ.get("TMUX"):
-        result = run(["tmux", "switch-client", "-t", "imac-mobius"], check=False)
-        if result.returncode != 0:
-            print("当前 tmux 没有可切换 client, 跳过 attach。可手动执行: tmux attach -t imac-mobius")
-    else:
-        run(["tmux", "attach", "-t", "imac-mobius"])
+    print("后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs imac-mobius")
 
 
 def main(
     *,
-    script_name: str = "debug.py",
-    description: str = "Restart Mobius backend/frontend and code-server in tmux.",
-    start_script_name: str = "start_debug.py",
-    product_mode: bool = False,
+    script_name: str = "start.py",
+    description: str = (
+        "Restart Mobius (compile + serve frontend), or compile/promote frontend only with "
+        "--only-update-frontend."
+    ),
+    start_script_name: str = "start_product.py",
 ) -> int:
     args = parse_args(description)
     run_cwd = Path.cwd().resolve()
 
     try:
         loader, env_file, env_default_file, env_status, default_status = load_configuration(run_cwd, script_name)
-        if args.other_versions and not product_mode:
-            raise ConfigError("--other-versions 只能用于 product.py")
-        if args.hard_reset and not product_mode:
-            raise ConfigError("--hard-reset 只能用于 product.py")
-        if args.force_vscode_server_restart and not product_mode:
-            raise ConfigError("--force-vscode-server-restart 只能用于 product.py")
-        if args.only_update_frontend and not product_mode:
-            raise ConfigError("--only-update-frontend 只能用于 product.py")
         if args.other_versions and args.hard_reset:
             raise ConfigError("--other-versions 和 --hard-reset 不能同时使用")
         if args.only_update_frontend and (args.other_versions or args.hard_reset):
             raise ConfigError("--only-update-frontend 不能和 --other-versions / --hard-reset 同时使用")
-        if product_mode:
-            apply_product_port()
+        apply_product_port()
 
         root = Path(os.environ["APP_DIR"])
         debug_env_file = Path(os.environ["IMAC_DEBUG_ENV_FILE"])
 
         write_runtime_env_file(debug_env_file, loader, script_name)
-        write_claude_api_settings()
         write_accepted_settings_log(
             root / "accepted_setting.log",
             loader,
@@ -358,12 +314,10 @@ def main(
             debug_env_file,
         )
 
-        if product_mode and args.only_update_frontend:
-            print(f"=== [1/1] 更新 mobius product 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
-        elif product_mode:
-            print(f"=== [1/3] 起 mobius product (compile + serve :{os.environ['MOBIUS_PORT']}) ===")
+        if args.only_update_frontend:
+            print(f"=== [1/1] 更新 mobius 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
         else:
-            print(f"=== [1/3] 起 mobius debug (backend :{os.environ['MOBIUS_PORT']} + vite :{os.environ['VITE_PORT']}) ===")
+            print(f"=== [1/3] 起 mobius (compile + serve :{os.environ['MOBIUS_PORT']}) ===")
         sys.stdout.flush()
         start_mobius(
             root,
@@ -372,16 +326,16 @@ def main(
             args.hard_reset,
             args.only_update_frontend,
         )
-        if product_mode and args.only_update_frontend:
+        if args.only_update_frontend:
             print_frontend_update_summary(root)
             return 0
 
-        start_code_server(force_restart=(not product_mode or args.force_vscode_server_restart))
-        print_health_check(product_mode)
-        print_summary(root, product_mode)
+        start_code_server(force_restart=args.force_vscode_server_restart)
+        print_health_check()
+        print_summary(root)
 
         if not args.detach:
-            attach_to_mobius(product_mode)
+            attach_to_mobius()
 
         return 0
 

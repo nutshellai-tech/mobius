@@ -6,9 +6,9 @@ import react from '@vitejs/plugin-react'
 // 可用 VITE_API_TARGET / VITE_PORT 覆盖.
 const mobiusPort = process.env.MOBIUS_PORT
 const apiTarget = process.env.VITE_API_TARGET || `http://localhost:${mobiusPort}`
-// 域名反代 (cloud-N.agent-matrix.com 等) 会被 vite host 校验拦截.
+// 域名反代 (cloud-N.example.com 等) 会被 vite host 校验拦截.
 // 前导点 = 该域名及全部子域. 逗号分隔可配多个; 设为 'all' 关闭校验(不建议).
-const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '.agent-matrix.com')
+const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '.example.com')
   .split(',').map(s => s.trim()).filter(Boolean)
 // 经 https 域名反代时 HMR ws 客户端要连 wss:443 而非 ws:45616.
 // 由 start_debug.py 注入 VITE_HMR_*; 裸 `npm run dev` 本地直连不设 -> vite 默认行为.

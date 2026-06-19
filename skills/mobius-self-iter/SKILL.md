@@ -7,6 +7,6 @@ description: What to do after self iter
 - 你需要找到系统中的一个自迭代项目（bind_path = APP_DIR）
 - 在该项目中提交Issue，然后创建Session，
 
-每次修改mobius代码，先commit所有文件（包括那些不是你亲自修改的文件），然后执行 python3 product.py 以更新代码
+每次修改mobius代码，先commit所有文件（包括那些不是你亲自修改的文件），然后执行 python3 start.py 以更新代码
 
 commit 时，commit message需要是“用户名（英文或拼音）: 代码变动说明”

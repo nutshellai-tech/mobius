@@ -103,7 +103,7 @@ const r = await extCall({ action: 'submit_score', score: 1234 });
 
 **特殊拓展项目** (kind=`extension` 的 project) 由 registry 自动 upsert, 锁死: `bind_path=APP_DIR`, `worktree=false`, `research=false`, `created_by=system` (但每个用户的项目页都能看到). 不能从 UI 删, 不能改 name/desc/path/repos/worktree/research, 可改 forgotten_flag.* 与星标.
 
-**生命周期**: 新增 → `POST /api/admin/extensions/reload` (或 `python3 debug.py` 重启). 删除 → 删目录 + reload, **DB 行保留** (标 disabled), 用户在该项目下的 issue/session 不丢; 目录补回 → reload → 自动恢复.
+**生命周期**: 新增 → `POST /api/admin/extensions/reload` (或 `python3 start.py` 重启). 删除 → 删目录 + reload, **DB 行保留** (标 disabled), 用户在该项目下的 issue/session 不丢; 目录补回 → reload → 自动恢复.
 
 **调试套路**:
 ```bash

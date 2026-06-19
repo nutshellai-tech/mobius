@@ -79,12 +79,12 @@ fi
 echo "[entrypoint] bootstrap-self-evolve"
 node scripts/bootstrap-self-evolve.js || echo "[entrypoint] bootstrap-self-evolve failed (continuing)"
 
-# -- startup: debug.py --detach starts backend/vite/code-server, then tail keeps PID 1 alive --
-echo "[entrypoint] starting: python3 $APP_DIR/debug.py --detach (injecting APP_DIR + CODE_SERVER_BIND)"
+# -- startup: start.py --detach starts backend/vite/code-server, then tail keeps PID 1 alive --
+echo "[entrypoint] starting: python3 $APP_DIR/start.py --detach (injecting APP_DIR + CODE_SERVER_BIND)"
 cd "$APP_DIR"
 APP_DIR="$APP_DIR" \
 CODE_SERVER_BIND="0.0.0.0:${CODE_SERVER_PORT}" \
 CODE_SERVER_CWD="$APP_DIR" \
-  python3 "product.py" --detach || echo "[entrypoint] debug.py exit code $?"
+  python3 "start.py" --detach || echo "[entrypoint] start.py exit code $?"
 
 sleep infinity;

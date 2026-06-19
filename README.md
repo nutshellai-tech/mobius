@@ -98,7 +98,7 @@ Mobius 的基础结构是 `Project -> Issue -> Session`。
 常用开发启动方式：
 
 ```bash
-python3 debug.py --detach
+python3 start.py --detach
 ```
 
 **首次启动前**，需要先初始化默认用户（对应 `.env` / `.env.default` 中的 `IMAC_BOOTSTRAP_USERS`）：
@@ -135,7 +135,7 @@ node -c mobius/backend/routes/assistant.js
 生产模式重启：
 
 ```bash
-python3 product.py
+python3 start.py
 ```
 
 ## 部署
