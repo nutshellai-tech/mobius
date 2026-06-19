@@ -776,6 +776,9 @@ const EXTENSION_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-extension';
 // 系统宏观规划 Issue (is_planning=1) 的所有 Session 强制必选 mobius-planner skill,
 // 保证 agent 严格遵守"只读写 project_knowledge.md, 严禁动代码"的协议.
 const PLANNING_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-planner';
+// 自迭代项目 (project.is_self_develop, 即 bind_path === APP_DIR) 的所有 Session
+// 强制必选 mobius-self-iter skill, 保证 agent 知道"先 commit 再 python3 start.py"的自迭代协议.
+const SELF_ITER_REQUIRED_BUILTIN_SKILL_ID = 'builtin:mobius-self-iter';
 
 function forcedIssueSkillIds(issue, project) {
   const ids = new Set();
@@ -783,12 +786,14 @@ function forcedIssueSkillIds(issue, project) {
   if (issue?.title === ASSISTANT_ISSUE_TITLE) ids.add(ASSISTANT_REQUIRED_BUILTIN_SKILL_ID);
   if (project?.kind === 'extension') ids.add(EXTENSION_REQUIRED_BUILTIN_SKILL_ID);
   if (issue?.is_planning) ids.add(PLANNING_REQUIRED_BUILTIN_SKILL_ID);
+  if (project?.is_self_develop) ids.add(SELF_ITER_REQUIRED_BUILTIN_SKILL_ID);
   return ids;
 }
 
 function forcedResearchSkillIds(project) {
   const ids = new Set();
   if (project?.kind === 'extension') ids.add(EXTENSION_REQUIRED_BUILTIN_SKILL_ID);
+  if (project?.is_self_develop) ids.add(SELF_ITER_REQUIRED_BUILTIN_SKILL_ID);
   return ids;
 }
 
