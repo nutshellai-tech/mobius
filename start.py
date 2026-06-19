@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -17,9 +18,11 @@ from boot_utils import (
     RUNTIME_SETTINGS,
     VSCODE_IPC_ENV,
     add_tmux_environment,
+    ensure_log_dir,
     kill_tcp_port_with_fuser,
     kill_tmux_session,
     mask_setting_value,
+    mobius_log_dir,
     ordered_unique,
     port_is_listening,
     run,
@@ -229,7 +232,7 @@ def start_code_server(*, force_restart: bool = True) -> None:
 
     kill_tcp_port_with_fuser(os.environ["CODE_SERVER_PORT"])
 
-    # 构造实际要跑的 shell 命令：tee 一份到 /tmp/code-server.log 方便事后看输出。
+    # 构造实际要跑的 shell 命令：tee 一份到集中日志目录方便事后看输出 (宿主机可见)。
     command = tee_command(
         [
             os.environ["CS_BIN"],
@@ -241,7 +244,7 @@ def start_code_server(*, force_restart: bool = True) -> None:
             "--disable-update-check",
             os.environ["CODE_SERVER_CWD"],
         ],
-        "/tmp/code-server.log",
+        str(ensure_log_dir() / "code-server.log"),
     )
     # 必须前置 unset 这几个变量：它们是从启动者（可能是另一个 VS Code 终端）继承下来的 IPC 句柄，
     # 若带进 code-server 子进程，会让新 code-server 误连到外层 VS Code 而不是自己起进程。
@@ -267,19 +270,78 @@ def start_code_server(*, force_restart: bool = True) -> None:
     time.sleep(2)
 
 
+def _diagnose_backend_down(mobius_dir: Path) -> None:
+    """后端端口没起来时, 主动把 PM2 状态和最近的日志打出来。
+
+    避免"PM2 status=errored + 0 字节日志"的静默崩溃循环让人无从下手: 这里直接给出
+    PM2 app 状态/重启次数, 并 tail 集中日志目录里的 error/out 日志, 指向根因。
+    """
+    log_dir = Path(mobius_log_dir())
+    print("   ── 诊断: mobius 后端未监听, 正在排查 PM2 与日志 ──")
+    pm2 = ["npx", "--no-install", "pm2"]
+
+    # 1) PM2 app 状态 + 重启次数 (jlist 输出 JSON, 便于结构化解析)。
+    try:
+        completed = run(
+            pm2 + ["jlist"], cwd=mobius_dir, check=False, capture=True, quiet=True
+        )
+        apps = json.loads(completed.stdout) if completed.stdout.strip() else []
+        app = next((a for a in apps if a.get("name") == "imac-mobius"), None)
+        if app:
+            env = app.get("pm2_env", {}) or {}
+            status = env.get("status")
+            restarts = env.get("restart_time")
+            print(
+                f"   PM2 imac-mobius: status={status} 重启={restarts}次 "
+                f"pid={app.get('pid')}"
+            )
+            if status != "online":
+                print("   ⚠️  后端未处于 online —— 多为启动期抛错。查看下方日志尾部。")
+        else:
+            print("   PM2 里没有 imac-mobius app (尚未注册/启动?)")
+    except Exception as exc:  # noqa: BLE001 - 诊断逻辑里任何失败都不应掩盖端口未起的事实
+        print(f"   (读取 PM2 状态失败: {exc})")
+
+    # 2) tail 集中日志目录里的 error / out 日志 (宿主机同样可见)。
+    for name in ["mobius-server-error.log", "mobius-server.log"]:
+        log_path = log_dir / name
+        if not log_path.is_file() or log_path.stat().st_size == 0:
+            print(f"   {log_path}: (空)")
+            continue
+        print(f"   ── {log_path} (最后 25 行) ──")
+        try:
+            tail = run(
+                ["tail", "-n", "25", str(log_path)],
+                check=False,
+                capture=True,
+                quiet=True,
+            )
+            for line in (tail.stdout or "").splitlines():
+                print(f"     {line}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"     (读取失败: {exc})")
+
+    print(f"   集中日志目录 (宿主机可见): {log_dir}")
+    print(f"   手动排查: cd {mobius_dir} && npx --no-install pm2 logs imac-mobius --lines 50")
+
+
 def print_health_check() -> None:
     print()
     print("=== [3/3] 端口健康检查 ===")
     # 再多等一会儿：mobius 编译 + serve 起来比 code-server 慢，需要更长 grace period。
     time.sleep(3)
 
-    ports = [os.environ["CODE_SERVER_PORT"], os.environ["MOBIUS_PORT"]]
+    mobius_port = os.environ["MOBIUS_PORT"]
+    ports = [os.environ["CODE_SERVER_PORT"], mobius_port]
 
     for port in ports:
         if port_is_listening(port):
             print(f"   ✓ :{port} listen")
         else:
             print(f"   ✗ :{port} 未启动")
+            # 后端端口没起来时不要只报"未启动": 主动诊断 PM2 + 日志, 把根因暴露出来。
+            if port == mobius_port:
+                _diagnose_backend_down(Path(os.environ["APP_DIR"]) / "mobius")
 
 
 def print_summary(root: Path) -> None:

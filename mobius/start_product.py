@@ -46,6 +46,8 @@ from boot_utils import (  # noqa: E402
     ConfigError,
     EnvFileLoader,
     RUNTIME_SETTINGS,
+    DEFAULT_LOG_DIR,
+    ensure_log_dir,
     kill_tcp_port_with_lsof,
     kill_tmux_session,
     run,
@@ -116,8 +118,35 @@ def load_configuration() -> None:
     os.environ["VITE_PORT"] = product_port
     os.environ["MOBIUS_PORT"] = product_port
     set_if_blank("NODE_ENV", "production")
+    # 集中日志目录: 默认 /data/logs (宿主机可见)。PM2 ecosystem / 启动包装器都读这个变量。
+    set_if_blank("MOBIUS_LOG_DIR", DEFAULT_LOG_DIR)
+    # PM2 不会自动建日志目录, 必须先建好, 否则 worker 首次写 out/error_file 会失败。
+    ensure_log_dir()
     # 前端构建期注入的 API 反代目标; 只在没显式设时给默认, 避免覆盖 .env 的覆盖.
     set_if_blank("VITE_API_TARGET", f"http://0.0.0.0:{product_port}")
+
+
+def validate_production_config() -> None:
+    """启动前预检: 把 backend/config.js 在生产模式下会同步 throw 的配置在这里先拦下。
+
+    动机: 这类 throw 发生在 require('./backend/config') 的模块加载期, PM2 cluster 模式
+    往往来不及把它写进 error_file, 表现为 status=errored + 0 字节日志的"静默崩溃循环"
+    (见 mobius/pm2-entrypoint.js 的说明)。在这里显式校验并给出可操作的报错, 能在 PM2
+    启动之前就把根因暴露给调用方 (docker compose up 的输出里直接可见)。
+
+    判定规则与 backend/config.js 保持一致: 空值或 change-me 开头的占位符都算未配置。
+    本函数只在会真正启动后端的路径上调用 (--only-update-frontend 不启动后端, 跳过)。
+    """
+    problems = []
+    secret = (os.environ.get("JWT_SECRET") or "").strip()
+    if not secret or secret.startswith("change-me"):
+        problems.append(
+            "JWT_SECRET 未设置或仍是占位符 (change-me-...)。生产模式后端会拒绝启动。\n"
+            "      修复: 在 .env 中设置 JWT_SECRET=<随机长字符串>\n"
+            "      生成: openssl rand -hex 32"
+        )
+    if problems:
+        raise ConfigError("生产环境配置预检失败:\n  " + "\n  ".join(problems))
 
 
 def build_frontend(
@@ -237,7 +266,7 @@ def ensure_aimux_bridge_venv() -> None:
     run(["bash", str(HERE / "scripts" / "setup-aimux-bridge.sh")], cwd=HERE)
 
 
-def reload_backend(entrypoint: Path = HERE / "server.js") -> None:
+def reload_backend(entrypoint: Path = HERE / "pm2-entrypoint.js") -> None:
     print()
     print(f"=== [3/4] reload product backend with PM2 :{os.environ['MOBIUS_PORT']} ===", flush=True)
 
@@ -470,6 +499,9 @@ def main() -> int:
         if args.only_update_frontend:
             update_frontend_only()
             return 0
+        # 下面三条路径都会真正启动后端: 先做生产配置预检, 把 config.js 的启动期 throw
+        # 在 PM2 之前拦下, 避免 cluster 模式吞掉错误 (status=errored + 空日志)。
+        validate_production_config()
         if args.other_versions:
             deploy_other_version(args.other_versions)
             return 0

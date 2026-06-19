@@ -1,8 +1,11 @@
 const path = require('path');
 
 const mobiusDir = __dirname;
-const entrypoint = process.env.MOBIUS_PM2_ENTRYPOINT || path.join(mobiusDir, 'server.js');
+const entrypoint = process.env.MOBIUS_PM2_ENTRYPOINT || path.join(mobiusDir, 'pm2-entrypoint.js');
 const instances = process.env.MOBIUS_PM2_INSTANCES || '1';
+// 集中日志目录: 默认 /data/logs, 被 docker-compose 挂载到宿主机 (./host-data/data/logs)。
+// 所有 PM2 out/error_file 都落在这里, 宿主机可直接查看, 无需 docker exec。
+const LOG_DIR = process.env.MOBIUS_LOG_DIR || '/data/logs';
 
 const envKeys = [
   'APP_DIR',
@@ -55,6 +58,7 @@ const envKeys = [
   'AIMUX_BRIDGE_HOST',
   'AIMUX_BRIDGE_PORT',
   'AIMUX_BRIDGE_RUNTIME',
+  'MOBIUS_LOG_DIR',
 ];
 
 const inheritedEnv = {};
@@ -74,8 +78,8 @@ module.exports = {
       kill_timeout: 8000,
       listen_timeout: 10000,
       max_memory_restart: process.env.MOBIUS_PM2_MAX_MEMORY || '1G',
-      out_file: '/tmp/mobius-server.log',
-      error_file: '/tmp/mobius-server-error.log',
+      out_file: path.join(LOG_DIR, 'mobius-server.log'),
+      error_file: path.join(LOG_DIR, 'mobius-server-error.log'),
       merge_logs: true,
       env: {
         NODE_ENV: 'production',
@@ -94,8 +98,8 @@ module.exports = {
       autorestart: true,
       kill_timeout: 5000,
       max_memory_restart: '256M',
-      out_file: '/tmp/mobius-bridge.log',
-      error_file: '/tmp/mobius-bridge-error.log',
+      out_file: path.join(LOG_DIR, 'mobius-bridge.log'),
+      error_file: path.join(LOG_DIR, 'mobius-bridge-error.log'),
       merge_logs: true,
       env: {
         ...inheritedEnv,

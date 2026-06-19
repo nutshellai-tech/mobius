@@ -102,8 +102,27 @@ RUNTIME_SETTINGS = ordered_unique(
         "CS_READY_TIMEOUT_MS",
         "IMAC_BOOTSTRAP_USERS",
         "NPM_REGISTRY",
+        "MOBIUS_LOG_DIR",
     ]
 )
+
+
+# 集中日志目录的"最后兜底"值。权威取值来自 .env / .env.default 里的 MOBIUS_LOG_DIR
+# (容器内该路径被 docker-compose 挂载到宿主机 ./host-data/data/logs, 宿主机可直接查看);
+# 只有当 env 文件里都没设 MOBIUS_LOG_DIR 时才回落到这里的 /data/logs。
+DEFAULT_LOG_DIR = "/data/logs"
+
+
+def mobius_log_dir() -> str:
+    """返回集中日志目录 (默认 /data/logs), 供所有脚本/服务统一引用。"""
+    return os.environ.get("MOBIUS_LOG_DIR") or DEFAULT_LOG_DIR
+
+
+def ensure_log_dir() -> Path:
+    """创建集中日志目录 (存在即跳过), 返回该 Path。PM2 不会自动建目录, 启动前必须先建好。"""
+    log_dir = Path(mobius_log_dir())
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
 
 
 def parse_env_value(raw: str) -> str:
