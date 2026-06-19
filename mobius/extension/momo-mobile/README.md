@@ -14,7 +14,8 @@ Mobius 里看到、进入和继续开发。
 - 分身列表：读取小莫会话，创建分身 Session，并用 `/api/sessions/:id/messages` 启动。
 - 设置：暗色模式、推送/播报开关占位、账号信息和退出登录。
 
-第一版不做语音识别、推送通知、图片附件、文件管理、离线缓存和多账号切换。
+当前版本已经支持按住说话、服务端语音识别、图片/普通文件附件上传，以及文字/语音
+输入模式切换。暂不做推送通知、文件管理、离线附件缓存和多账号切换。
 
 ## 目录
 
@@ -39,7 +40,7 @@ momo-mobile/
 默认基础 URL 是：
 
 ```text
-https://cloud-17.agent-matrix.com
+https://mobius.example.com
 ```
 
 主要接口：
@@ -89,7 +90,7 @@ JDK、Gradle、TigerVNC、noVNC 和 `proot` 安装到项目局部目录 `.tmp/to
 ```bash
 tmux kill-session -t momo_mobile_preview 2>/dev/null || true
 tmux new-session -d -s momo_mobile_preview \
-  /home/user/imac-test/mobius/extension/momo-mobile/desktopPreview/run-local-preview.sh
+  $APP_DIR/mobius/extension/momo-mobile/desktopPreview/run-local-preview.sh
 ```
 
 然后在浏览器打开：
@@ -102,7 +103,7 @@ http://127.0.0.1:6088/vnc.html?host=127.0.0.1&port=6088&autoconnect=true&resize=
 `.tmp/momo-mobile-preview/access-token` 并在 tmux 日志里打印完整 URL：
 
 ```text
-https://cloud-17.agent-matrix.com/momo_mobile_preview/vnc.html?host=cloud-17.agent-matrix.com&port=443&encrypt=1&path=momo_mobile_preview/websockify&autoconnect=true&resize=scale&preview_token=<access-token>
+https://mobius.example.com/momo_mobile_preview/vnc.html?host=mobius.example.com&port=443&encrypt=1&path=momo_mobile_preview/websockify&autoconnect=true&resize=scale&preview_token=<access-token>
 ```
 
 停止预览：
@@ -124,4 +125,6 @@ tmux kill-session -t momo_mobile_preview
 - `tmp/07-settings-light.png` / `tmp/08-settings-dark.png`
 
 实现采用微信式布局：顶部 56dp、输入栏 72dp、头像 36dp、气泡圆角 4/12dp、
-品牌色 `#5B6CFF` 只用于主按钮、用户气泡和状态高亮。
+品牌色 `#5B6CFF` 只用于主按钮、用户气泡和状态高亮。小莫头像使用与 Web 主站一致的
+光场圆环视觉；输入栏文字模式为“附件 + 输入框 + 语音切换 + 发送”，语音模式为
+“附件 + 按住说话 + 键盘切换”。

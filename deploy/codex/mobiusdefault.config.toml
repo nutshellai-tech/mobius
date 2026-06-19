@@ -8,10 +8,10 @@ model_verbosity = "high"
 
 [model_providers.mobiusdefault]
 name = "mobiusdefault"
-base_url = "https://right.codes/codex/v1"
+base_url = "https://xxxx.xxxx/xxxx/v1"
 wire_api = "responses"
-env_key = "RIGHTCODE_API_KEY"
-api_key = "<API_KEY>"
+env_key = "XXXX_API_KEY"
+api_key = "replace-me-auth-token"
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4

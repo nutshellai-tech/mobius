@@ -120,8 +120,8 @@ function updateShell() {
   });
   const ready = state.skill?.ok || state.skill?.user?.exists || state.skill?.shared?.exists;
   els.skillStatus.textContent = ready
-    ? 'AI 驱动的演示文稿生成 · ppt-maker 技能套件已就绪'
-    : state.error || 'AI 驱动的演示文稿生成 · 正在连接 ppt-maker';
+    ? '从材料到演示文稿 · ppt-maker 技能套件已就绪'
+    : state.error || '从材料到演示文稿 · 正在连接 ppt-maker';
   els.refreshStatus.textContent = state.busy
     ? '处理中'
     : ready
@@ -318,15 +318,38 @@ function renderCompose() {
   return `
     <div class="compose-page">
       <section class="hero-band">
-        <div>
-          <span class="eyebrow"><i></i> ppt-maker workflow</span>
-          <h2>把源文件、网页和主题转成可下载 PPTX</h2>
-          <p>点击生成后直接启动完整 ppt-maker 技能流程，并在下方展示实时生成过程。</p>
+        <div class="hero-copy">
+          <span class="eyebrow"><i></i> PPT Maker 工作流</span>
+          <h2>把散落材料变成<span class="gradient-text">可交付演示文稿</span></h2>
+          <p>粘贴网页、上传文档、选择模板，交给完整 ppt-maker 技能流程生成 PPTX；实时进度、关键产物和历史记录都在同一个工作台里。</p>
+          <div class="hero-actions">
+            <button class="primary-btn" type="button" data-action="focus-topic">开始填写</button>
+            <button class="secondary-btn" type="button" data-route="templates">浏览模板</button>
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="PPT Maker 生成流程">
+          <div class="deck-stage">
+            <div class="deck-card deck-card-1">
+              <span></span><strong></strong><i></i>
+            </div>
+            <div class="deck-card deck-card-2">
+              <span></span><strong></strong><i></i>
+            </div>
+            <div class="deck-card deck-card-3">
+              <span></span><strong></strong><i></i>
+            </div>
+          </div>
+          <div class="pipeline-strip">
+            <span>材料</span>
+            <span>策略</span>
+            <span>设计</span>
+            <span>PPTX</span>
+          </div>
         </div>
         <div class="hero-stats" aria-label="生成状态">
-          <div><strong>${state.uploads.length}</strong><span>已上传源文件</span></div>
-          <div><strong>${state.templates.length}</strong><span>可选模板</span></div>
-          <div><strong>${state.projects.length}</strong><span>历史项目</span></div>
+          <div><strong>${state.uploads.length}</strong><span>源文件</span></div>
+          <div><strong>${state.templates.length}</strong><span>模板</span></div>
+          <div><strong>${state.projects.length}</strong><span>项目</span></div>
         </div>
       </section>
 
@@ -334,10 +357,10 @@ function renderCompose() {
         <div class="panel compose-card">
           <div class="panel-head">
             <div>
-              <h2>创作台</h2>
+              <h2>生成台</h2>
               <p>按源材料、模板、生成过程、结果下载四段完成一次演示文稿生成。</p>
             </div>
-            <span class="badge"><i></i> 完整流程</span>
+            <span class="badge"><i></i> 自动生成</span>
           </div>
 
           <div class="studio-layout">
@@ -420,7 +443,7 @@ function renderCompose() {
 
               <div class="workflow-card">
                 <div><span class="step-dot active"></span>上传材料</div>
-                <div><span class="step-dot"></span>完整技能流程生成</div>
+                <div><span class="step-dot"></span>规划结构与视觉</div>
                 <div><span class="step-dot"></span>下载 PPTX</div>
               </div>
             </aside>
@@ -431,7 +454,7 @@ function renderCompose() {
               <span>03</span>
               <div>
                 <h3>生成进度</h3>
-                <p>生成时实时显示 agent 输出、工具调用和关键步骤文本。</p>
+                <p>生成时实时显示智能体输出、工具调用和关键步骤文本。</p>
               </div>
             </div>
             <div class="progress-controls">
@@ -863,9 +886,9 @@ function renderHistoryPage() {
     <div class="history-page">
       <section class="page-head">
         <div>
-          <span class="eyebrow"><i></i> Project History</span>
+          <span class="eyebrow"><i></i> 历史项目</span>
           <h2>历史项目</h2>
-          <p>扫描 users/&lt;user&gt;/projects/*/output.pptx，并合并当前 state 中的项目信息。</p>
+          <p>查看已生成的 PPTX、关键文档、讲稿和图片素材，可重新预览或下载交付文件。</p>
         </div>
         <div class="toolbar-actions">
           <button class="secondary-btn" type="button" data-action="refresh-history">刷新历史</button>
@@ -954,13 +977,13 @@ console.log(await res.json());`;
         </article>
 
         <article class="contract-card">
-          <h3>2. Python snippet</h3>
+          <h3>2. Python 示例</h3>
           <p>适合后端任务系统把 URL、Markdown 或已经上传后的文件路径塞进 PPT Maker。</p>
           ${renderCodeBlock(python, 'Python')}
         </article>
 
         <article class="contract-card">
-          <h3>3. JavaScript snippet</h3>
+          <h3>3. JavaScript 示例</h3>
 	          <p>适合 Web 前端或内部工具调用；生成完成后历史项目里会出现 <code>output.download_url</code>。</p>
           ${renderCodeBlock(js, 'JavaScript')}
         </article>
@@ -1874,6 +1897,8 @@ document.addEventListener('click', (event) => {
     copyText(actionEl.dataset.code || '', '示例代码已复制');
   } else if (action === 'copy-token') {
     copyText('<YOUR_MOBIUS_TOKEN>', 'token 占位已复制');
+  } else if (action === 'focus-topic') {
+    document.getElementById('topicInput')?.focus();
   } else if (action === 'refresh-history') {
     loadHistory().then(() => {
       toast('历史项目已刷新');

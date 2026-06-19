@@ -109,7 +109,7 @@ function latestActivity(sources) {
 function loadDbSessionsById() {
   const rows = db.prepare(`
     SELECT s.session_id, s.name AS session_name, s.status,
-           s.agent_status, s.last_active, s.last_agent_event, s.model,
+           s.last_active, s.last_agent_event, s.model,
            p.bind_path AS bind_path, p.name AS project_name,
            i.title AS issue_title,
            r.title AS research_title,
@@ -238,22 +238,35 @@ function writeCleanupMessage(sessionId, backendName, windowInfo, lastActivity, a
   }
 }
 
+// 一次完整的"tmux 死窗清理"巡检.
+// 职责: 遍历所有 agent backend 的 tmux windows, 找出"长时间无活动"的窗口, kill 掉
+//       tmux window + 清 flag 目录 + 给 DB 标 idle + 往 session 写一条清理说明消息.
+// 双阈值: 普通窗口 3 小时无活动 (INACTIVE_MS); 已 completed 的窗口 (running.flag 已删)
+//         10 分钟无活动 (COMPLETED_INACTIVE_MS) 就清, 因为它没理由继续占资源.
+// 多轮重入安全: scanning 模块级锁保证同一时刻只有一轮.
 async function scanOnce() {
+  // 互斥锁: 定时器叠加 / 手动触发可能让上一轮还没结束就触发新一轮, 直接跳过,
+  // 避免对同一 window 重复 terminateSession / 重复写清理消息.
   if (scanning) {
     appendLog(`[${nowIso()}] (skip) 上一轮清理尚未结束, 跳过本轮\n`);
     return;
   }
+  // 拿锁 + 记起始时间, 最后算 cost=耗时写心跳.
   scanning = true;
   const startedAt = Date.now();
-  let totalWindows = 0;
-  let skippedRoot = 0;
-  let unknownActivity = 0;
-  let completedFlagWindows = 0;
-  const candidates = [];
+  // 五个统计计数器, 只用于心跳日志, 让运维确认巡检在跑 + 估算覆盖率.
+  let totalWindows = 0;        // 所有 backend 的 windows 总数 (含 _root 占位窗)
+  let skippedRoot = 0;          // 跳过的 _root 占位窗 (tmux hub 自带的初始窗, 不属于任何 session)
+  let unknownActivity = 0;      // 拿不到任何活动时间源的窗, 无法判定过期, 只能跳过
+  let completedFlagWindows = 0; // flag 状态显示"已完成"的窗 (running.flag 已删), 走更短阈值
+  const candidates = [];        // 命中清理阈值的窗, 等主循环结束后统一处理
 
   try {
+    // 一次性查所有 DB session, 后续按 sid 在内存里对照 (window↔DB 双向都可能缺失).
     const dbSessions = loadDbSessionsById();
+    // 多 backend 遍历: codex / claude_code 各自维护独立的 tmux hub 和 windows 列表.
     for (const backendName of backendNames()) {
+      // 单 backend 加载失败不能拖垮其它 backend 的清理, 仅记一行日志跳过.
       let backend;
       try { backend = agents.get(backendName); }
       catch (e) {
@@ -261,6 +274,7 @@ async function scanOnce() {
         continue;
       }
 
+      // listSessions 失败同理: 单 backend 列举失败不影响其它 backend.
       let windows = [];
       try { windows = backend.listSessions(); }
       catch (e) {
@@ -268,23 +282,38 @@ async function scanOnce() {
         continue;
       }
 
+      // 逐 window 判断是否进入候选清理集.
       for (const w of windows) {
         totalWindows++;
         const sid = w.sessionId;
+        // _root 是 hub session 自带的初始占位窗, 不属于任何业务 session, 永不清理.
         if (!sid || sid === '_root') { skippedRoot++; continue; }
 
+        // DB 可能没这个 session 的记录 (例如 DB 被手动清过但 tmux 还活着), 用 null 兜底.
         const dbSession = dbSessions.get(sid) || null;
+        // 综合多个时间源 (tmux window_activity / runtime.startedAt / jsonl mtime / DB 时间)
+        // 取最新一个, 作为"最后一次活动时间". 任何一个时间源缺失都不影响综合判断.
         const activity = activityForWindow(backend, w, dbSession);
+        // 所有时间源都拿不到 → 无法判过期, 只能跳过 (不能误清, 留给下一轮).
         if (!activity.latest) { unknownActivity++; continue; }
 
+        // age = 现在 - 最后活动. 越大越该清.
         const ageMs = Date.now() - activity.latest.ms;
+        // 通过 flag 文件判断是否"已完成": running.flag 不存在视为已完成.
+        // 已完成的窗用更短阈值清理, 因为它已经没理由占资源 (agent 任务结束了).
         const flagState = completionFlagState(sid, dbSession, activity.runtime);
         if (flagState.completed) completedFlagWindows++;
+        // 命中条件二选一: 已完成 + 超 COMPLETED_INACTIVE_MS, 或 不论是否完成 + 超 INACTIVE_MS.
         const useCompletedThreshold = flagState.completed && ageMs >= COMPLETED_INACTIVE_MS;
         const useNormalThreshold = ageMs >= INACTIVE_MS;
         if (useCompletedThreshold || useNormalThreshold) {
+          // isWorking 在候选阶段才查 (避免对每个 window 都调用 backend).
+          // try/catch 降级成 'ERR:...', 防止单窗故障中断整轮; isWorking 不参与判定,
+          // 只是写进诊断日志, 帮助事后判断"清的时候 agent 是否其实还在干".
           let isWorking = null;
           try { isWorking = backend.isWorking(sid); } catch (e) { isWorking = `ERR:${e.message}`; }
+          // 推入候选集, 等主循环结束后统一处理. 这里只收集, 不立即清理,
+          // 因为清理动作会改 backend 状态, 在 listSessions 遍历过程中改状态不安全.
           candidates.push({
             backendName,
             backend,
@@ -294,6 +323,7 @@ async function scanOnce() {
             ageMs,
             isWorking,
             flagState,
+            // cleanupReason 区分两种触发路径, 写进日志方便统计哪类清理更多.
             cleanupReason: useCompletedThreshold ? 'completed_running_flag_missing' : 'inactive',
             thresholdMs: useCompletedThreshold ? COMPLETED_INACTIVE_MS : INACTIVE_MS,
           });
@@ -301,6 +331,7 @@ async function scanOnce() {
       }
     }
 
+    // 写一行心跳日志 (不论有无候选都写), 让运维确认巡检在跑 + 看清本轮覆盖率.
     const durMs = Date.now() - startedAt;
     appendLog(
       `[${nowIso()}] scan done: total_windows=${totalWindows} candidates=${candidates.length} ` +
@@ -309,12 +340,16 @@ async function scanOnce() {
       `completed_threshold=${COMPLETED_INACTIVE_MS}ms cost=${durMs}ms\n`
     );
 
+    // 逐个候选执行清理. 这里是真正会改 backend/DB/flag 的破坏性段, try/catch 包裹每个候选,
+    // 单个失败只跳过它, 不影响其它候选.
     for (const f of candidates) {
       const sid = f.windowInfo.sessionId;
       const s = f.dbSession;
+      // 把多个活动时间源拼成字符串, 写进日志方便回查"为什么认为这个窗过期了".
       const sources = f.activity.sources
         .map((x) => `${x.label}=${iso(x.ms)}`)
         .join(', ');
+      // 人类可读的诊断块. 字段顺序: 身份 → DB/项目上下文 → 进程信息 → 时间/年龄 → 清理依据.
       appendLog([
         '──────── INACTIVE tmux agent cleanup ────────',
         `  time              : ${nowIso()}`,
@@ -336,6 +371,8 @@ async function scanOnce() {
         `  activity_sources  : ${sources || '(none)'}`,
       ].join('\n') + '\n');
 
+      // 真正执行 kill tmux window. terminateSession 内部会 kill-window + 清 backend runtime.
+      // 失败时写一行 FAIL 后 continue, 不让单个失败拖垮其它候选的清理.
       let result = null;
       try {
         result = await f.backend.terminateSession(sid);
@@ -344,7 +381,11 @@ async function scanOnce() {
         continue;
       }
 
+      // tmux window 杀掉后, 同步清掉磁盘上的 flag 目录 (.imac/flags/<sid>/),
+      // 否则下一次 forgotten-flag-scanner 会误以为是"被遗忘 flag"发提醒.
       const flagRemoved = cleanupFlagDir(sid, s, f.activity.runtime);
+      // 只在 DB 有这个 session 时才标 idle + 写清理消息;
+      // 没有 DB 行说明它本就是孤儿窗 (DB 已删但 tmux 残留), 不需要再写消息.
       if (s) {
         markDbIdle(sid);
         writeCleanupMessage(
@@ -358,14 +399,17 @@ async function scanOnce() {
         );
       }
 
+      // 成功收尾日志, killed/wasWorking 帮助事后统计清理了多少活窗 vs 死窗.
       appendLog(
         `  cleanup=OK killed=${!!result?.killed} wasWorking=${!!result?.wasWorking} flag_dir_removed=${flagRemoved}\n` +
         '────────────────────────────────────────\n\n'
       );
     }
   } catch (e) {
+    // 顶层兜底: 扫描本身出 bug 时只写日志, 不让 timer 链路被异常打断下一轮.
     appendLog(`[${nowIso()}] (error) 清理扫描异常: ${e && e.stack ? e.stack : e}\n`);
   } finally {
+    // 无论本轮成功失败都释放互斥锁, 保证下一轮定时器能进入.
     scanning = false;
   }
 }

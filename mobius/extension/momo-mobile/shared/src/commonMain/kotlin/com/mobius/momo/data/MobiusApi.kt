@@ -10,10 +10,13 @@ import com.mobius.momo.domain.LoginResult
 import com.mobius.momo.domain.MessageAuthor
 import com.mobius.momo.domain.Project
 import com.mobius.momo.domain.Session
+import com.mobius.momo.domain.SessionModelOption
 import com.mobius.momo.domain.StreamTextChunk
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -22,6 +25,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
@@ -38,8 +42,22 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 
+data class UploadedAttachment(
+    val path: String,
+    val name: String,
+    val size: Long,
+)
+
+data class AssistantPromptAttachment(
+    val path: String,
+    val name: String,
+    val size: Long,
+    val type: String,
+    val mimeType: String,
+)
+
 class MobiusApi(
-    private val baseUrl: String = "https://cloud-17.agent-matrix.com",
+    private val baseUrl: String = "https://mobius.example.com",
     private val storage: SecureStorage,
     private val onUnauthorized: suspend () -> Unit,
 ) {
@@ -97,22 +115,112 @@ class MobiusApi(
     suspend fun projects(): List<Project> =
         client.get("$baseUrl/api/projects/") { addAuth() }.body()
 
-    suspend fun sendAssistantMessage(content: String, route: String = "/mobile"): AssistantMessageResult {
+    suspend fun sessionModelOptions(): List<SessionModelOption> =
+        client.get("$baseUrl/api/sessions/model-options") { addAuth() }.body()
+
+    suspend fun uploadAttachment(file: PickedFile): UploadedAttachment {
+        val safeName = file.name.ifBlank { "attachment" }.replace("\"", "")
+        val response = client.post("$baseUrl/api/upload") {
+            addAuth()
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "file",
+                            file.bytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, file.mimeType.ifBlank { "application/octet-stream" })
+                                append(HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"$safeName\"")
+                            },
+                        )
+                    },
+                ),
+            )
+        }
+        val raw = response.bodyAsText()
+        val obj = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+        if (response.status.value !in 200..299) {
+            error(obj?.string("error") ?: obj?.string("message") ?: "附件上传失败")
+        }
+        return UploadedAttachment(
+            path = obj?.string("path").orEmpty(),
+            name = obj?.string("name")?.ifBlank { safeName } ?: safeName,
+            size = (obj?.get("size") as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: file.bytes.size.toLong(),
+        ).also {
+            if (it.path.isBlank()) error("服务端未返回附件路径")
+        }
+    }
+
+    suspend fun sendAssistantMessage(
+        content: String,
+        attachments: List<AssistantPromptAttachment> = emptyList(),
+        route: String = "/mobile",
+    ): AssistantMessageResult {
+        val attachmentJson = JsonArray(
+            attachments.map { attachment ->
+                JsonObject(
+                    mapOf(
+                        "path" to JsonPrimitive(attachment.path),
+                        "name" to JsonPrimitive(attachment.name),
+                        "size" to JsonPrimitive(attachment.size),
+                        "type" to JsonPrimitive(attachment.type),
+                        "mime_type" to JsonPrimitive(attachment.mimeType),
+                    ),
+                )
+            },
+        )
         val body = client.post("$baseUrl/api/assistant/messages") {
             addAuth()
             contentType(ContentType.Application.Json)
             setBody(
-                mapOf(
-                    "content" to content,
-                    "route" to route,
-                    "client_context" to mapOf(
-                        "source" to "momo-mobile",
-                        "route" to route,
+                JsonObject(
+                    mapOf(
+                        "content" to JsonPrimitive(content),
+                        "input_text" to JsonPrimitive(content),
+                        "attachments" to attachmentJson,
+                        "route" to JsonPrimitive(route),
+                        "client_context" to JsonObject(
+                            mapOf(
+                                "source" to JsonPrimitive("momo-mobile"),
+                                "route" to JsonPrimitive(route),
+                            ),
+                        ),
                     ),
                 ),
             )
         }.body<JsonObject>()
         return decodeAssistantMessageResult(body)
+    }
+
+    suspend fun transcribeAssistantAudio(bytes: ByteArray, mimeType: String, fileName: String): String {
+        val safeFileName = fileName.ifBlank { "momo-voice.m4a" }.replace("\"", "")
+        val response = client.post("$baseUrl/api/assistant/transcribe") {
+            addAuth()
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append(
+                            "audio",
+                            bytes,
+                            Headers.build {
+                                append(HttpHeaders.ContentType, mimeType.ifBlank { "application/octet-stream" })
+                                append(HttpHeaders.ContentDisposition, "form-data; name=\"audio\"; filename=\"$safeFileName\"")
+                            },
+                        )
+                    },
+                ),
+            )
+        }
+        val raw = response.bodyAsText()
+        val obj = runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+        if (response.status.value !in 200..299) {
+            error(
+                obj?.string("error")
+                    ?: obj?.string("message")
+                    ?: "语音识别失败，请重新录制",
+            )
+        }
+        return obj?.string("text")?.trim().orEmpty()
     }
 
     suspend fun createClone(issueId: String, title: String, description: String, model: String): Session {
@@ -256,7 +364,7 @@ class MobiusApi(
                 id = obj.string("id") ?: "history-$index",
                 author = author,
                 text = content,
-                time = obj.string("created_at")?.toShortTime() ?: nowShortTime(),
+                time = formatBackendTime(obj.string("created_at")).ifBlank { nowShortTime() },
             )
         }
     }
@@ -304,13 +412,16 @@ class MobiusApi(
 
     private fun parseJsonlChunk(entry: JsonElement?): StreamTextChunk? {
         val obj = entry as? JsonObject ?: return null
-        val text = findText(obj)?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val rawText = findText(obj)?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val author = entryAuthor(obj) ?: return null
+        val (cleanedText, voiceText) = extractVoiceMarker(rawText)
+        if (author == MessageAuthor.Momo && cleanedText.isBlank() && voiceText.isNullOrBlank()) return null
         return StreamTextChunk(
-            id = obj.string("id") ?: obj.string("uuid") ?: "event-${text.hashCode()}-${nowShortTime()}",
+            id = obj.string("id") ?: obj.string("uuid") ?: "event-${rawText.hashCode()}-${nowShortTime()}",
             author = author,
-            text = text,
-            time = obj.string("timestamp")?.toShortTime() ?: nowShortTime(),
+            text = if (author == MessageAuthor.User) rawText else cleanedText,
+            voiceText = voiceText,
+            time = formatBackendTime(obj.string("timestamp") ?: obj.string("created_at") ?: ((obj["payload"] as? JsonObject)?.string("timestamp"))).ifBlank { nowShortTime() },
         )
     }
 
@@ -318,16 +429,43 @@ class MobiusApi(
         val role = obj.string("role")
         val type = obj.string("type") ?: obj.string("kind")
         if (role == "user" || type == "user" || type == "user_input") return MessageAuthor.User
+        if (isProcessOnlyType(role, type)) return null
         if (role == "assistant" || type == "assistant") return MessageAuthor.Momo
         val message = obj["message"] as? JsonObject
-        if (message?.string("role") == "assistant") return MessageAuthor.Momo
-        if (message?.string("role") == "user") return MessageAuthor.User
+        val messageRole = message?.string("role")
+        val messageType = message?.string("type")
+        if (messageRole == "assistant" && !isProcessOnlyType(messageRole, messageType)) return MessageAuthor.Momo
+        if (messageRole == "user") return MessageAuthor.User
         val payload = obj["payload"] as? JsonObject
-        if (payload?.string("role") == "assistant") return MessageAuthor.Momo
-        if (payload?.string("role") == "user") return MessageAuthor.User
-        if (payload?.string("type") == "message" && payload.string("role") == "assistant") return MessageAuthor.Momo
-        if (payload?.string("type") == "output_text" || payload?.string("type") == "text") return MessageAuthor.Momo
+        val payloadRole = payload?.string("role")
+        val payloadType = payload?.string("type")
+        if (payloadRole == "assistant" && !isProcessOnlyType(payloadRole, payloadType)) return MessageAuthor.Momo
+        if (payloadRole == "user") return MessageAuthor.User
+        if (payloadType == "message" && payloadRole == "assistant") return MessageAuthor.Momo
+        if (payloadType == "output_text" || payloadType == "text") return MessageAuthor.Momo
         return null
+    }
+
+    private fun isProcessOnlyType(role: String?, type: String?): Boolean {
+        val t = type?.lowercase()?.trim().orEmpty()
+        if (t in PROCESS_ONLY_TYPES) return true
+        val r = role?.lowercase()?.trim().orEmpty()
+        if (r in PROCESS_ONLY_ROLES) return true
+        return false
+    }
+
+    private fun extractVoiceMarker(raw: String): Pair<String, String?> {
+        val matches = VOICE_MARKER_REGEX.findAll(raw).toList()
+        if (matches.isEmpty()) return raw to null
+        val voiceText = matches.mapNotNull { it.groupValues.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() } }
+            .joinToString("\n")
+            .takeIf { it.isNotBlank() }
+        val cleaned = VOICE_MARKER_REGEX.replace(raw, "")
+            .replace(VOICE_TRAILING_WS_PER_LINE, "\n")
+            .replace(VOICE_MULTI_SPACE, " ")
+            .replace(VOICE_MARKER_BLANK_LINES_REGEX, "\n")
+            .trim()
+        return cleaned to voiceText
     }
 
     private fun findText(obj: JsonObject): String? {
@@ -412,8 +550,37 @@ class MobiusApi(
         return null
     }
 
-    private fun String.toShortTime(): String {
-        val match = Regex("""(\d{2}):(\d{2})""").find(this)
-        return match?.value ?: nowShortTime()
-    }
 }
+
+private val VOICE_MARKER_REGEX = Regex("""PushVoiceToUser\s*\(\s*(["'])([\s\S]*?)(?<!\\)\1\s*\)""")
+private val VOICE_MARKER_LINE_REGEX = Regex(
+    """^[ \t]*PushVoiceToUser\s*\(\s*(["'])([\s\S]*?)(?<!\\)\1\s*\)[ \t]*;?[ \t]*$""",
+    RegexOption.MULTILINE,
+)
+private val VOICE_MARKER_BLANK_LINES_REGEX = Regex("""\n{3,}""")
+private val VOICE_TRAILING_WS_PER_LINE = Regex("""[ \t]+\n""")
+private val VOICE_MULTI_SPACE = Regex("""[ \t]{2,}""")
+
+private val PROCESS_ONLY_TYPES = setOf(
+    "thinking",
+    "thought",
+    "reasoning",
+    "reasoning_summary",
+    "tool_use",
+    "tool_call",
+    "tool_result",
+    "tool_output",
+    "function_call",
+    "function_call_output",
+    "web_search_call",
+    "file_search_call",
+    "computer_call",
+    "computer_call_output",
+    "image_generation_call",
+    "code_interpreter_call",
+    "local_shell_call",
+    "mcp_call",
+    "custom_tool_call",
+    "redacted_thinking",
+)
+private val PROCESS_ONLY_ROLES = setOf("tool", "function")

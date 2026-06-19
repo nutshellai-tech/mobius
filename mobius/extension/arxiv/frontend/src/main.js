@@ -8,7 +8,7 @@ const PRESETS = [
     title: 'Vision-Language-Action',
     query: 'cat:cs.RO AND ("vision-language-action" OR VLA OR "robot foundation model")',
     interval: 360,
-    tone: 'red',
+    tone: 'rose',
   },
   {
     key: 'world',
@@ -32,24 +32,25 @@ const PRESETS = [
     title: 'Agentic Systems',
     query: 'cat:cs.AI AND ("LLM agent" OR "autonomous agent" OR "tool use")',
     interval: 240,
-    tone: 'green',
+    tone: 'teal',
   },
 ];
 
 const FILTERS = [
   { key: 'all', label: '全部' },
-  { key: 'today', label: '今日' },
-  { key: 'saved', label: '收藏' },
+  { key: 'today', label: '今日新增' },
+  { key: 'saved', label: '阅读清单' },
 ];
 
 const state = {
   topics: [],
   currentTopicId: null,
+  selectedPaperId: null,
   papers: [],
   saved: new Set(loadSaved()),
   filter: 'all',
   status: { text: '', kind: '' },
-  formOpen: true,
+  formOpen: false,
   loadingTopics: true,
   loadingPapers: false,
   refreshing: false,
@@ -107,7 +108,7 @@ function isToday(value) {
 
 function fmtTime(value) {
   const date = parseDate(value);
-  if (!date) return '从未更新';
+  if (!date) return '从未同步';
   const diff = Math.max(0, (Date.now() - date.getTime()) / 1000);
   if (diff < 60) return '刚刚';
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
@@ -143,7 +144,7 @@ function currentTopic() {
 
 function visiblePapers() {
   if (state.filter === 'today') {
-    return state.papers.filter((paper) => isToday(paper.published_at || paper.updated_at));
+    return state.papers.filter((paper) => isToday(paper.published_at || paper.created_at));
   }
   if (state.filter === 'saved') {
     return state.papers.filter((paper) => state.saved.has(paper.arxiv_id));
@@ -151,12 +152,37 @@ function visiblePapers() {
   return state.papers;
 }
 
+function selectedPaper(papers = visiblePapers()) {
+  return papers.find((paper) => String(paper.id) === String(state.selectedPaperId))
+    || papers[0]
+    || state.papers[0]
+    || null;
+}
+
+function latestFetchedAt() {
+  const dates = state.topics
+    .map((topic) => parseDate(topic.last_fetched_at))
+    .filter(Boolean)
+    .sort((a, b) => b.getTime() - a.getTime());
+  return dates[0] || null;
+}
+
+function nextRunText() {
+  const topic = currentTopic();
+  if (!topic?.last_fetched_at) return topic ? `每 ${topic.interval_minutes || 60} 分钟` : '选择主题后显示';
+  const last = parseDate(topic.last_fetched_at);
+  if (!last) return `每 ${topic.interval_minutes || 60} 分钟`;
+  const next = new Date(last.getTime() + (topic.interval_minutes || 60) * 60_000);
+  if (next.getTime() <= Date.now()) return '等待调度';
+  return next.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
 function topicStatus(topic) {
   if (topic.last_status === 'error') {
     return {
       className: 'error',
       label: '异常',
-      detail: topic.last_error || '上次拉取失败',
+      detail: topic.last_error || '上次抓取失败',
     };
   }
   if (topic.last_fetched_at) {
@@ -168,21 +194,62 @@ function topicStatus(topic) {
   }
   return {
     className: 'idle',
-    label: '未拉取',
+    label: '待同步',
     detail: `每 ${topic.interval_minutes || 60} 分钟`,
   };
+}
+
+function paperScore(paper, index = 0) {
+  let score = 58;
+  if (isToday(paper.published_at || paper.created_at)) score += 18;
+  if (Array.isArray(paper.web_results) && paper.web_results.length) score += Math.min(12, paper.web_results.length * 4);
+  if (state.saved.has(paper.arxiv_id)) score += 8;
+  score += Math.max(0, 8 - index * 2);
+  return Math.max(35, Math.min(98, score));
+}
+
+function recommendationReasons(paper, topic) {
+  const reasons = [];
+  const query = topic?.query || '';
+  const catMatch = query.match(/cat:([a-zA-Z.-]+)/);
+  if (catMatch) reasons.push(`分类 ${catMatch[1]}`);
+  if (isToday(paper.published_at || paper.created_at)) reasons.push('今日新增');
+  const webCount = Array.isArray(paper.web_results) ? paper.web_results.length : 0;
+  if (webCount) reasons.push(`${webCount} 条外部讨论`);
+  if (state.saved.has(paper.arxiv_id)) reasons.push('已加入阅读清单');
+  if (!reasons.length) reasons.push('命中当前订阅查询');
+  return reasons.slice(0, 3);
+}
+
+function statusSummary() {
+  const latest = latestFetchedAt();
+  if (state.refreshing) return { label: '同步中', detail: '正在拉取 arXiv 与外部讨论', kind: 'syncing' };
+  if (state.status.kind === 'err') return { label: '需要处理', detail: state.status.text || '最近一次操作失败', kind: 'error' };
+  if (latest) return { label: '已同步', detail: fmtTime(latest.toISOString()), kind: 'ok' };
+  return { label: '待配置', detail: '添加主题后开始抓取', kind: 'idle' };
 }
 
 function render() {
   const topic = currentTopic();
   const papers = visiblePapers();
+  const selected = selectedPaper(papers);
+  const errors = state.topics.filter((item) => item.last_status === 'error').length;
+  const todayCount = state.papers.filter((paper) => isToday(paper.published_at || paper.created_at)).length;
+  const status = statusSummary();
+
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">arXiv</span>
-          <span class="brand-rule"></span>
-          <span class="brand-subtitle">research feed</span>
+          <span class="brand-title">研究雷达</span>
+        </div>
+        <div class="top-metrics" aria-label="抓取状态">
+          ${renderTopMetric(status.label, status.detail, status.kind)}
+          ${renderTopMetric('订阅', `${state.topics.length} 个主题`, '')}
+          ${renderTopMetric('今日新增', `${todayCount} 篇`, '')}
+          ${renderTopMetric('下一次', nextRunText(), '')}
+          ${errors ? renderTopMetric('异常', `${errors} 个主题`, 'error') : ''}
         </div>
         <div class="topbar-actions">
           <div id="status" class="statusline ${attr(state.status.kind)}" role="status">${escapeHtml(state.status.text)}</div>
@@ -192,48 +259,48 @@ function render() {
         </div>
       </header>
 
-      <main class="layout">
-        <aside class="sidebar">
-          <section class="preset-block" aria-labelledby="preset-title">
+      <main class="research-layout">
+        <aside class="sidebar" aria-label="订阅主题">
+          <section class="panel preset-block" aria-labelledby="preset-title">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">presets</p>
+                <p class="eyebrow">Presets</p>
                 <h2 id="preset-title">研究模块</h2>
               </div>
-              <span class="mini-count">4</span>
+              <span class="mini-count">${PRESETS.length}</span>
             </div>
             <div class="preset-grid">
               ${PRESETS.map(renderPreset).join('')}
             </div>
           </section>
 
-          <section class="compose-block" aria-labelledby="compose-title">
+          <section class="panel compose-block" aria-labelledby="compose-title">
             <button id="form-toggle" class="fold-button" type="button" aria-expanded="${state.formOpen ? 'true' : 'false'}">
-              <span id="compose-title">添加主题</span>
-              <span>${state.formOpen ? '−' : '+'}</span>
+              <span id="compose-title">添加研究主题</span>
+              <span>${state.formOpen ? '收起' : '新建'}</span>
             </button>
             <form id="topic-form" class="topic-form ${state.formOpen ? '' : 'is-hidden'}">
               <label>
-                <span>名称</span>
+                <span>主题名称</span>
                 <input id="f-name" name="name" maxlength="100" placeholder="例如：LLM 推理">
               </label>
               <label>
-                <span>查询</span>
+                <span>arXiv 查询</span>
                 <textarea id="f-query" name="query" maxlength="500" rows="4" placeholder='cat:cs.CL AND (LLM OR reasoning)'></textarea>
               </label>
               <label>
-                <span>间隔（分钟）</span>
+                <span>抓取间隔（分钟）</span>
                 <input id="f-interval" name="interval" type="number" min="5" max="10080" value="60">
               </label>
-              <button id="f-submit" class="primary-button" type="submit">添加</button>
+              <button id="f-submit" class="primary-button" type="submit">添加主题</button>
             </form>
           </section>
 
-          <section class="topics-block" aria-labelledby="topics-title">
+          <section class="panel topics-block" aria-labelledby="topics-title">
             <div class="section-heading compact">
               <div>
-                <p class="eyebrow">watchlist</p>
-                <h2 id="topics-title">我的主题</h2>
+                <p class="eyebrow">Watchlist</p>
+                <h2 id="topics-title">订阅主题</h2>
               </div>
               <span class="mini-count">${state.topics.length}</span>
             </div>
@@ -244,17 +311,17 @@ function render() {
         </aside>
 
         <section class="stream" aria-labelledby="stream-title">
-          <div class="stream-head">
-            <div>
-              <p class="eyebrow">paper stream</p>
-              <h1 id="stream-title">${topic ? escapeHtml(topic.name) : '选择一个主题'}</h1>
-              <p class="stream-query">${topic ? escapeHtml(topic.query) : '从左栏添加或选择研究主题后开始抓取论文。'}</p>
+          <div class="stream-head panel">
+            <div class="stream-copy">
+              <p class="eyebrow">Paper stream</p>
+              <h1 id="stream-title">${topic ? escapeHtml(topic.name) : '选择一个研究主题'}</h1>
+              <p class="stream-query">${topic ? escapeHtml(topic.query) : '从左侧添加订阅主题，或选择一个预设模块。抓取完成后，这里会变成按时间和相关度整理的论文流。'}</p>
             </div>
             <div class="stream-actions">
               <span class="paper-count">${state.loadingPapers ? '读取中' : `${papers.length}/${state.papers.length} 篇`}</span>
               <button id="refresh-topic" class="secondary-button" type="button" ${topic && !state.refreshing ? '' : 'disabled'}>
                 ${refreshIcon()}
-                <span>${state.refreshing ? '抓取中' : '立即刷新'}</span>
+                <span>${state.refreshing ? '抓取中' : '立即同步'}</span>
               </button>
             </div>
           </div>
@@ -271,10 +338,26 @@ function render() {
             ${renderPapers(papers, topic)}
           </div>
         </section>
+
+        <aside class="insight panel" aria-label="论文洞察">
+          ${renderInsightPanel({ selected, topic, papers })}
+        </aside>
       </main>
     </div>
   `;
   bindEvents();
+}
+
+function renderTopMetric(label, detail, kind) {
+  return `
+    <div class="top-metric ${attr(kind)}">
+      <span class="metric-dot" aria-hidden="true"></span>
+      <span>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </span>
+    </div>
+  `;
 }
 
 function renderPreset(preset) {
@@ -288,10 +371,15 @@ function renderPreset(preset) {
 
 function renderTopics() {
   if (state.loadingTopics) {
-    return '<div class="empty-state small">正在读取主题...</div>';
+    return '<div class="empty-state small">正在读取订阅主题...</div>';
   }
   if (!state.topics.length) {
-    return '<div class="empty-state small">还没有主题。先点一个研究模块，或填写自己的 arXiv 查询。</div>';
+    return `
+      <div class="empty-state small">
+        <strong>先添加一个研究主题</strong>
+        <span>可以选择预设模块，也可以用关键词和 arXiv 分类创建自己的订阅。</span>
+      </div>
+    `;
   }
   return state.topics.map((topic) => {
     const status = topicStatus(topic);
@@ -318,8 +406,9 @@ function renderPapers(papers, topic) {
   if (!topic) {
     return `
       <div class="empty-state hero-empty">
-        <span class="empty-kicker">arXiv client</span>
-        <h2>把固定检索变成可扫读的论文流。</h2>
+        <span class="empty-kicker">Research radar</span>
+        <h2>把固定检索变成可跟进的论文情报台。</h2>
+        <p>订阅关键词或 arXiv 分类，后台定时抓取摘要，并把外部讨论放到同一个阅读流里。</p>
       </div>
     `;
   }
@@ -334,30 +423,47 @@ function renderPapers(papers, topic) {
     `).join('');
   }
   if (!state.papers.length) {
-    return '<div class="empty-state">还没有论文。点“立即刷新”拉取这个主题的最新结果。</div>';
+    return `
+      <div class="empty-state">
+        <strong>这个主题还没有论文</strong>
+        <span>点击“立即同步”拉取最新结果。若持续为空，可以放宽关键词或检查 arXiv 分类。</span>
+      </div>
+    `;
   }
   if (!papers.length) {
-    const label = state.filter === 'today' ? '今日没有匹配论文。' : '还没有收藏论文。';
-    return `<div class="empty-state">${label}</div>`;
+    const label = state.filter === 'today' ? '今日没有匹配论文。' : '阅读清单里还没有当前主题的论文。';
+    return `
+      <div class="empty-state">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${state.filter === 'saved' ? '在论文卡片上点星标后，它会出现在这里。' : '可以切回全部，或稍后等待下一次自动抓取。'}</span>
+      </div>
+    `;
   }
-  return papers.map(renderPaper).join('');
+  return papers.map((paper, index) => renderPaper(paper, index, topic)).join('');
 }
 
-function renderPaper(paper) {
+function renderPaper(paper, index, topic) {
   const arxivId = paper.arxiv_id || 'unknown';
   const saved = state.saved.has(arxivId);
   const authors = normalizeAuthors(paper.authors);
   const webResults = Array.isArray(paper.web_results) ? paper.web_results : [];
   const primaryUrl = paper.url || `https://arxiv.org/abs/${encodeURIComponent(arxivId)}`;
   const abstract = paper.abstract || paper.summary || '';
+  const score = paperScore(paper, index);
+  const reasons = recommendationReasons(paper, topic);
+  const featured = index === 0 && state.filter !== 'saved' ? 'featured' : '';
+  const selected = String(selectedPaperIdSafe()) === String(paper.id) ? 'selected' : '';
   return `
-    <article class="paper-card">
-      <div class="fold" aria-hidden="true">${foldSvg()}</div>
+    <article class="paper-card ${featured} ${selected}">
+      <div class="impact-rail" aria-hidden="true" style="--score:${score}%"></div>
       <div class="paper-topline">
         <a class="arxiv-id" href="${attr(primaryUrl)}" target="_blank" rel="noopener">arXiv:${escapeHtml(arxivId)}</a>
-        <button class="save-button ${saved ? 'saved' : ''}" type="button" data-save-paper="${attr(arxivId)}" aria-label="${saved ? '取消收藏' : '收藏'}" title="${saved ? '取消收藏' : '收藏'}">
-          ${starIcon(saved)}
-        </button>
+        <div class="paper-tools">
+          <span class="score-pill">${score}</span>
+          <button class="save-button ${saved ? 'saved' : ''}" type="button" data-save-paper="${attr(arxivId)}" aria-label="${saved ? '取消收藏' : '加入阅读清单'}" title="${saved ? '取消收藏' : '加入阅读清单'}">
+            ${starIcon(saved)}
+          </button>
+        </div>
       </div>
       <h2 class="paper-title">
         <a href="${attr(primaryUrl)}" target="_blank" rel="noopener">${escapeHtml(paper.title || '(Untitled)')}</a>
@@ -366,21 +472,104 @@ function renderPaper(paper) {
         <span>${escapeHtml(authors)}</span>
         <span>${escapeHtml(fmtPaperDate(paper.published_at))}</span>
       </div>
-      <p class="paper-summary">${escapeHtml(paper.summary || '(无摘要)')}</p>
-      <div class="paper-links">
-        <a href="${attr(primaryUrl)}" target="_blank" rel="noopener">abs</a>
-        <a href="https://arxiv.org/pdf/${attr(arxivId)}" target="_blank" rel="noopener">pdf</a>
-        ${webResults.slice(0, 3).map((item) => `
-          <a href="${attr(item.url || '#')}" target="_blank" rel="noopener">${escapeHtml(item.title || 'web')}</a>
+      <div class="reason-row">
+        ${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join('')}
+      </div>
+      <p class="paper-summary">${escapeHtml(paper.summary || abstract || '(无摘要)')}</p>
+      <div class="paper-actions">
+        <a class="link-pill primary-link" href="${attr(primaryUrl)}" target="_blank" rel="noopener">打开 arXiv</a>
+        <a class="link-pill" href="https://arxiv.org/pdf/${attr(arxivId)}" target="_blank" rel="noopener">PDF</a>
+        <button class="link-pill ghost" type="button" data-preview-paper="${attr(paper.id)}">详情</button>
+        ${webResults.slice(0, 2).map((item) => `
+          <a class="link-pill" href="${attr(item.url || '#')}" target="_blank" rel="noopener">${escapeHtml(item.source || 'web')}</a>
         `).join('')}
       </div>
       ${abstract ? `
         <details class="abstract-block">
-          <summary>原文摘要</summary>
+          <summary>展开原始摘要</summary>
           <p>${escapeHtml(abstract)}</p>
         </details>
       ` : ''}
     </article>
+  `;
+}
+
+function selectedPaperIdSafe() {
+  return selectedPaper()?.id || null;
+}
+
+function renderInsightPanel({ selected, topic, papers }) {
+  if (!topic) {
+    return `
+      <div class="insight-empty">
+        <p class="eyebrow">Insight</p>
+        <h2>等待研究主题</h2>
+        <p>选择左侧主题后，这里会展示今日焦点、外部讨论和当前论文的阅读线索。</p>
+      </div>
+    `;
+  }
+
+  const status = topicStatus(topic);
+  if (!selected) {
+    return `
+      <div class="insight-stack">
+        <div class="insight-header">
+          <p class="eyebrow">Topic status</p>
+          <h2>${escapeHtml(topic.name)}</h2>
+          <span class="insight-status ${attr(status.className)}">${escapeHtml(status.label)} · ${escapeHtml(status.detail)}</span>
+        </div>
+        <div class="empty-state small">同步后会在这里显示重点论文和外部讨论。</div>
+      </div>
+    `;
+  }
+
+  const score = paperScore(selected, Math.max(0, papers.findIndex((paper) => paper.id === selected.id)));
+  const webResults = Array.isArray(selected.web_results) ? selected.web_results : [];
+  const reasons = recommendationReasons(selected, topic);
+  const primaryUrl = selected.url || `https://arxiv.org/abs/${encodeURIComponent(selected.arxiv_id || '')}`;
+
+  return `
+    <div class="insight-stack">
+      <div class="insight-header">
+        <p class="eyebrow">Focused paper</p>
+        <h2>${escapeHtml(selected.title || '未命名论文')}</h2>
+        <div class="score-block">
+          <strong>${score}</strong>
+          <span>推荐热度</span>
+        </div>
+      </div>
+
+      <section class="insight-section">
+        <h3>为什么值得看</h3>
+        <div class="reason-row vertical">
+          ${reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join('')}
+        </div>
+      </section>
+
+      <section class="insight-section">
+        <h3>快速摘要</h3>
+        <p>${escapeHtml(selected.summary || selected.abstract || '暂无摘要。')}</p>
+      </section>
+
+      <section class="insight-section">
+        <h3>外部讨论</h3>
+        ${webResults.length ? `
+          <div class="web-list">
+            ${webResults.slice(0, 4).map((item) => `
+              <a href="${attr(item.url || '#')}" target="_blank" rel="noopener">
+                <strong>${escapeHtml(item.title || item.source || '相关链接')}</strong>
+                <span>${escapeHtml(item.snippet || item.source || '外部来源')}</span>
+              </a>
+            `).join('')}
+          </div>
+        ` : '<p>当前还没有补充讨论。刷新主题时会尝试抓取相关链接。</p>'}
+      </section>
+
+      <section class="insight-actions">
+        <a class="primary-button" href="${attr(primaryUrl)}" target="_blank" rel="noopener">打开 arXiv</a>
+        <button class="secondary-button" type="button" data-save-paper="${attr(selected.arxiv_id)}">${state.saved.has(selected.arxiv_id) ? '移出阅读清单' : '加入阅读清单'}</button>
+      </section>
+    </div>
   `;
 }
 
@@ -406,11 +595,18 @@ function bindEvents() {
   document.querySelectorAll('[data-filter]').forEach((button) => {
     button.addEventListener('click', () => {
       state.filter = button.dataset.filter;
+      state.selectedPaperId = null;
       render();
     });
   });
   document.querySelectorAll('[data-save-paper]').forEach((button) => {
     button.addEventListener('click', () => toggleSaved(button.dataset.savePaper));
+  });
+  document.querySelectorAll('[data-preview-paper]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.selectedPaperId = button.dataset.previewPaper;
+      render();
+    });
   });
   document.getElementById('refresh-topic')?.addEventListener('click', refreshTopic);
 }
@@ -454,6 +650,7 @@ async function loadTopics() {
     state.topics = Array.isArray(data.topics) ? data.topics : [];
     if (state.currentTopicId && !state.topics.some((topic) => topic.id === state.currentTopicId)) {
       state.currentTopicId = null;
+      state.selectedPaperId = null;
       state.papers = [];
     }
     state.loadingTopics = false;
@@ -468,15 +665,17 @@ async function loadTopics() {
 async function selectTopic(id) {
   if (!id) return;
   state.currentTopicId = id;
+  state.selectedPaperId = null;
   state.papers = [];
   state.loadingPapers = true;
   state.filter = 'all';
   state.status = { text: '加载论文...', kind: '' };
   render();
   try {
-    const data = await extCall({ action: 'list_papers', topic_id: id, limit: 50 });
+    const data = await extCall({ action: 'list_papers', topic_id: id, limit: 80 });
     if (!data.ok) throw new Error(data.error || 'unknown');
     state.papers = Array.isArray(data.papers) ? data.papers : [];
+    state.selectedPaperId = state.papers[0]?.id || null;
     state.loadingPapers = false;
     setStatus(`已加载 ${state.papers.length} 篇论文`, 'ok');
   } catch (error) {
@@ -524,6 +723,7 @@ async function deleteTopic(id) {
     if (!data.ok) throw new Error(data.error || 'unknown');
     if (state.currentTopicId === id) {
       state.currentTopicId = null;
+      state.selectedPaperId = null;
       state.papers = [];
     }
     setStatus(`已删除主题 (${data.removed?.papers || 0} 篇论文)`, 'ok');
@@ -542,9 +742,10 @@ async function refreshTopic() {
     const data = await extCall({ action: 'refresh_topic', topic_id: state.currentTopicId });
     if (!data.ok) throw new Error(data.error || 'unknown');
     state.refreshing = false;
-    setStatus(`抓取完成: ${data.inserted || 0}/${data.fetched || 0} 新论文`, 'ok');
+    setStatus(`抓取完成: ${data.inserted || 0}/${data.fetched || 0} 篇新论文`, 'ok');
+    const topicId = state.currentTopicId;
     await loadTopics();
-    await selectTopic(state.currentTopicId);
+    await selectTopic(topicId);
   } catch (error) {
     state.refreshing = false;
     setStatus(`抓取失败: ${error.message}`, 'err');
@@ -569,10 +770,6 @@ function trashIcon() {
 
 function starIcon(saved) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" class="${saved ? 'filled' : ''}"><path d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6-5.4-2.84-5.4 2.84 1.03-6-4.36-4.25 6.03-.88L12 3Z"></path></svg>`;
-}
-
-function foldSvg() {
-  return '<svg viewBox="0 0 44 44" aria-hidden="true"><path d="M0 0h44L0 44V0Z"></path><path d="M9 8h18M9 15h12"></path></svg>';
 }
 
 render();

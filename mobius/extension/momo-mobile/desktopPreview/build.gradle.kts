@@ -38,6 +38,12 @@ configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
                 implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
             }
         }
+        val commonTest by getting {
+            kotlin.srcDir("../shared/src/commonTest/kotlin")
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
         val desktopMain by getting {
             dependencies {
                 implementation("org.jetbrains.compose.desktop:desktop-jvm-linux-x64:1.6.11")

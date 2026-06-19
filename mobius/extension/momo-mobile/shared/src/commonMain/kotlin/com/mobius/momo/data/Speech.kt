@@ -15,6 +15,7 @@ sealed interface SpeechRecognitionEvent {
     data object Ready : SpeechRecognitionEvent
     data class Partial(val text: String) : SpeechRecognitionEvent
     data class Final(val text: String) : SpeechRecognitionEvent
+    data class Audio(val bytes: ByteArray, val mimeType: String, val fileName: String) : SpeechRecognitionEvent
     data class Volume(val level: Int) : SpeechRecognitionEvent
     data class Error(val message: String) : SpeechRecognitionEvent
     data object End : SpeechRecognitionEvent

@@ -13,6 +13,7 @@ attribute float aPhase;
 attribute float aBreathRate;
 attribute float aSize;
 attribute float aColorT;
+attribute float aTwinkleMask;
 
 uniform float uTime;
 uniform float uRadius;
@@ -24,6 +25,7 @@ uniform float uFlowSpeed;
 uniform float uBreathSpeed;
 uniform float uBreathStrength;
 uniform float uFigureScale;
+uniform float uTwinkle;
 uniform vec3  uColors[${PALETTE_MAX}];
 uniform int   uColorCount;
 
@@ -76,12 +78,18 @@ void main() {
 
   float breath = sin(uTime * uBreathSpeed * aBreathRate + aPhase);
   float bright = (1.0 - uBreathStrength) + uBreathStrength * (0.5 + 0.5 * breath);
+
+  // 闪烁：仅对 aTwinkleMask = 1 的点生效；用尖锐脉冲叠加在基础亮度上。
+  float pulseRaw = max(0.0, sin(uTime * (uBreathSpeed + 0.6) + aPhase * 2.3));
+  float sharp = pow(pulseRaw, 8.0);
+  bright += uTwinkle * aTwinkleMask * sharp * 0.95;
+
   vBrightness = bright;
   vColor = samplePalette(fract(aColorT + u * 0.035));
 
   float dist = max(0.1, -mvPos.z);
   float distScale = 380.0 / dist;
-  gl_PointSize = aSize * uDotSize * distScale * (0.72 + 0.3 * bright);
+  gl_PointSize = aSize * uDotSize * distScale * (0.72 + 0.3 * min(bright, 1.8));
 }
 `;
 
@@ -154,7 +162,9 @@ function makeLogoPointCloud(count, opts = {}) {
   const aBreathRate = new Float32Array(count);
   const aSize = new Float32Array(count);
   const aColorT = new Float32Array(count);
+  const aTwinkleMask = new Float32Array(count);
 
+  const twinkleFraction = opts.twinkleFraction ?? 0.32;
   for (let i = 0; i < count; i++) {
     const t = (i + Math.random() * 0.65) / count;
     const s = Math.random() * 2 - 1;
@@ -167,6 +177,7 @@ function makeLogoPointCloud(count, opts = {}) {
     aBreathRate[i] = 0.72 + Math.random() * 0.7;
     aSize[i] = (opts.minSize ?? 0.72) + Math.random() * (opts.sizeRange ?? 0.7);
     aColorT[i] = Math.random();
+    aTwinkleMask[i] = Math.random() < twinkleFraction ? 1.0 : 0.0;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -176,6 +187,7 @@ function makeLogoPointCloud(count, opts = {}) {
   geometry.setAttribute('aBreathRate', new THREE.BufferAttribute(aBreathRate, 1));
   geometry.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
   geometry.setAttribute('aColorT', new THREE.BufferAttribute(aColorT, 1));
+  geometry.setAttribute('aTwinkleMask', new THREE.BufferAttribute(aTwinkleMask, 1));
   geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 100);
 
   const colors = opts.colors || BRAND;
@@ -195,6 +207,7 @@ function makeLogoPointCloud(count, opts = {}) {
       uFigureScale: { value: opts.figureScale ?? 1 },
       uGlow: { value: opts.glow ?? 0.86 },
       uAlpha: { value: opts.alpha ?? 0.95 },
+      uTwinkle: { value: opts.twinkle ?? 0 },
       uColors: { value: padColors(colors) },
       uColorCount: { value: Math.min(PALETTE_MAX, colors.length) },
     },
@@ -418,8 +431,8 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
 
-  const aura = addAura(scene, 16, variant === 'finale' ? 0.16 : 0.2);
-  const stars = createStarField(variant === 'finale' ? 1400 : 1800, 16, BRAND);
+  const aura = addAura(scene, 16, variant === 'finale' ? 0.10 : 0.12);
+  const stars = createStarField(variant === 'finale' ? 900 : 1100, 16, BRAND);
   scene.add(stars);
   const cloud = makeLogoPointCloud(variant === 'finale' ? 3600 : 4200, {
     radius: 5.2,
@@ -429,7 +442,7 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
     breathSpeed: 0.9,
     breathStrength: 0.7,
     glow: 0.95,
-    alpha: 0.78,
+    alpha: 0.5,
     edgeBias: 0.24,
     figureScale: 1,
     colors: BRAND,
@@ -437,10 +450,6 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
   cloud.points.rotation.x = -0.16;
   cloud.points.rotation.z = -0.04;
   scene.add(cloud.points);
-
-  const lineA = makeLine(180, 0x7dd3fc, 0.28);
-  const lineB = makeLine(180, 0xf472b6, 0.18);
-  scene.add(lineA, lineB);
 
   let width = 1;
   let height = 1;
@@ -468,8 +477,6 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
     cloud.points.rotation.y = Math.sin(t * 0.11) * 0.14;
     stars.rotation.y = t * 0.012;
     stars.rotation.x = Math.sin(t * 0.08) * 0.04;
-    updateInfinityLine(lineA, { radius: 5.2, width: 0.78, v: 1, start: t * 0.08, span: Math.PI * 2 });
-    updateInfinityLine(lineB, { radius: 5.2, width: 0.78, v: -1, start: -t * 0.06, span: Math.PI * 2 });
     renderer.render(scene, camera);
     if (reduced) running = false;
   }
@@ -498,105 +505,110 @@ export function initLogoBackdrop(canvas, variant = 'hero') {
 }
 
 export function initTorusOnly(container) {
-  const mini = new MiniScene(container, { cameraPos: [0, 0.25, 4.25], exposure: 1.12 });
+  // 普通圆环：真正的环面 (R, r)，明显体现"内外两面"——
+  // 外圈（cos(v) > 0）用品牌亮色，内圈（cos(v) < 0）用低饱和暗色。
+  const mini = new MiniScene(container, { cameraPos: [0, 0.32, 4.9], exposure: 1.16 });
   const group = new THREE.Group();
-  group.rotation.x = -0.34;
-  group.scale.setScalar(1.18);
+  group.rotation.x = -0.32;
   mini.scene.add(group);
 
-  const ringGeometry = new THREE.BufferGeometry();
-  const count = 900;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const u = (i / count) * Math.PI * 2;
-    const lane = i % 2 === 0 ? 1.02 : 1.42;
-    positions[i * 3] = Math.cos(u) * lane;
-    positions[i * 3 + 1] = Math.sin(u) * lane * 0.36;
-    positions[i * 3 + 2] = Math.sin(u) * 0.38;
-    const c = new THREE.Color(i % 2 === 0 ? '#94a3b8' : '#64748b');
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
-  ringGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  ringGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const ring = new THREE.Points(
-    ringGeometry,
-    new THREE.PointsMaterial({
-      size: 0.046,
+  const R_MAJOR = 1.0;
+  const R_MINOR = 0.36;
+
+  function makeTorusCloud(count, isOuter) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    const palette = isOuter ? BRAND : MUTED;
+    for (let i = 0; i < count; i++) {
+      const u = Math.random() * Math.PI * 2;
+      const vBase = isOuter ? 0 : Math.PI;
+      const v = vBase + (Math.random() - 0.5) * Math.PI * 0.92;
+      const cr = R_MAJOR + R_MINOR * Math.cos(v);
+      pos[i * 3] = cr * Math.cos(u);
+      pos[i * 3 + 1] = R_MINOR * Math.sin(v);
+      pos[i * 3 + 2] = cr * Math.sin(u);
+      const c = new THREE.Color(palette[Math.floor(Math.random() * palette.length)]);
+      const dim = isOuter ? 0.72 + Math.random() * 0.28 : 0.32 + Math.random() * 0.22;
+      col[i * 3] = c.r * dim;
+      col[i * 3 + 1] = c.g * dim;
+      col[i * 3 + 2] = c.b * dim;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const mat = new THREE.PointsMaterial({
+      size: isOuter ? 0.052 : 0.04,
       vertexColors: true,
       transparent: true,
-      opacity: 0.96,
+      opacity: isOuter ? 0.96 : 0.78,
       depthWrite: false,
-    })
-  );
-  group.add(ring);
-
-  const outerLine = makeLine(180, 0x22d3ee, 0.72);
-  const innerLine = makeLine(180, 0xf472b6, 0.42);
-  const traveler = makeTraveler(0xfde047, 0.09);
-  const reset = new THREE.Mesh(
-    new THREE.RingGeometry(1.28, 1.32, 96),
-    new THREE.MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0, side: THREE.DoubleSide })
-  );
-  group.add(outerLine, innerLine, traveler, reset);
-
-  function updateCircle(line, radius, z, offset = 0) {
-    const attr = line.geometry.attributes.position;
-    for (let i = 0; i < attr.count; i++) {
-      const u = offset + (i / Math.max(1, attr.count - 1)) * Math.PI * 2;
-      attr.setXYZ(i, Math.cos(u) * radius, Math.sin(u) * radius * 0.36, Math.sin(u) * z);
-    }
-    attr.needsUpdate = true;
+      blending: THREE.AdditiveBlending,
+    });
+    return new THREE.Points(geo, mat);
   }
-  updateCircle(outerLine, 1.42, 0.38);
-  updateCircle(innerLine, 1.02, 0.38);
+
+  const outerCloud = makeTorusCloud(1300, true);
+  const innerCloud = makeTorusCloud(1100, false);
+  group.add(outerCloud, innerCloud);
+
+  // 旅行点：在外圈表面循环，体现"有尽头、回到原点"
+  const traveler = makeTraveler(0xfde047, 0.062);
+  group.add(traveler);
+
+  const aura = addAura(mini.scene, 3.6, 0.14);
 
   mini.add((t) => {
+    aura.material.uniforms.uTime.value = t;
     group.rotation.y = t * 0.22;
-    ring.rotation.z = t * 0.08;
-    const phase = (t * 0.2) % 1;
-    const u = phase * Math.PI * 2;
-    traveler.position.set(Math.cos(u) * 1.42, Math.sin(u) * 1.42 * 0.36, Math.sin(u) * 0.38);
-    const pulse = Math.max(0, 1 - phase * 10);
-    reset.material.opacity = pulse * 0.32;
-    reset.scale.setScalar(1 + pulse * 0.16);
+    const u = (t * 0.6) % (Math.PI * 2);
+    const cr = R_MAJOR + R_MINOR;
+    traveler.position.set(cr * Math.cos(u), 0, cr * Math.sin(u));
   });
   return mini;
 }
 
 export function initMobiusOnly(container) {
-  const mini = new MiniScene(container, { cameraPos: [0, 0.35, 5.25], exposure: 1.18 });
+  // 莫比乌斯环：唯一的单面带，没有内外之分——
+  // 用更宽的莫比乌斯光带 + 沿边沿走完一整圈才"翻面"的旅行点。
+  const mini = new MiniScene(container, { cameraPos: [0, 0.32, 4.9], exposure: 1.16 });
   const group = new THREE.Group();
-  group.rotation.x = -0.18;
+  group.rotation.x = -0.32;
   mini.scene.add(group);
-  const aura = addAura(mini.scene, 4.6, 0.16);
-  const cloud = makeLogoPointCloud(2400, {
-    radius: 1.45,
-    width: 0.34,
-    dotSize: 0.075,
-    flowSpeed: 0.2,
-    breathSpeed: 1.15,
+
+  const cloud = makeLogoPointCloud(2600, {
+    radius: 1.05,
+    width: 0.46,
+    dotSize: 0.062,
+    flowSpeed: 0.22,
+    breathSpeed: 1.1,
     breathStrength: 0.72,
-    glow: 1.05,
-    edgeBias: 0.3,
+    glow: 1.0,
+    edgeBias: 0.32,
     colors: BRAND,
   });
   group.add(cloud.points);
-  const edge = makeLine(220, 0x7dd3fc, 0.55);
-  const path = makeLine(86, 0xfde047, 0.75);
+
+  // 旅行点：走完 4π 才回到原位（"没有尽头"的视觉隐喻）
+  const path = makeLine(96, 0xfde047, 0.85);
   const traveler = makeTraveler(0xfde047, 0.058);
-  group.add(edge, path, traveler);
-  updateInfinityLine(edge, { radius: 1.45, width: 0.34, v: 1, span: Math.PI * 2 });
+  group.add(path, traveler);
+
+  const aura = addAura(mini.scene, 3.6, 0.16);
 
   mini.add((t) => {
     cloud.uniforms.uTime.value = t;
     aura.material.uniforms.uTime.value = t;
-    group.rotation.y = Math.sin(t * 0.18) * 0.18;
-    const u = (t * 0.88) % (Math.PI * 2);
-    traveler.position.copy(infinityPoint(u, 0.72, { radius: 1.45, width: 0.34 }));
-    updateInfinityLine(path, { radius: 1.45, width: 0.34, v: 0.72, start: u - 0.72, span: 0.72 });
+    group.rotation.y = t * 0.22;
+    // 旅行点走完 4π 才回到原位（"没有尽头"的视觉隐喻）
+    const u = (t * 0.42) % (Math.PI * 4);
+    traveler.position.copy(infinityPoint(u, 0.85, { radius: 1.05, width: 0.46 }));
+    updateInfinityLine(path, {
+      radius: 1.05,
+      width: 0.46,
+      v: 0.85,
+      start: u - 0.6,
+      span: 0.6,
+    });
   });
   return mini;
 }
@@ -609,61 +621,69 @@ export function initTrinityMobius(container, mode) {
 
   const isStars = mode === 'stars';
   const isDimension = mode === 'dimension';
-  const cloud = makeLogoPointCloud(isStars ? 2100 : 1550, {
+  const isLoop = mode === 'loop';
+
+  // 点云本体：实线轮廓已移除，仅靠光点表达形态。
+  const cloud = makeLogoPointCloud(isStars ? 2400 : (isDimension ? 1900 : 1550), {
     radius: 1.32,
     width: isStars ? 0.3 : 0.32,
     dotSize: isStars ? 0.06 : 0.065,
-    flowSpeed: mode === 'loop' ? 0.25 : 0.12,
-    breathSpeed: isStars ? 1.75 : 1.05,
-    breathStrength: isStars ? 0.88 : 0.68,
-    glow: isStars ? 1.18 : 0.95,
-    edgeBias: mode === 'loop' ? 0.34 : 0.2,
+    flowSpeed: isLoop ? 0.25 : (isDimension ? 0.16 : 0.12),
+    breathSpeed: isStars ? 1.4 : 1.05,
+    breathStrength: isStars ? 0.55 : 0.68,
+    glow: isStars ? 1.1 : 0.95,
+    edgeBias: isLoop ? 0.34 : 0.2,
+    twinkle: isStars ? 0.85 : 0,
+    twinkleFraction: isStars ? 0.28 : 0,
     colors: BRAND,
   });
   group.add(cloud.points);
 
   const aura = addAura(mini.scene, 3.2, isStars ? 0.1 : 0.12);
-  const orbit = makeLine(180, isDimension ? 0xec4899 : 0x7dd3fc, 0.38);
-  const trail = makeLine(72, isDimension ? 0xf472b6 : 0xfde047, 0.72);
-  const traveler = makeTraveler(isDimension ? 0xf472b6 : 0xfde047, 0.045);
-  group.add(orbit, trail, traveler);
+
+  // 仅 loop 模式保留旅行小球；dimension / stars 不要小球。
+  let traveler = null;
+  if (isLoop) {
+    traveler = makeTraveler(0xfde047, 0.05);
+    group.add(traveler);
+  }
 
   let stars = null;
   if (isStars) {
-    stars = createStarField(760, 3.5, BRAND);
+    stars = createStarField(900, 3.8, BRAND);
     stars.material.size = 0.012;
     stars.material.opacity = 0.42;
     mini.scene.add(stars);
   }
 
   mini.add((t) => {
-    const morph = isDimension ? (0.5 + 0.5 * Math.sin(t * 0.65 - Math.PI / 2)) : 1;
-    const twist = isDimension ? THREE.MathUtils.lerp(0.12, 1.18, morph) : 1;
-    const zScale = isDimension ? THREE.MathUtils.lerp(0.28, 1.15, morph) : 1;
+    // dimension 模式：从 2D 圆环（twist≈0）平滑旋转粘贴到 3D 莫比乌斯环（twist=1）。
+    let twist = 1;
+    let zScale = 1;
+    if (isDimension) {
+      // 0→π：从 0 渐升到 1（粘贴形成）；π→2π：从 1 回到 0（展开复位）。
+      const cycle = (t * 0.55) % (Math.PI * 2);
+      const morph = 0.5 - 0.5 * Math.cos(cycle);
+      twist = THREE.MathUtils.lerp(0.02, 1.15, morph);
+      zScale = THREE.MathUtils.lerp(0.18, 1.1, morph);
+    }
     cloud.uniforms.uTime.value = t;
     cloud.uniforms.uTwist.value = twist;
     cloud.uniforms.uZScale.value = zScale;
     aura.material.uniforms.uTime.value = t;
-    group.rotation.y = t * (mode === 'loop' ? 0.2 : 0.13);
+    group.rotation.y = t * (isLoop ? 0.2 : 0.13);
     group.rotation.z = isDimension ? Math.sin(t * 0.45) * 0.08 : 0;
-    updateInfinityLine(orbit, { radius: 1.32, width: isStars ? 0.3 : 0.32, twist, zScale, v: 1, span: Math.PI * 2 });
 
-    const u = (t * (mode === 'loop' ? 0.92 : 0.68)) % (Math.PI * 2);
-    const v = isDimension ? Math.sin(u * 0.5) * 0.72 : 0.74;
-    traveler.position.copy(infinityPoint(u, v, { radius: 1.32, width: isStars ? 0.3 : 0.32, twist, zScale }));
-    updateInfinityLine(trail, {
-      radius: 1.32,
-      width: isStars ? 0.3 : 0.32,
-      twist,
-      zScale,
-      v,
-      start: u - 0.62,
-      span: 0.62,
-    });
+    // loop 模式：旅行小球沿莫比乌斯带表面环行。
+    if (traveler) {
+      const u = (t * 0.92) % (Math.PI * 2);
+      traveler.position.copy(infinityPoint(u, 0.74, { radius: 1.32, width: 0.32, twist, zScale }));
+    }
+
     if (stars) {
       stars.rotation.y = t * 0.05;
       stars.rotation.x = Math.sin(t * 0.2) * 0.08;
-      stars.material.opacity = 0.34 + 0.14 * Math.sin(t * 0.9);
+      stars.material.opacity = 0.34 + 0.12 * Math.sin(t * 0.9);
     }
   });
   return mini;

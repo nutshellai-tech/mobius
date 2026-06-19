@@ -2,7 +2,6 @@
 // 包含：滚动揭示 / 顶部导航明暗切换 / Hero 与 Finale 的莫比乌斯环粒子背景
 //       概念对比与三重特性的 Three.js 3D 场景
 
-import { extCall } from '/extension/_sdk/ext.js';
 import { initLogoBackdrop, initTorusOnly, initMobiusOnly, initTrinityMobius } from './mobius3d.js';
 
 /* ---------- 1. 滚动揭示 ---------- */
@@ -63,20 +62,6 @@ const sceneObserver = new IntersectionObserver((entries) => {
 }, { threshold: 0.05 });
 sceneRegistry.forEach((s) => sceneObserver.observe(s.el));
 
-/* ---------- 4. 右上角身份徽标 ---------- */
-(async () => {
-  const el = document.getElementById('identity');
-  if (!el) return;
-  try {
-    const r = await extCall({ action: 'whoami' });
-    if (r && r.ok && r.display_name) {
-      el.textContent = `· ${r.display_name}`;
-    }
-  } catch {
-    el.textContent = '';
-  }
-})();
-
 /* ---------- 6. 7×24 项目运行热力图 ---------- */
 // 7 天 × 24 小时 = 168 格，工作时段（9-22）密集，凌晨稀疏；4 个项目循环占用，部分格子空置
 (function buildHeatmap() {
@@ -114,3 +99,16 @@ sceneRegistry.forEach((s) => sceneObserver.observe(s.el));
   }
   grid.appendChild(frag);
 })();
+
+/* ---------- 7. 视频展示页：等用户给路径后接入 ---------- */
+// 用法：window.setShowcaseVideo('json-track', '/path/to/video.mp4')
+//      或直接在 index.html 的 <video> 上写 src，并去掉父节点 .placeholder 类。
+window.setShowcaseVideo = function (slot, url) {
+  const wrap = document.querySelector(`.showcase-video[data-video-slot="${slot}"]`);
+  if (!wrap) return false;
+  const video = wrap.querySelector('video');
+  if (!video) return false;
+  video.src = url;
+  wrap.classList.remove('placeholder');
+  return true;
+};

@@ -62,6 +62,15 @@ data class AuthConfig(
 )
 
 @Serializable
+data class SessionModelOption(
+    val key: String = "",
+    val label: String = "",
+    val title: String = "",
+    val sub: String = "",
+    val backend: String = "",
+)
+
+@Serializable
 data class AssistantMessageResult(
     val ok: Boolean = false,
     val created: Boolean = false,
@@ -87,6 +96,7 @@ data class ChatMessage(
     val author: MessageAuthor,
     val text: String,
     val time: String,
+    val voiceText: String? = null,
 )
 
 data class StreamTextChunk(
@@ -94,6 +104,7 @@ data class StreamTextChunk(
     val author: MessageAuthor,
     val text: String,
     val time: String,
+    val voiceText: String? = null,
 )
 
 data class AssistantSnapshot(

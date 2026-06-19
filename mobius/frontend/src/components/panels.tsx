@@ -2439,6 +2439,7 @@ function MigrationExportTab() {
   const [bundleSummary, setBundleSummary] = useState<{ total: number; memories: number; skills: number; bytes: number } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [scopeView, setScopeView] = useState<'self' | 'all'>('self')
 
   const refresh = async () => {
     setLoading(true)
@@ -2515,9 +2516,14 @@ function MigrationExportTab() {
 
   const totalSelected = selectedMemoryIds.size + selectedSkillIds.size
 
+  const visibleProjectScopes =
+    scopeView === 'all'
+      ? (inventory?.project_scopes ?? []).filter((s) => s.memories.length > 0 || s.skills.length > 0)
+      : []
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={refresh}
@@ -2527,7 +2533,31 @@ function MigrationExportTab() {
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           刷新清单
         </button>
-        <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+        <div className="flex rounded-md border border-[var(--border-color)] p-0.5">
+          <button
+            type="button"
+            onClick={() => setScopeView('self')}
+            className="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] font-medium transition-colors"
+            style={{
+              background: scopeView === 'self' ? 'var(--bg-hover)' : 'transparent',
+              color: scopeView === 'self' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
+          >
+            显示自己
+          </button>
+          <button
+            type="button"
+            onClick={() => setScopeView('all')}
+            className="inline-flex h-7 items-center gap-1 rounded px-2.5 text-[12px] font-medium transition-colors"
+            style={{
+              background: scopeView === 'all' ? 'var(--bg-hover)' : 'transparent',
+              color: scopeView === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
+          >
+            显示全部
+          </button>
+        </div>
+        <span className="text-[12px] ml-auto" style={{ color: 'var(--text-muted)' }}>
           已勾选 {totalSelected} 条 (Memory {selectedMemoryIds.size} / Skill {selectedSkillIds.size})
         </span>
       </div>
@@ -2560,7 +2590,7 @@ function MigrationExportTab() {
             onBulkSkill={(ids, sel) => bulkSet(selectedSkillIds, setSelectedSkillIds, ids, sel)}
           />
 
-          {inventory.project_scopes.map((scope) => (
+          {visibleProjectScopes.map((scope) => (
             <MigrationScopeBlock
               key={scope.project_id}
               title={`项目: ${scope.project_name}`}

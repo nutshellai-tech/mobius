@@ -292,6 +292,76 @@ function appendMobiusPromptEntry({ jsonlPath, ...entryOpts }) {
   return { filePath, entry }
 }
 
+function buildMobiusErrorEntry({
+  sessionId,
+  agentSessionId,
+  cwd,
+  backendName,
+  error,
+}) {
+  const ts = error?.capturedAt || new Date().toISOString()
+  const message = String(error?.message || '').slice(0, 4000)
+  return {
+    parentUuid: null,
+    isSidechain: false,
+    type: 'error',
+    message: {
+      role: 'error',
+      content: message,
+    },
+    uuid: crypto.randomUUID(),
+    timestamp: ts,
+    permissionMode: 'bypassPermissions',
+    userType: 'external',
+    entrypoint: 'mobius',
+    cwd: cwd || null,
+    sessionId: agentSessionId || sessionId,
+    version: `mobius-jsonl/${MOBIUS_JSONL_VERSION}`,
+    mobius: {
+      schema_version: MOBIUS_JSONL_VERSION,
+      source: 'agent.error_scan',
+      kind: 'recent_error',
+      backend: backendName || null,
+      session_id: sessionId || null,
+      agent_session_id: agentSessionId || null,
+      raw_line: error?.rawLine || null,
+      captured_at: ts,
+    },
+  }
+}
+
+function appendMobiusErrorEntry({ jsonlPath, ...entryOpts }) {
+  const filePath = mobiusJsonlPathOf(jsonlPath)
+  if (!filePath) throw new Error('缺少原始 JSONL 路径, 无法写入 mobius JSONL')
+  const entry = buildMobiusErrorEntry(entryOpts)
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.appendFileSync(filePath, JSON.stringify(entry) + '\n')
+  return { filePath, entry }
+}
+
+// 返回 .mobius.jsonl 末条 entry 的 type; 文件不存在/为空/解析失败 → null.
+// 用于 getRecentError 触发条件的去重判断 (末条已经是 error 就不再重复扫描写入).
+function readLastMobiusEntryType(jsonlPath) {
+  const filePath = mobiusJsonlPathOf(jsonlPath)
+  if (!filePath) return null
+  let stat
+  try { stat = fs.statSync(filePath) } catch { return null }
+  if (!stat.size) return null
+  // 只读末 8KB 找最后一行; 单条 entry 通常远小于这个大小.
+  const len = Math.min(stat.size, 8 * 1024)
+  const buf = Buffer.alloc(len)
+  const fd = fs.openSync(filePath, 'r')
+  try { fs.readSync(fd, buf, 0, len, stat.size - len) } finally { fs.closeSync(fd) }
+  const lines = buf.toString('utf8').split('\n').filter(Boolean)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const e = JSON.parse(lines[i])
+      if (e && typeof e === 'object' && typeof e.type === 'string') return e.type
+    } catch {}
+  }
+  return null
+}
+
 module.exports = {
   mobiusJsonlPathOf,
   readMergedJsonlHistory,
@@ -301,6 +371,9 @@ module.exports = {
   watchMergedJsonl,
   buildMobiusUserEntry,
   appendMobiusPromptEntry,
+  buildMobiusErrorEntry,
+  appendMobiusErrorEntry,
+  readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 }

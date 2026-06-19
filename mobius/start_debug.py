@@ -4,9 +4,9 @@
 #   │ 项目           │ 值                                                                  │
 #   ├────────────────┼─────────────────────────────────────────────────────────────────────┤
 #   │ 前端编译后在哪  │ debug 模式不编译前端；无编译产物                                    │
-#   │ 后端编译后在哪  │ 无编译产物，后端直接跑源码：/home/user/imac-test/mobius/server.js │
-#   │ 前端运行 cwd   │ /home/user/imac-test/mobius/frontend                              │
-#   │ 后端运行 cwd   │ /home/user/imac-test/mobius                                       │
+#   │ 后端编译后在哪  │ 无编译产物，后端直接跑源码：$APP_DIR/mobius/server.js │
+#   │ 前端运行 cwd   │ $APP_DIR/mobius/frontend                              │
+#   │ 后端运行 cwd   │ $APP_DIR/mobius                                       │
 #   │ 前端运行命令    │ npm run dev -- --host "$VITE_HOST"                                  │
 #   │ 后端运行命令    │ node --watch server.js                                              │
 #   └────────────────┴─────────────────────────────────────────────────────────────────────┘

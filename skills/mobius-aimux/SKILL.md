@@ -37,7 +37,7 @@ If the host is SSH-reachable, just use `aimux new --remote <ssh-host>` — no br
 
 ## Architecture (one paragraph)
 
-The broker runs on this server at `127.0.0.1:${AIMUX_BRIDGE_PORT}` (default 45615), managed by PM2 as `imac-mobius-bridge`. External clients can't reach it directly (it binds localhost only); they connect to `https://cloud-17.agent-matrix.com/aimux_bridge/*` instead, which mobius reverse-proxies to the broker. The proxy swaps the caller's **mobius JWT** for the **broker's internal Bearer token** (read from `runtime.json`) before forwarding. The broker then relays RPCs (`session.create`, `session.send_keys`, `session.capture`, `session.kill`, file ops) to the client over an SSE event stream that the client holds open. The client runs the command locally and POSTs the result back via `/client/result`.
+The broker runs on this server at `127.0.0.1:${AIMUX_BRIDGE_PORT}` (default 45615), managed by PM2 as `imac-mobius-bridge`. External clients can't reach it directly (it binds localhost only); they connect to `https://mobius.example.com/aimux_bridge/*` instead, which mobius reverse-proxies to the broker. The proxy swaps the caller's **mobius JWT** for the **broker's internal Bearer token** (read from `runtime.json`) before forwarding. The broker then relays RPCs (`session.create`, `session.send_keys`, `session.capture`, `session.kill`, file ops) to the client over an SSE event stream that the client holds open. The client runs the command locally and POSTs the result back via `/client/result`.
 
 ```
 Windows / external box           this server
@@ -53,7 +53,7 @@ aimux reverse connect   ──HTTPS──> cloud-17 → mobius :45616 → broker
 1. **Broker is running.** Check: `pm2 list | grep imac-mobius-bridge` → `online`. Logs at `/tmp/mobius-bridge.log`.
 2. **Client has reverse-connected.** The user got the command from the in-app "AimuxGuide" modal (top-right user menu → aimux). The command shape is:
    ```
-   aimux reverse connect https://cloud-17.agent-matrix.com/aimux_bridge \
+   aimux reverse connect https://mobius.example.com/aimux_bridge \
      --identifier <name> --token <mobius JWT>
    ```
    Success output on the client: `connected bridge remote '<name>'; profiles=...; default=...`.
@@ -66,7 +66,7 @@ The system `aimux` CLI (`~/.local/bin/aimux`) defaults to `~/.aimux/bridge/runti
 Set it before any `aimux` command:
 
 ```bash
-export AIMUX_BRIDGE_RUNTIME=/home/user/imac-test/protected_data/aimux-bridge/runtime.json
+export AIMUX_BRIDGE_RUNTIME=$APP_DIR/protected_data/aimux-bridge/runtime.json
 ```
 
 Verify the broker is reachable and the client is online:
@@ -164,7 +164,7 @@ Paths use the client OS convention (Windows: `C:\Users\...` or `\\wsl$\...`; Uni
 Verified end-to-end on 2026-06-17. The user pasted into chat:
 
 > ```
-> aimux reverse connect https://cloud-17.agent-matrix.com/aimux_bridge --identifier my-windows-boxx --token <JWT>
+> aimux reverse connect https://mobius.example.com/aimux_bridge --identifier my-windows-boxx --token <JWT>
 > connected bridge remote 'my-windows-boxx'; profiles=cmd,powershell,mingw64; default=cmd
 > ```
 >
@@ -173,7 +173,7 @@ Verified end-to-end on 2026-06-17. The user pasted into chat:
 The agent (on this server) responded with:
 
 ```bash
-export AIMUX_BRIDGE_RUNTIME=/home/user/imac-test/protected_data/aimux-bridge/runtime.json
+export AIMUX_BRIDGE_RUNTIME=$APP_DIR/protected_data/aimux-bridge/runtime.json
 
 # 1. Verify client is online
 TOK=$(python3 -c "import json;print(json.load(open('$AIMUX_BRIDGE_RUNTIME'))['token'])")
@@ -244,4 +244,4 @@ The broker speaks a small HTTP protocol; you usually don't need these (the `aimu
 | `POST /client/register` | broker token | Client registration (called by `aimux reverse connect`) |
 | `POST /client/result` | broker token | Client reports RPC result |
 
-Broker token comes from `runtime.json` (`token` field). External callers don't use this token — they use a mobius JWT against `https://cloud-17.agent-matrix.com/aimux_bridge/*`, and the mobius proxy swaps it for the broker token internally.
+Broker token comes from `runtime.json` (`token` field). External callers don't use this token — they use a mobius JWT against `https://mobius.example.com/aimux_bridge/*`, and the mobius proxy swaps it for the broker token internally.

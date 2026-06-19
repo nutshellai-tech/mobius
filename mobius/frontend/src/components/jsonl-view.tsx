@@ -85,6 +85,7 @@ const TYPE_THEME: Record<string, { dot: string; border: string; bg: string; text
   turn_context:           { dot: 'bg-amber-400',  border: 'border-amber-500/30', bg: 'bg-amber-500/[0.04]',  text: 'text-amber-300',  label: 'turn' },
   event_msg:              { dot: 'bg-cyan-400',   border: 'border-cyan-500/30',  bg: 'bg-cyan-500/[0.04]',   text: 'text-cyan-300',   label: 'event' },
   response_item:          { dot: 'bg-blue-400',   border: 'border-blue-500/30',  bg: 'bg-blue-500/[0.04]',   text: 'text-blue-300',   label: 'response' },
+  error:                  { dot: 'bg-red-500',    border: 'border-red-500/50',   bg: 'bg-red-500/[0.10]',    text: 'text-red-200',    label: 'error' },
 }
 const DEFAULT_THEME = { dot: 'bg-gray-500', border: 'border-gray-500/30', bg: 'bg-gray-500/[0.04]', text: 'text-gray-400', label: 'entry' }
 // 特例: assistant 里带 name:"Edit" 的 tool_use 卡片 — 用 indigo (与 assistant 蓝相邻但可区分),
@@ -883,10 +884,11 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
   const [mode, setMode] = useState<CardMode>(canCode ? 'code' : canCompact ? 'compact' : 'field')
 
   // 卡片展开态受控于本地 state, 跨父组件重渲染 (实时轮询追加 entry) 保持不变.
-  // 能精简/能代码化的卡片总是默认展开, 父组件 defaultExpanded 仍能强制展开其它卡片.
+  // 能精简/能代码化的卡片总是默认展开, error 卡片 (TUI 扫描发现的 agent 错误) 也强制展开,
+  // 父组件 defaultExpanded 仍能强制展开其它卡片.
   // 用户手动折叠 → onToggle 写回 state, 此后重渲染不再强制掀开.
   const [open, setOpen] = useState<boolean>(
-    (canCompact || canCode) || !!defaultExpanded
+    (canCompact || canCode || type === 'error') || !!defaultExpanded
   )
   // 精简模式复制按钮反馈: 点击后短暂显示「已复制 ✓」约 1 秒后还原
   const [copied, setCopied] = useState<boolean>(false)
@@ -950,9 +952,11 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
           ) : mode === 'code' && writeCall ? (
             <JsonEntryWritePreview writeCall={writeCall} />
           ) : mode === 'compact' && canCompact && !canCode ? (
-            <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
-              <CompactMarkdown text={headerSummary.full} />
-            </Suspense>
+            <div className="max-h-[60vh] overflow-y-auto pr-1">
+              <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
+                <CompactMarkdown text={headerSummary.full} />
+              </Suspense>
+            </div>
           ) : (
             Object.entries(entry).map(([k, v]) => <KeyNode key={k} k={k} v={v} depth={0} />)
           )}
@@ -1201,6 +1205,7 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   if (t === 'queue-operation') return clip(entry.operation || '', HEADER_SHORT_LIMIT)
   if (t === 'system') return clip(entry.subtype || '', HEADER_SHORT_LIMIT)
   if (t === 'last-prompt') return clip(String(entry.lastPrompt || ''), HEADER_SHORT_LIMIT)
+  if (t === 'error') return clip(String(msg?.content || ''), HEADER_SHORT_LIMIT)
   return clip('', HEADER_SHORT_LIMIT)
 }
 

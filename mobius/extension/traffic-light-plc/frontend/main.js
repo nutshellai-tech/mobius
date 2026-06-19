@@ -129,7 +129,8 @@ function renderLights() {
     const dir = el.dataset.dir;
     const key = `${arm}-${dir}`;
     const c = colorMap[key] || 0;
-    el.classList.add(colorClass(c));
+    const cls = colorClass(c);
+    if (cls) el.classList.add(cls);
     el.dataset.color = c === 1 ? 'red' : c === 2 ? 'yellow' : c === 3 ? 'green' : 'off';
   }
 }
@@ -249,6 +250,8 @@ function flash(btn) {
 btnStart.addEventListener('click', () => {
   flash(btnStart);
   state.i00 = true;
+  // 人机输入立即触发一次 PLC 扫描，避免短脉冲落在两个动画扫描周期之间。
+  plcScan();
   // 模拟真实按钮的弹起: 50ms 后释放
   setTimeout(() => { state.i00 = false; }, 80);
 });

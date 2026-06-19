@@ -18,6 +18,8 @@ const { gitTopLevel, isGitRepoRoot, resolveSessionWorkspace } = require('../serv
 const {
   countMergedJsonl,
   readMergedJsonlSlice,
+  appendMobiusErrorEntry,
+  readLastMobiusEntryType,
   DEFAULT_HISTORY_TAIL,
   MAX_HISTORY_FETCH,
 } = require('../services/mobius-jsonl');
@@ -874,6 +876,34 @@ router.get('/:id/status', auth, (req, res) => {
     jobAccomplished = backend.isJobGoalAccomplished(req.params.id);
     jobFailed = backend.isFailed(req.params.id);
   }
+
+  // 错误扫描: agent 进程在但当前不在 turn 中 (isWorking=false), 且 .mobius.jsonl
+  // 末条不是 error (去重) 时, 调 backend.getRecentError 扫 TUI 屏幕.
+  // 命中则追加一条 type:'error' 到 .mobius.jsonl, 前端经 SSE 自然收到并以红色卡片渲染.
+  // tmux-claude-code 的 getRecentError 恒 null, 整段自动跳过.
+  if (alive && !working) {
+    try {
+      const jsonlPath = backend._lookupPersistedJsonlPath(req.params.id)
+      if (jsonlPath && readLastMobiusEntryType(jsonlPath) !== 'error') {
+        const err = backend.getRecentError(req.params.id)
+        if (err) {
+          const p = backend._lookupPersistedEntry(req.params.id) || {}
+          appendMobiusErrorEntry({
+            jsonlPath,
+            sessionId: req.params.id,
+            agentSessionId: p.agentSessionId || null,
+            cwd: p.cwd || null,
+            backendName: backend.name,
+            error: err,
+          })
+          console.log(`[sessions/status] error_scan hit sid=${req.params.id} backend=${backend.name} msg="${String(err.message).slice(0, 120)}"`)
+        }
+      }
+    } catch (e) {
+      console.warn(`[sessions/status] error_scan failed sid=${req.params.id}: ${e.message}`)
+    }
+  }
+
   res.json({
     session_id: req.params.id,
     alive,

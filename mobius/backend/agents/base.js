@@ -20,6 +20,7 @@
  *   getAgentRawThoughtStream(sessionId, listener, opts) → Unsubscribe
  *   isJobGoalAccomplished(sessionId) → boolean
  *   isFailed(sessionId) → boolean
+ *   getRecentError(sessionId) → false | { message, rawLine, capturedAt }
  */
 const fs = require('fs')
 const path = require('path')
@@ -180,6 +181,15 @@ class AgentBackend {
   // forgotten-flag-scanner 自动提醒文案的第 (1) 条). 据"failed.flag 是否存在"
   // 判断. 基类无 cwd 上下文, 默认 false. tmux-claude-code 按 flag 文件 override.
   isFailed(_sessionId) { return false }
+
+  // 近期错误: 扫 TUI 屏幕 / jsonl 找最近一条 agent 报错.
+  // 返回 null = 无错误; 返回 { message, rawLine, capturedAt } = 命中错误.
+  // 基类无 UI / jsonl 上下文, 默认 null.
+  // 子类按需 override:
+  //   - tmux-claude-code: Claude TUI 不暴露错误通道, 沿用 null.
+  //   - tmux-codex: tmux capture-pane 扫 Codex ErrorEvent 的 ■ (U+25A0) 前缀,
+  //                 辅以 ANSI \x1b[31m 红色判定 (见 tmux-codex.js).
+  getRecentError(_sessionId) { return null }
 }
 
 module.exports = { AgentBackend }

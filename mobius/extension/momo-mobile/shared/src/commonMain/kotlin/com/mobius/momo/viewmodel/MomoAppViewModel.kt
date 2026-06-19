@@ -1,8 +1,20 @@
 package com.mobius.momo.viewmodel
 
+import com.mobius.momo.data.FilePicker
+import com.mobius.momo.data.AssistantPromptAttachment
 import com.mobius.momo.data.MobiusApi
+import com.mobius.momo.data.PickedFile
 import com.mobius.momo.data.SecureStorage
+import com.mobius.momo.data.SpeechPermissionController
+import com.mobius.momo.data.SpeechPermissionStatus
+import com.mobius.momo.data.SpeechRecognitionEvent
+import com.mobius.momo.data.SpeechRecognizer
+import com.mobius.momo.data.TextToSpeech
+import com.mobius.momo.data.createFilePicker
 import com.mobius.momo.data.createSecureStorage
+import com.mobius.momo.data.createSpeechPermissionController
+import com.mobius.momo.data.createSpeechRecognizer
+import com.mobius.momo.data.createTextToSpeech
 import com.mobius.momo.data.nowShortTime
 import com.mobius.momo.domain.AssistantSnapshot
 import com.mobius.momo.domain.AssistantWorkspace
@@ -10,6 +22,7 @@ import com.mobius.momo.domain.ChatMessage
 import com.mobius.momo.domain.MessageAuthor
 import com.mobius.momo.domain.Project
 import com.mobius.momo.domain.Session
+import com.mobius.momo.domain.SessionModelOption
 import com.mobius.momo.domain.StreamTextChunk
 import com.mobius.momo.domain.User
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +55,14 @@ enum class ThemeMode {
     Dark,
 }
 
+enum class ThemePalette(val label: String) {
+    Default("默认蓝紫"),
+    Aurora("极光"),
+    Mint("薄荷"),
+    Coral("珊瑚"),
+    Gold("金色"),
+}
+
 data class UiState(
     val screen: AppScreen = AppScreen.Login,
     val loginStep: LoginStep = LoginStep.Username,
@@ -55,6 +76,8 @@ data class UiState(
     val activeSessionId: String = "",
     val activeSessionTitle: String = "我的主小莫",
     val input: String = "",
+    val composerInputMode: ComposerInputMode = ComposerInputMode.Text,
+    val attachments: List<PendingAttachment> = emptyList(),
     val loading: Boolean = false,
     val typing: Boolean = false,
     val menuOpen: Boolean = false,
@@ -62,10 +85,24 @@ data class UiState(
     val cloneTitle: String = "",
     val cloneDescription: String = "",
     val cloneModel: String = "codex",
+    val cloneModelOptions: List<SessionModelOption> = listOf(
+        SessionModelOption("codex", "GPT-5.5 (Codex)", sub = "默认代码任务模型", backend = "tmux-codex"),
+        SessionModelOption("opus", "Opus", sub = "Claude Code 高能力模型", backend = "tmux-claude-code"),
+    ),
     val toast: String? = null,
     val themeMode: ThemeMode = ThemeMode.System,
+    val themePalette: ThemePalette = ThemePalette.Default,
     val pushEnabled: Boolean = true,
     val ttsEnabled: Boolean = true,
+    val sendingMessage: Boolean = false,
+    val speechPermissionGranted: Boolean = false,
+    val speechPermissionDenied: Boolean = false,
+    val voiceRecording: Boolean = false,
+    val voiceTranscribing: Boolean = false,
+    val voiceCanceling: Boolean = false,
+    val voiceTranscript: String = "",
+    val voiceVolumeLevel: Int = 0,
+    val ttsSpeakingMessageId: String? = null,
     val passwordRequired: Boolean = false,
 )
 
@@ -73,16 +110,20 @@ private fun sampleMessages(): List<ChatMessage> = listOf(
     ChatMessage("hello-momo", MessageAuthor.Momo, "你好呀，我是小莫。有什么可以帮你的吗？", "10:23"),
 )
 
-private const val WAITING_ASSISTANT_TEXT = "小莫正在回复..."
-
 class MomoAppViewModel(
     private val storage: SecureStorage = createSecureStorage(),
+    private val filePicker: FilePicker = createFilePicker(),
+    private val speechPermissionController: SpeechPermissionController = createSpeechPermissionController(),
+    private val speechRecognizer: SpeechRecognizer = createSpeechRecognizer(),
+    private val textToSpeech: TextToSpeech = createTextToSpeech(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val api = MobiusApi(storage = storage, onUnauthorized = { logoutFrom401() })
     private var streamJob: Job? = null
     private var toastJob: Job? = null
     private var snapshotPollJob: Job? = null
+    private var voiceTimeoutJob: Job? = null
+    private var voiceCommitJob: Job? = null
     private var sseHistoryMessages: List<ChatMessage> = emptyList()
     private var sseJsonlMessages: List<ChatMessage> = emptyList()
     private var pendingUserMessages: List<ChatMessage> = emptyList()
@@ -90,11 +131,17 @@ class MomoAppViewModel(
     private var inFlightAssistantText: String = ""
     private var inFlightAssistantTime: String = ""
     private var snapshotLoadedForSessionId: String = ""
+    private var pendingVoiceCommit: Boolean = false
+    private var pendingVoiceAudio: Boolean = false
+    private var lastSpokenAssistantId: String = ""
+    private var inFlightAssistantVoiceText: String? = null
+    private var pendingVoiceOnlyText: String? = null
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
 
     init {
+        restoreThemePreferences()
         refreshAuthConfig()
         restoreToken()
     }
@@ -103,6 +150,10 @@ class MomoAppViewModel(
         streamJob?.cancel()
         toastJob?.cancel()
         snapshotPollJob?.cancel()
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        speechRecognizer.dispose()
+        textToSpeech.dispose()
         scope.cancel()
     }
 
@@ -111,6 +162,78 @@ class MomoAppViewModel(
     fun setPassword(value: String) = _state.update { it.copy(password = value, toast = null) }
 
     fun setInput(value: String) = _state.update { it.copy(input = value) }
+
+    fun toggleComposerMode() {
+        if (state.value.voiceRecording || state.value.voiceTranscribing) return
+        _state.update { it.withToggledComposerMode() }
+    }
+
+    fun pickAttachments() {
+        val remaining = 6 - state.value.attachments.size
+        if (remaining <= 0) {
+            showToast("最多添加 6 个附件")
+            return
+        }
+        filePicker.pickFiles(
+            maxFiles = remaining,
+            onResult = { files -> files.take(remaining).forEach(::uploadPickedFile) },
+            onError = { showToast(it) },
+        )
+    }
+
+    fun removeAttachment(id: String) {
+        _state.update { current -> current.copy(attachments = current.attachments.filterNot { it.id == id }) }
+    }
+
+    private fun uploadPickedFile(file: PickedFile) {
+        val id = "attachment-${file.name.hashCode()}-${nowShortTime()}-${state.value.attachments.size}"
+        val pending = PendingAttachment(
+            id = id,
+            name = file.name.ifBlank { "未命名文件" },
+            size = file.bytes.size.toLong(),
+            mimeType = file.mimeType,
+            status = AttachmentStatus.Uploading,
+        )
+        _state.update { current ->
+            current.copy(attachments = (current.attachments + pending).take(6))
+        }
+        scope.launch {
+            runCatching { api.uploadAttachment(file) }
+                .onSuccess { uploaded ->
+                    _state.update { current ->
+                        current.copy(
+                            attachments = current.attachments.map { item ->
+                                if (item.id == id) {
+                                    item.copy(
+                                        name = uploaded.name,
+                                        size = uploaded.size,
+                                        status = AttachmentStatus.Done,
+                                        path = uploaded.path,
+                                        error = "",
+                                    )
+                                } else {
+                                    item
+                                }
+                            },
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update { current ->
+                        current.copy(
+                            attachments = current.attachments.map { item ->
+                                if (item.id == id) {
+                                    item.copy(status = AttachmentStatus.Error, error = error.message ?: "上传失败")
+                                } else {
+                                    item
+                                }
+                            },
+                        )
+                    }
+                    showToast(error.message ?: "附件上传失败")
+                }
+        }
+    }
 
     fun nextLoginStep() {
         val username = state.value.username.trim()
@@ -151,6 +274,7 @@ class MomoAppViewModel(
                         loading = false,
                     )
                 }
+                ensureSpeechPermission()
                 loadWorkspaceAndClones()
             }.onFailure { e ->
                 _state.update { it.copy(loading = false) }
@@ -173,7 +297,7 @@ class MomoAppViewModel(
                 cloneSheetOpen = true,
                 cloneTitle = "分身小莫 #$nextNumber",
                 cloneDescription = "",
-                cloneModel = "codex",
+                cloneModel = state.value.cloneModelOptions.firstOrNull()?.key ?: "codex",
             )
         }
     }
@@ -187,27 +311,60 @@ class MomoAppViewModel(
     fun setCloneModel(value: String) = _state.update { it.copy(cloneModel = value) }
 
     fun sendHomeMessage() {
-        val content = state.value.input.trim()
-        if (content.isBlank()) return
-        val userMessage = ChatMessage("user-${content.hashCode()}-${nowShortTime()}", MessageAuthor.User, content, nowShortTime())
+        sendTextMessage(state.value.input.trim())
+    }
+
+    private fun sendTextMessage(content: String) {
+        val current = state.value
+        if (current.attachments.any { it.status == AttachmentStatus.Uploading }) {
+            showToast("附件还在上传，请稍候")
+            return
+        }
+        val completedAttachments = current.attachments.filter { it.status == AttachmentStatus.Done && it.path.isNotBlank() }
+        if (content.isBlank() && completedAttachments.isEmpty()) return
+        val visibleContent = content.ifBlank { "请查看我上传的附件。" }
+        val attachmentLines = completedAttachments.joinToString(separator = "\n", prefix = if (completedAttachments.isEmpty()) "" else "\n") {
+            "附件：${it.name}"
+        }
+        val userMessage = ChatMessage(
+            "user-${visibleContent.hashCode()}-${nowShortTime()}",
+            MessageAuthor.User,
+            visibleContent + attachmentLines,
+            nowShortTime(),
+        )
         pendingUserMessages = appendMessage(pendingUserMessages, userMessage)
-        startWaitingForAssistant()
         rebuildMessages()
         _state.update {
             it.copy(
                 input = "",
-                typing = true,
+                attachments = emptyList(),
+                voiceTranscript = "",
+                sendingMessage = true,
             )
         }
         scope.launch {
             runCatching {
                 val activeSession = state.value.clones.firstOrNull { it.sessionId == state.value.activeSessionId }
-                if (activeSession != null && !activeSession.isMainAssistant()) {
-                    api.sendSessionMessage(activeSession.sessionId, content)
+                if (activeSession != null && !activeSession.isMainAssistant() && completedAttachments.isEmpty()) {
+                    api.sendSessionMessage(activeSession.sessionId, visibleContent)
                     connectStream(activeSession.sessionId)
                     startSnapshotPolling(activeSession.sessionId)
                 } else {
-                    val result = api.sendAssistantMessage(content)
+                    if (activeSession != null && !activeSession.isMainAssistant() && completedAttachments.isNotEmpty()) {
+                        showToast("附件消息已转给主小莫处理")
+                    }
+                    val result = api.sendAssistantMessage(
+                        content = visibleContent,
+                        attachments = completedAttachments.map {
+                            AssistantPromptAttachment(
+                                path = it.path,
+                                name = it.name,
+                                size = it.size,
+                                type = if (it.mimeType.startsWith("image/")) "image" else "file",
+                                mimeType = it.mimeType,
+                            )
+                        },
+                    )
                     val sessionId = result.resolvedSessionId()
                     if (sessionId.isNotBlank()) {
                         _state.update {
@@ -223,14 +380,17 @@ class MomoAppViewModel(
                         error("服务端未返回可用的 Session ID")
                     }
                 }
+                _state.update { it.copy(sendingMessage = false) }
             }.onFailure { e ->
                 inFlightAssistantId = null
                 inFlightAssistantText = ""
                 inFlightAssistantTime = ""
+                pendingUserMessages = pendingUserMessages.filterNot { it.id == userMessage.id }
                 val systemMessage = ChatMessage("send-error-${nowShortTime()}", MessageAuthor.System, "消息发送失败，请稍后重试。", nowShortTime())
                 _state.update {
                     it.copy(
                         typing = false,
+                        sendingMessage = false,
                         messages = appendMessage(it.messages, systemMessage),
                     )
                 }
@@ -269,7 +429,7 @@ class MomoAppViewModel(
         scope.launch {
             runCatching {
                 val snapshot = api.assistantSnapshot(session.sessionId)
-                applySnapshot(snapshot)
+                applySnapshot(snapshot, allowAutoSpeech = false)
                 connectStream(session.sessionId)
             }.onFailure { e ->
                 _state.update { it.copy(loading = false) }
@@ -314,16 +474,127 @@ class MomoAppViewModel(
         }
     }
 
-    fun setThemeMode(value: ThemeMode) = _state.update { it.copy(themeMode = value) }
+    fun setThemeMode(value: ThemeMode) {
+        storage.savePreference(THEME_MODE_KEY, value.name)
+        _state.update { it.copy(themeMode = value) }
+    }
+
+    fun setThemePalette(value: ThemePalette) {
+        storage.savePreference(THEME_PALETTE_KEY, value.name)
+        _state.update { it.copy(themePalette = value) }
+    }
 
     fun togglePush() = _state.update { it.copy(pushEnabled = !it.pushEnabled) }
 
-    fun toggleTts() = _state.update { it.copy(ttsEnabled = !it.ttsEnabled) }
+    fun toggleTts() {
+        val nextEnabled = !state.value.ttsEnabled
+        if (!nextEnabled) {
+            textToSpeech.stop()
+            _state.update { it.copy(ttsEnabled = false, ttsSpeakingMessageId = null) }
+        } else {
+            _state.update { it.copy(ttsEnabled = true) }
+        }
+    }
+
+    fun beginVoiceInput() {
+        if (state.value.voiceRecording) return
+        if (!state.value.speechPermissionGranted && !speechPermissionController.hasPermission()) {
+            _state.update { it.copy(speechPermissionGranted = false, speechPermissionDenied = true) }
+            showToast("请先允许麦克风权限")
+            return
+        }
+
+        textToSpeech.stop()
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        pendingVoiceCommit = false
+        pendingVoiceAudio = false
+        _state.update {
+            it.copy(
+                voiceRecording = true,
+                voiceTranscribing = false,
+                voiceCanceling = false,
+                voiceTranscript = "",
+                voiceVolumeLevel = 1,
+                ttsSpeakingMessageId = null,
+                toast = null,
+            )
+        }
+        speechRecognizer.start(languageTag = "zh-CN") { event -> handleSpeechEvent(event) }
+        voiceTimeoutJob = scope.launch {
+            delay(60_000L)
+            if (state.value.voiceRecording) finishVoiceInput(forceCommit = true)
+        }
+    }
+
+    fun updateVoiceDrag(totalDragY: Float) {
+        if (!state.value.voiceRecording) return
+        _state.update { it.copy(voiceCanceling = totalDragY < -72f) }
+    }
+
+    fun finishVoiceInput(forceCommit: Boolean = false) {
+        if (!state.value.voiceRecording) return
+        val shouldCancel = state.value.voiceCanceling && !forceCommit
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        if (shouldCancel) {
+            pendingVoiceCommit = false
+            speechRecognizer.cancel()
+            _state.update {
+                it.copy(
+                    voiceRecording = false,
+                    voiceTranscribing = false,
+                    voiceCanceling = false,
+                    voiceTranscript = "",
+                    voiceVolumeLevel = 0,
+                )
+            }
+            showToast("已取消语音输入")
+            return
+        }
+
+        pendingVoiceCommit = true
+        pendingVoiceAudio = false
+        _state.update { it.copy(voiceTranscribing = true, voiceVolumeLevel = 0) }
+        speechRecognizer.stop()
+        voiceCommitJob = scope.launch {
+            delay(2_500L)
+            if (!pendingVoiceAudio) commitVoiceTranscriptIfPending()
+        }
+    }
+
+    fun cancelVoiceInput() {
+        if (!state.value.voiceRecording) return
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        pendingVoiceCommit = false
+        pendingVoiceAudio = false
+        speechRecognizer.cancel()
+        _state.update {
+            it.copy(
+                voiceRecording = false,
+                voiceTranscribing = false,
+                voiceCanceling = false,
+                voiceTranscript = "",
+                voiceVolumeLevel = 0,
+            )
+        }
+    }
+
+    fun replayAssistantMessage(message: ChatMessage) {
+        if (message.author != MessageAuthor.Momo || message.text.isBlank()) return
+        speakAssistant(message, markAsAutomatic = false)
+    }
 
     fun logout() {
         scope.launch {
             streamJob?.cancel()
             snapshotPollJob?.cancel()
+            voiceTimeoutJob?.cancel()
+            voiceCommitJob?.cancel()
+            pendingVoiceAudio = false
+            speechRecognizer.cancel()
+            textToSpeech.stop()
             storage.clear()
             clearStreamState()
             _state.value = UiState(username = state.value.username, passwordRequired = state.value.passwordRequired)
@@ -338,12 +609,23 @@ class MomoAppViewModel(
             runCatching {
                 val user = api.me()
                 _state.update { it.copy(user = user, screen = AppScreen.Home, loading = false) }
+                ensureSpeechPermission()
                 loadWorkspaceAndClones()
             }.onFailure {
                 storage.clear()
                 _state.update { it.copy(loading = false, screen = AppScreen.Login) }
             }
         }
+    }
+
+    private fun restoreThemePreferences() {
+        val mode = storage.getPreference(THEME_MODE_KEY)
+            ?.let { raw -> ThemeMode.entries.firstOrNull { it.name == raw } }
+            ?: ThemeMode.System
+        val palette = storage.getPreference(THEME_PALETTE_KEY)
+            ?.let { raw -> ThemePalette.entries.firstOrNull { it.name == raw } }
+            ?: ThemePalette.Default
+        _state.update { it.copy(themeMode = mode, themePalette = palette) }
     }
 
     private fun refreshAuthConfig() {
@@ -353,11 +635,34 @@ class MomoAppViewModel(
         }
     }
 
+    private fun ensureSpeechPermission() {
+        scope.launch {
+            if (speechPermissionController.hasPermission()) {
+                _state.update { it.copy(speechPermissionGranted = true, speechPermissionDenied = false) }
+                return@launch
+            }
+            val status = runCatching { speechPermissionController.requestPermission() }
+                .getOrDefault(SpeechPermissionStatus.Denied)
+            _state.update {
+                it.copy(
+                    speechPermissionGranted = status == SpeechPermissionStatus.Granted,
+                    speechPermissionDenied = status == SpeechPermissionStatus.Denied,
+                )
+            }
+            if (status == SpeechPermissionStatus.Denied) showToast("麦克风权限未开启，仍可文字输入")
+        }
+    }
+
     private suspend fun loadWorkspaceAndClones() {
-        val workspace = api.assistantWorkspace()
+        val workspace = runCatching { api.assistantWorkspace() }
+            .onFailure { showToast(it.message ?: "读取小莫工作区失败") }
+            .getOrNull()
         val snapshots = api.assistantSnapshots()
         val clones = snapshots.map { it.session }.filter { it.sessionId.isNotBlank() }
         val projects = runCatching { api.projects() }.getOrDefault(emptyList())
+        val modelOptions = runCatching { api.sessionModelOptions() }
+            .getOrDefault(state.value.cloneModelOptions)
+            .filter { it.key.isNotBlank() }
         val currentSnapshot = snapshots.firstOrNull { it.session.isMainAssistant() }
             ?: snapshots.firstOrNull { it.session.sessionId.isNotBlank() }
         val current = currentSnapshot?.session
@@ -366,16 +671,22 @@ class MomoAppViewModel(
                 workspace = workspace,
                 clones = clones,
                 projects = projects,
+                cloneModelOptions = modelOptions,
+                cloneModel = if (modelOptions.any { option -> option.key == it.cloneModel }) {
+                    it.cloneModel
+                } else {
+                    modelOptions.firstOrNull()?.key ?: "codex"
+                },
                 activeSessionId = current?.sessionId.orEmpty(),
                 activeSessionTitle = current?.name?.ifBlank { "我的主小莫" } ?: "我的主小莫",
                 loading = false,
             )
         }
-        currentSnapshot?.let { applySnapshot(it) }
+        currentSnapshot?.let { applySnapshot(it, allowAutoSpeech = false) }
         current?.sessionId?.takeIf { it.isNotBlank() }?.let { connectStream(it) }
     }
 
-    private fun applySnapshot(snapshot: AssistantSnapshot) {
+    private fun applySnapshot(snapshot: AssistantSnapshot, allowAutoSpeech: Boolean) {
         val session = snapshot.session
         val messages = snapshot.messages
         if (messages.isNotEmpty()) {
@@ -395,10 +706,11 @@ class MomoAppViewModel(
                 activeSessionId = session.sessionId.ifBlank { it.activeSessionId },
                 activeSessionTitle = session.name.ifBlank { it.activeSessionTitle },
                 clones = upsertSession(it.clones, session).filter { item -> item.sessionId.isNotBlank() },
-                typing = snapshot.status.working || inFlightAssistantText == WAITING_ASSISTANT_TEXT,
+                typing = snapshot.status.working,
             )
         }
         rebuildMessages()
+        if (allowAutoSpeech) speakLatestSettledAssistantIfNeeded()
     }
 
     private fun connectStream(sessionId: String) {
@@ -424,7 +736,9 @@ class MomoAppViewModel(
                         },
                         onJsonlHistory = { chunks, reset, _ ->
                             if (snapshotLoadedForSessionId != sessionId) {
-                                val messages = chunks.map { chunkToMessage(it) }
+                                val messages = chunks
+                                    .filter { it.author == MessageAuthor.Momo && it.text.isNotBlank() }
+                                    .map { chunkToMessage(it) }
                                 if (reset) {
                                     sseHistoryMessages = sseHistoryMessages.filter { it.author != MessageAuthor.Momo }
                                 }
@@ -470,25 +784,43 @@ class MomoAppViewModel(
     private fun handleTyping(active: Boolean) {
         if (!active) {
             val liveId = inFlightAssistantId
-            if (!liveId.isNullOrBlank() && inFlightAssistantText.isNotBlank() && inFlightAssistantText != WAITING_ASSISTANT_TEXT) {
+            val voiceText = inFlightAssistantVoiceText?.takeIf { it.isNotBlank() }
+            if (!liveId.isNullOrBlank() && inFlightAssistantText.isNotBlank()) {
                 sseJsonlMessages = upsertMessage(
                     sseJsonlMessages,
-                    ChatMessage(liveId, MessageAuthor.Momo, inFlightAssistantText, inFlightAssistantTime.ifBlank { nowShortTime() }),
+                    ChatMessage(
+                        id = liveId,
+                        author = MessageAuthor.Momo,
+                        text = inFlightAssistantText,
+                        time = inFlightAssistantTime.ifBlank { nowShortTime() },
+                        voiceText = voiceText,
+                    ),
                 )
+            } else if (voiceText != null) {
+                pendingVoiceOnlyText = voiceText
             }
             inFlightAssistantId = null
             inFlightAssistantText = ""
             inFlightAssistantTime = ""
+            inFlightAssistantVoiceText = null
         }
         _state.update { it.copy(typing = active) }
-        if (!active) rebuildMessages()
+        if (!active) {
+            rebuildMessages()
+            speakLatestSettledAssistantIfNeeded()
+        }
     }
 
     private fun handleStreamChunk(chunk: StreamTextChunk) {
-        if (chunk.text.isBlank()) return
-        if (chunk.author == MessageAuthor.User) {
-            pendingUserMessages = appendMessage(pendingUserMessages, chunkToMessage(chunk))
-            rebuildMessages()
+        if (chunk.author == MessageAuthor.User) return
+        val cleanedText = chunk.text.trim()
+        val chunkVoice = chunk.voiceText?.takeIf { it.isNotBlank() }
+        if (cleanedText.isBlank() && chunkVoice == null) return
+
+        if (chunkVoice != null) {
+            inFlightAssistantVoiceText = combineVoiceText(inFlightAssistantVoiceText, chunkVoice)
+        }
+        if (cleanedText.isBlank()) {
             return
         }
 
@@ -496,9 +828,116 @@ class MomoAppViewModel(
             inFlightAssistantId = it
             inFlightAssistantTime = chunk.time
         }
-        inFlightAssistantText = combineAssistantText(inFlightAssistantText.takeUnless { it == WAITING_ASSISTANT_TEXT }.orEmpty(), chunk.text)
-        val message = ChatMessage(messageId, MessageAuthor.Momo, inFlightAssistantText, inFlightAssistantTime.ifBlank { chunk.time })
+        inFlightAssistantText = combineAssistantText(inFlightAssistantText, cleanedText)
+        val voiceText = inFlightAssistantVoiceText?.takeIf { it.isNotBlank() }
+        val message = ChatMessage(
+            id = messageId,
+            author = MessageAuthor.Momo,
+            text = inFlightAssistantText,
+            time = inFlightAssistantTime.ifBlank { chunk.time },
+            voiceText = voiceText,
+        )
         _state.update { it.copy(messages = upsertMessage(it.messages, message)) }
+    }
+
+    private fun handleSpeechEvent(event: SpeechRecognitionEvent) {
+        when (event) {
+            SpeechRecognitionEvent.Ready -> {
+                _state.update { it.copy(voiceVolumeLevel = it.voiceVolumeLevel.coerceAtLeast(1)) }
+            }
+            is SpeechRecognitionEvent.Partial -> {
+                _state.update { it.copy(voiceTranscript = event.text) }
+            }
+            is SpeechRecognitionEvent.Final -> {
+                _state.update { it.copy(voiceTranscript = event.text) }
+                if (pendingVoiceCommit) commitVoiceTranscriptIfPending()
+            }
+            is SpeechRecognitionEvent.Audio -> {
+                if (!pendingVoiceCommit) return
+                pendingVoiceAudio = true
+                voiceCommitJob?.cancel()
+                _state.update {
+                    it.copy(
+                        voiceTranscribing = true,
+                        voiceTranscript = "",
+                        voiceVolumeLevel = 0,
+                    )
+                }
+                voiceCommitJob = scope.launch {
+                    delay(30_000L)
+                    if (pendingVoiceCommit && pendingVoiceAudio) {
+                        failVoiceInput("语音识别超时，请稍后重试")
+                    }
+                }
+                scope.launch {
+                    runCatching {
+                        api.transcribeAssistantAudio(event.bytes, event.mimeType, event.fileName)
+                    }.onSuccess { text ->
+                        pendingVoiceAudio = false
+                        _state.update { it.copy(voiceTranscript = text) }
+                        if (pendingVoiceCommit) commitVoiceTranscriptIfPending()
+                    }.onFailure { error ->
+                        pendingVoiceAudio = false
+                        failVoiceInput(error.message ?: "语音识别失败，请重新录制")
+                    }
+                }
+            }
+            is SpeechRecognitionEvent.Volume -> {
+                if (!state.value.voiceTranscribing) {
+                    _state.update { it.copy(voiceVolumeLevel = event.level.coerceIn(0, 5)) }
+                }
+            }
+            is SpeechRecognitionEvent.Error -> {
+                if (pendingVoiceCommit && state.value.voiceTranscript.isNotBlank()) {
+                    commitVoiceTranscriptIfPending()
+                    return
+                }
+                failVoiceInput(event.message)
+            }
+            SpeechRecognitionEvent.End -> {
+                _state.update { it.copy(voiceVolumeLevel = 0) }
+            }
+        }
+    }
+
+    private fun commitVoiceTranscriptIfPending() {
+        if (!pendingVoiceCommit) return
+        pendingVoiceCommit = false
+        pendingVoiceAudio = false
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        val text = state.value.voiceTranscript.trim()
+        _state.update {
+            it.copy(
+                voiceRecording = false,
+                voiceTranscribing = false,
+                voiceCanceling = false,
+                voiceTranscript = "",
+                voiceVolumeLevel = 0,
+            )
+        }
+        if (text.isBlank()) {
+            showToast("没有识别到语音")
+        } else {
+            sendTextMessage(text)
+        }
+    }
+
+    private fun failVoiceInput(message: String) {
+        pendingVoiceCommit = false
+        pendingVoiceAudio = false
+        voiceTimeoutJob?.cancel()
+        voiceCommitJob?.cancel()
+        _state.update {
+            it.copy(
+                voiceRecording = false,
+                voiceTranscribing = false,
+                voiceCanceling = false,
+                voiceTranscript = "",
+                voiceVolumeLevel = 0,
+            )
+        }
+        showToast(message)
     }
 
     private fun rebuildMessages() {
@@ -518,6 +957,54 @@ class MomoAppViewModel(
         _state.update { it.copy(messages = messages.takeLast(120)) }
     }
 
+    private fun speakLatestSettledAssistantIfNeeded() {
+        if (!state.value.ttsEnabled || state.value.typing || state.value.voiceRecording) return
+        val pendingVoice = pendingVoiceOnlyText
+        if (!pendingVoice.isNullOrBlank()) {
+            pendingVoiceOnlyText = null
+            speakRawVoice(pendingVoice)
+            return
+        }
+        val message = state.value.messages.lastOrNull {
+            it.author == MessageAuthor.Momo &&
+                (it.text.isNotBlank() || !it.voiceText.isNullOrBlank())
+        } ?: return
+        if (message.id == lastSpokenAssistantId) return
+        speakAssistant(message, markAsAutomatic = true)
+    }
+
+    private fun speakAssistant(message: ChatMessage, markAsAutomatic: Boolean) {
+        val text = message.voiceText?.takeIf { it.isNotBlank() } ?: message.text
+        if (text.isBlank()) return
+        textToSpeech.stop()
+        if (markAsAutomatic) lastSpokenAssistantId = message.id
+        _state.update { it.copy(ttsSpeakingMessageId = message.id) }
+        textToSpeech.speak(
+            text = text,
+            languageTag = "zh-CN",
+            onError = { error ->
+                _state.update { it.copy(ttsSpeakingMessageId = null) }
+                showToast(error)
+            },
+        )
+    }
+
+    private fun speakRawVoice(text: String) {
+        if (text.isBlank()) return
+        textToSpeech.stop()
+        val syntheticId = "voice-only-${nowShortTime()}-${text.hashCode()}"
+        lastSpokenAssistantId = syntheticId
+        _state.update { it.copy(ttsSpeakingMessageId = null) }
+        textToSpeech.speak(
+            text = text,
+            languageTag = "zh-CN",
+            onError = { error ->
+                _state.update { it.copy(ttsSpeakingMessageId = null) }
+                showToast(error)
+            },
+        )
+    }
+
     private fun clearStreamState(keepPendingUsers: Boolean = false) {
         sseHistoryMessages = emptyList()
         sseJsonlMessages = emptyList()
@@ -525,6 +1012,8 @@ class MomoAppViewModel(
         inFlightAssistantId = null
         inFlightAssistantText = ""
         inFlightAssistantTime = ""
+        inFlightAssistantVoiceText = null
+        pendingVoiceOnlyText = null
         snapshotLoadedForSessionId = ""
     }
 
@@ -535,20 +1024,14 @@ class MomoAppViewModel(
                 delay(2_500L)
                 if (state.value.screen == AppScreen.Login || state.value.activeSessionId != sessionId) return@launch
                 val snapshot = runCatching { api.assistantSnapshot(sessionId) }.getOrNull() ?: return@repeat
-                applySnapshot(snapshot)
+                applySnapshot(snapshot, allowAutoSpeech = true)
                 if (!snapshot.status.working && snapshot.messages.hasAssistantAfterLatestUser()) return@launch
             }
         }
     }
 
-    private fun startWaitingForAssistant() {
-        inFlightAssistantId = "assistant-waiting-${nowShortTime()}"
-        inFlightAssistantText = WAITING_ASSISTANT_TEXT
-        inFlightAssistantTime = nowShortTime()
-    }
-
     private fun chunkToMessage(chunk: StreamTextChunk): ChatMessage =
-        ChatMessage(chunk.id, chunk.author, chunk.text, chunk.time)
+        ChatMessage(chunk.id, chunk.author, chunk.text, chunk.time, chunk.voiceText)
 
     private fun showToast(message: String) {
         _state.update { it.copy(toast = message) }
@@ -563,6 +1046,9 @@ class MomoAppViewModel(
         }
     }
 }
+
+private const val THEME_MODE_KEY = "theme_mode"
+private const val THEME_PALETTE_KEY = "theme_palette"
 
 private fun appendMessage(messages: List<ChatMessage>, message: ChatMessage): List<ChatMessage> {
     if (message.text.isBlank()) return messages
@@ -593,6 +1079,15 @@ private fun combineAssistantText(current: String, next: String): String {
     if (chunk == current || current.endsWith(chunk)) return current
     if (chunk.startsWith(current)) return chunk
     return current + chunk
+}
+
+private fun combineVoiceText(current: String?, next: String): String? {
+    val piece = next.trim()
+    if (piece.isBlank()) return current
+    if (current.isNullOrBlank()) return piece
+    if (piece == current || current.endsWith(piece)) return current
+    if (current.startsWith(piece)) return current
+    return current + "\n" + piece
 }
 
 private fun appendSession(sessions: List<Session>, session: Session): List<Session> {

@@ -22,7 +22,6 @@
  *
  * "是否在工作" 的真相源:
  *   用 agent backend 的 isWorking()/isAlive() (tmux window 存活 + jsonl 尾判),
- *   而非 sessions_v2.agent_status —— 后者代码里多处注明"不可靠".
  *
  * flag 路径不依赖 backend 的 runtime map (后端重启后未必有该 session 的内存
  * 条目), 而是直接由 DB 的 projects.bind_path 推出, 这样无论 agent 死活都能
@@ -60,6 +59,7 @@ const {
   assistantSessionKeyLike,
   isAssistantSession,
 } = require('./assistant-session');
+const { markAssistantInternalNotificationPrompt } = require('./assistant-internal-messages');
 const agents = require('../agents');
 
 const SCAN_INTERVAL_MS = 60 * 1000;           // 每 60 秒一轮
@@ -354,6 +354,7 @@ function lifecyclePromptForTarget(s, event, target) {
 async function deliverLifecycleEventToAssistant({ sourceSession, event, target }) {
   const assistantSession = target.session;
   const prompt = lifecyclePromptForTarget(sourceSession, event, target);
+  const storedPrompt = markAssistantInternalNotificationPrompt(prompt);
   const launch = modelRegistry.launchOptionsForSession(assistantSession);
   const backend = agents.get(launch.backend);
   const workDir = path.resolve(assistantSession.bind_path || APP_DIR);
@@ -361,7 +362,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   const mobiusJsonl = {
     source: 'assistant.lifecycle-callback',
     kind: event.type,
-    content: prompt,
+    content: storedPrompt,
     inputText: prompt,
     requestId: `lifecycle:${sourceSession.session_id}:${event.key}`,
     turnNumber: turnNum,
@@ -389,7 +390,7 @@ async function deliverLifecycleEventToAssistant({ sourceSession, event, target }
   });
 
   try {
-    Messages.insertUser(assistantSession.session_id, prompt, turnNum);
+    Messages.insertUser(assistantSession.session_id, storedPrompt, turnNum);
     Sessions.touchActive(assistantSession.session_id);
   } catch (e) {
     console.warn(`[forgotten-flag-scanner] 写小莫回调消息失败 (${assistantSession.session_id}): ${e.message}`);
@@ -649,22 +650,32 @@ async function maybeNotify(f) {
 }
 
 // 单轮扫描.
+// 一次完整的"被遗忘 running.flag"巡检.
+// 职责: 扫所有 active session, 找出 running.flag 仍存在 但 agent backend 已判
+//       isWorking=false 的会话, 把诊断信息写到 LOG_FILE, 并可选拉起提醒.
+// 设计约束: 只发现+记录, 不自动删 flag (删 flag 是破坏性动作, 留给人判断);
+//           多轮重入安全 (scanning 模块级锁保证同一时刻只有一轮).
 async function scanOnce() {
+  // 互斥锁: 定时器叠加 / 手动触发可能让上一轮还没结束就触发新一轮, 直接跳过,
+  // 避免对同一 session 重复调 backend / 发重复提醒.
   if (scanning) {
     appendLog(`[${nowIso()}] (skip) 上一轮扫描尚未结束, 跳过本轮\n`);
     return;
   }
+  // 拿锁 + 记起始时间, 最后算 cost=耗时写心跳.
   scanning = true;
   const startedAt = Date.now();
   try {
-    // 所有 active session, 带 bind_path / 项目名 / issue 标题 / 项目自定义提醒
-    // 文案 / model / claude_session_id (后两者供自动发消息用).
+    // 一次性查出所有需要巡检的 active session + 提醒配置.
+    // LEFT JOIN 是因为 session 可能没绑 project/user/issue/research (理论情况),
+    // 但仍要扫; 下游用 '(无)' 兜底.
+    // isWorking 必须直接问 agent backend.
     const sessions = db.prepare(`
       SELECT s.session_id, s.user_id, s.name AS session_name,
              s.description AS session_description, s.session_key AS session_key,
              s.status,
              s.scope_type AS scope_type, s.research_id AS research_id,
-             s.agent_status, s.last_agent_event, s.last_active,
+             s.last_agent_event, s.last_active,
              s.model AS model, s.claude_session_id AS claude_session_id,
              p.bind_path AS bind_path, p.name AS project_name,
              p.forgotten_flag_message AS forgotten_flag_message,
@@ -687,20 +698,30 @@ async function scanOnce() {
       WHERE s.status = 'active'
     `).all();
 
+    // findings: 命中"被遗忘 flag"的 session, 后面写详细诊断 + 发提醒.
+    // lifecycleDeliveries: 本轮观察到的生命周期事件 (failed/completed) 待投递, 与 forgotten 检测正交.
     const findings = [];
     const lifecycleDeliveries = [];
-    let checked = 0;
-    let noBindPath = 0;
-    let flagAbsent = 0;
-    let assistantExempt = 0;
+    // 四个计数器只是心跳统计, 写到 header 里方便确认巡检是否健康.
+    let checked = 0;        // 进入 isWorking 判定的样本数 (真正"被检查"的)
+    let noBindPath = 0;     // 项目没绑路径, 连 flag 都定位不到, 直接跳过
+    let flagAbsent = 0;     // running.flag 已被 agent 正常删除 = 健康状态, 跳过
+    let assistantExempt = 0; // 小莫会话不参与提醒 (有独立生命周期), 跳过
 
+    // 主循环: 逐 session 判断"是否被遗忘 flag".
     for (const s of sessions) {
+      // 项目仓库路径; 没绑路径就推不出 flag 文件位置, 必须跳过.
       const bindPath = (s.bind_path || '').trim();
       if (!bindPath) { noBindPath++; continue; }   // 没绑路径无从定位 flag
 
+      // 三个 flag 文件/目录的绝对路径.
+      // flag 目录 = .imac/flags/<sid>/, 内含 running.flag/failed.flag.
       const flagDir = flagDirOf(bindPath, s.session_id);
       const flagPath = runningFlagPathOf(bindPath, s.session_id);
       const failedPath = failedFlagPathOf(bindPath, s.session_id);
+
+      // 读 flag 存在性 + mtime, 失败 flag 还带元数据/原因.
+      // 这些字段同时喂给 collectLifecycleEvents (判定生命周期) 和 findings (诊断).
       const flagExists = fileExists(flagPath);
       const failedExists = fileExists(failedPath);
       const snapshot = {
@@ -713,18 +734,27 @@ async function scanOnce() {
         failedMeta: failedExists ? readFlagMeta(failedPath) : null,
         failedData: failedExists ? readFailedFlag(bindPath, s.session_id) : null,
       };
+
+      // 生命周期事件 = 本轮观察到的"刚完成 / 刚失败"过渡, 与 forgotten 检测正交.
+      // 收集到队列, 等主循环结束后统一投递, 避免在主循环里阻塞.
       const pendingLifecycleEvents = collectLifecycleEvents(s, snapshot);
       for (const event of pendingLifecycleEvents) {
         lifecycleDeliveries.push({ s, event });
       }
 
+      // running.flag 不存在 = agent 已经正常收尾, 不进入 forgotten 判定.
       if (!flagExists) { flagAbsent++; continue; } // flag 已被正常删除 = 正常态
+
+      // 小莫会话有自己的执行模型, 不写 running.flag, 自然也不该被这里提醒.
       if (isAssistantSession(s)) { assistantExempt++; continue; } // 小莫 session 不要求自删 running.flag, 也不提醒
 
+      // 真正进入"是否被遗忘"判定的样本数.
       checked++;
 
-      // 是否还在工作: backend 真相源. isWorking 内部已先判 isAlive
+      // 用 agent backend 做真相判定. isWorking 内部已先判 isAlive
       // (tmux window 不在 → 必 false), 故这里 isWorking=false 即"agent 已停工".
+      // backend 调用一律 try/catch 降级成字符串 'ERR:...', 否则单 session 故障会
+      // 抛出后中断整轮扫描, 拖垮其它健康 session 的巡检.
       let isAlive = false;
       let isWorking = false;
       let jobAccomplished = null;
@@ -736,7 +766,9 @@ async function scanOnce() {
         try { jobAccomplished = backend.isJobGoalAccomplished(s.session_id); } catch {}
       }
 
-      // 命中条件: flag 还在 且 agent 已不在工作.
+      // 命中条件: flag 还在 但 agent 已停工. jobAccomplished 只作辅助信息写进日志,
+      // 不参与判定本身, 避免 backend 实现差异影响扫描一致性.
+      // 推入 findings, 后面写诊断 + 发提醒.
       if (isWorking === false) {
         const fm = readFlagMeta(flagPath);
         findings.push({ s, flagPath, isAlive, isWorking, jobAccomplished, fm });
@@ -753,10 +785,16 @@ async function scanOnce() {
       `flag_absent=${flagAbsent} assistant_exempt=${assistantExempt} ` +
       `no_bind_path=${noBindPath} cost=${durMs}ms\n`;
     appendLog(header);
+
+    // 落盘 lifecycle 投递状态: collectLifecycleEvents 基于"已投递"去重,
+    // 每轮后必须持久化, 否则进程重启会重复投递.
     saveLifecycleState();
 
+    // 投递本轮观察到的生命周期事件 (session 完成 / 失败回调).
+    // await 串行: processLifecycleEvent 会写 DB / 发消息, 并发会乱序.
     for (const item of lifecycleDeliveries) {
       const { s, event } = item;
+      // 人类可读的诊断块, 方便事后回查.
       const block = [
         `──────── SESSION ${event.type === 'failed' ? 'FAILED' : 'COMPLETED'} CALLBACK ────────`,
         `  time             : ${nowIso()}`,
@@ -773,6 +811,8 @@ async function scanOnce() {
       ].join('\n');
       appendLog(block + '\n');
 
+      // 真正执行回调 (发消息 / 标记 / 触发后续动作).
+      // 失败不抛, 落成 pending 状态等下一轮重试, 不阻塞其它事件.
       let lifecycleResult;
       try {
         lifecycleResult = await processLifecycleEvent(s, event);
@@ -784,13 +824,20 @@ async function scanOnce() {
         '────────────────────────────────────────\n\n'
       );
     }
+    // 回调本身可能也改了 lifecycle 状态 (例如标记已投递), 再 save 一次确保落盘.
     saveLifecycleState();
 
+    // 处理 forgotten findings: 每个 finding 写详细诊断 + 可选拉起提醒.
     for (const f of findings) {
       const { s, flagPath, isAlive, isWorking, jobAccomplished, fm } = f;
+
+      // 根据 isAlive 给一句人话诊断: 进程还在 vs 已死, 帮助定位是 TUI 卡死还是僵尸 flag.
       const aliveHint = (isAlive === true)
         ? 'agent 进程(tmux window)仍在, 但不在 turn 中 — 可能多轮任务等待输入, 也可能 TUI 卡死'
         : 'agent 进程(tmux window)已不存在 — 典型的"僵尸 flag": agent 已死却没删 flag';
+
+      // 详细诊断块. 字段顺序: 身份 → DB 状态 → flag 元数据 → backend 真相 → 结论,
+      // 方便日志检索时按段定位.
       const block = [
         '──────── FORGOTTEN running.flag ────────',
         `  time             : ${nowIso()}`,
@@ -801,7 +848,6 @@ async function scanOnce() {
         `  issue            : ${s.issue_title || '(无)'}`,
         `  research         : ${s.research_title || '(无)'}`,
         `  db.status        : ${s.status}`,
-        `  db.agent_status  : ${s.agent_status}`,
         `  db.last_agent_evt: ${s.last_agent_event || '(null)'}`,
         `  db.last_active   : ${s.last_active || '(null)'}`,
         `  flag_path        : ${flagPath}`,
@@ -821,6 +867,7 @@ async function scanOnce() {
       appendLog(block + '\n');
 
       // 自动给该 session 发提醒消息 (含启动宽限 / 去重 / 冷却). 绝不让异常冒泡.
+      // maybeNotify 内部决定是否真发 (例如冷却期内直接跳过), 这里只看结果字符串.
       let notifyResult;
       try {
         notifyResult = await maybeNotify(f);
@@ -833,8 +880,10 @@ async function scanOnce() {
       );
     }
   } catch (e) {
+    // 顶层兜底: 扫描本身出 bug 时只写日志, 不让 timer 链路被异常打断下一轮.
     appendLog(`[${nowIso()}] (error) 扫描异常: ${e && e.stack ? e.stack : e}\n`);
   } finally {
+    // 无论本轮成功失败都释放互斥锁, 保证下一轮定时器能进入.
     scanning = false;
   }
 }

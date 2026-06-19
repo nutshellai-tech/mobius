@@ -71,6 +71,9 @@ temp/
 *.swp
 *.swo
 *~
+.agent
+.cursor
+.imac
 
 # Local external checkouts / machine-specific helpers
 /jsoncrack

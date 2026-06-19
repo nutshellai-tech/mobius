@@ -3303,7 +3303,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   // 拼装外部可达的 base URL:
   //   - localhost / 127.0.0.1 / 192.168.* / 10.* / 172.16-31.* (内网/dev):
   //     直接用 window.location (含端口), 方便本机调试
-  //   - 公网域名 (cloud-17.agent-matrix.com 等):
+  //   - 公网域名 (mobius.example.com 等):
   //     强制 https + 无 port (公网入口都走 443 反代; 即使浏览器通过 http://domain:45616 直连 mobius,
   //     外部 aimux client 也无法达到那个非标端口, 必须走 https 443).
   const browserHost = typeof window !== 'undefined' ? window.location.hostname : 'server-host'

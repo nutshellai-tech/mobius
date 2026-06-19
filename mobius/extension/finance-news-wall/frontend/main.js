@@ -1,3 +1,5 @@
+import { extCall } from '/extension/_sdk/ext.js';
+
 const newsSeed = [
   {
     id: 'us-jobs-fed-path',
@@ -245,6 +247,12 @@ const state = {
   visibleCount: 9,
   flashId: newsSeed[0]?.id || '',
   metricPulse: metricSeed.map((item) => item.value),
+  liveNews: [],
+  liveMode: false,
+  liveStatus: '正在连接实时新闻源',
+  liveError: '',
+  isScanning: false,
+  lastRun: null,
   mouse: { x: -1000, y: -1000 },
 };
 
@@ -299,7 +307,75 @@ function unique(items, max = 8) {
   return out;
 }
 
+function mapUrgencyToImportance(urgency, score = 0) {
+  if (urgency === 'critical' || urgency === 'high' || score >= 78) return '高';
+  if (urgency === 'medium' || score >= 55) return '中';
+  return '低';
+}
+
+function mapDirectionToSentiment(direction) {
+  return ({
+    dovish: '偏鸽',
+    hawkish: '偏鹰',
+    bullish: '利好',
+    bearish: '利空',
+    risk_off: '避险',
+    neutral: '中性',
+  })[direction] || direction || '待判断';
+}
+
+function transformLiveEvent(event) {
+  const score = Math.max(1, Math.min(99, Number(event.impact_score || 0) || 56));
+  const stocks = Array.isArray(event.matched_stocks) ? event.matched_stocks : [];
+  const assets = unique([
+    ...stocks.map((stock) => stock.code ? `${stock.name} ${stock.code}` : stock.name),
+    ...(event.asset_classes || []),
+    ...(event.region || []),
+  ], 8);
+  const reasons = unique([...(event.match_reasons || []), ...(event.matched_keywords || [])], 4);
+  return {
+    id: event.id || `live-${Math.random().toString(36).slice(2)}`,
+    title: event.title || '未命名新闻',
+    summary: event.summary || '暂无摘要',
+    source: event.source || '实时新闻源',
+    url: event.url || '',
+    publishedAt: event.ts || new Date().toISOString(),
+    market: unique([...(event.board_names || []), ...(event.region || [])], 5),
+    theme: unique([...(event.topics || []), ...(event.asset_classes || [])], 5),
+    assets,
+    importance: mapUrgencyToImportance(event.urgency, score),
+    status: event.urgency === 'critical' || event.urgency === 'high' ? '待跟进' : '未读',
+    sentiment: mapDirectionToSentiment(event.direction),
+    topics: unique([...(event.topics || []), ...(event.matched_keywords || [])], 6),
+    why: reasons.length ? reasons.join('；') : '由实时新闻源抓取并按影响分、主题匹配和时效性排序。',
+    impactScore: score,
+    rawEvent: event,
+  };
+}
+
+function setLiveEvents(events = []) {
+  const rows = (Array.isArray(events) ? events : [])
+    .map(transformLiveEvent)
+    .sort((a, b) => {
+      const scoreDiff = impactScore(b) - impactScore(a);
+      if (scoreDiff) return scoreDiff;
+      return Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0);
+    });
+  state.liveNews = rows;
+  state.liveMode = rows.length > 0;
+  if (rows.length && !rows.some((item) => item.id === state.flashId)) {
+    state.flashId = rows[0].id;
+  }
+}
+
+function allNews() {
+  return state.liveMode && state.liveNews.length ? state.liveNews : newsSeed;
+}
+
 function impactScore(item) {
+  if (Number.isFinite(Number(item.impactScore))) {
+    return Math.max(1, Math.min(99, Number(item.impactScore)));
+  }
   const base = { 高: 86, 中: 68, 低: 48 }[item.importance] || 56;
   const marketBoost = Math.min((item.market?.length || 1) * 3, 9);
   const assetBoost = Math.min((item.assets?.length || 1) * 2, 8);
@@ -310,6 +386,30 @@ function impactScore(item) {
 function impactStars(score) {
   const filled = Math.max(1, Math.min(5, Math.round(score / 20)));
   return Array.from({ length: 5 }, (_, index) => index < filled ? '★' : '☆').join('');
+}
+
+function impactLevel(score) {
+  if (score >= 90) return '紧急';
+  if (score >= 78) return '高影响';
+  if (score >= 62) return '观察';
+  return '低噪声';
+}
+
+function impactTone(score) {
+  if (score >= 90) return 'critical';
+  if (score >= 78) return 'elevated';
+  if (score >= 62) return 'watch';
+  return 'quiet';
+}
+
+function summarizeCounts(rows = newsSeed) {
+  const high = rows.filter((item) => item.importance === '高').length;
+  const follow = rows.filter((item) => item.status === '待跟进').length;
+  const unread = rows.filter((item) => item.status === '未读').length;
+  const avg = rows.length
+    ? Math.round(rows.reduce((sum, item) => sum + impactScore(item), 0) / rows.length)
+    : 0;
+  return { high, follow, unread, avg };
 }
 
 function filteredNews() {
@@ -363,6 +463,35 @@ function renderTicker() {
             <em>${escapeHtml(item.name)}</em>
           </div>
         `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderStatusStrip(rows = newsSeed) {
+  const counts = summarizeCounts(rows);
+  return `
+    <section class="status-strip" aria-label="金融新闻墙运行状态">
+      <div>
+        <span class="status-dot"></span>
+        <strong>新闻流正常</strong>
+        <em>12 个源 · 8 个主题板块 · 30 秒刷新</em>
+      </div>
+      <div>
+        <strong>${counts.high}</strong>
+        <em>高影响事件</em>
+      </div>
+      <div>
+        <strong>${counts.follow}</strong>
+        <em>待 Agent 深挖</em>
+      </div>
+      <div>
+        <strong>${counts.avg}</strong>
+        <em>平均影响分</em>
+      </div>
+      <div>
+        <strong>${counts.unread}</strong>
+        <em>未读信号</em>
       </div>
     </section>
   `;
@@ -424,6 +553,86 @@ function renderIncoming(rows) {
   `;
 }
 
+function renderCommandCenter(rows) {
+  const top = rows
+    .slice()
+    .sort((a, b) => impactScore(b) - impactScore(a))[0];
+  if (!top) return '';
+  const score = impactScore(top);
+  return `
+    <section class="command-center" aria-label="主新闻脉冲">
+      <div class="command-copy">
+        <span class="eyebrow">PRIORITY SIGNAL</span>
+        <h3>${escapeHtml(top.title)}</h3>
+        <p>${escapeHtml(top.summary)}</p>
+        <div class="command-meta">
+          <span>${escapeHtml(top.source)}</span>
+          <span>${escapeHtml(relativeTime(top.publishedAt))}</span>
+          <span>${escapeHtml(top.sentiment)}</span>
+        </div>
+        <div class="command-actions">
+          <button class="primary-btn" data-action="open-news" data-news-id="${escapeHtml(top.id)}">打开深度视图</button>
+          <button class="ghost-btn" data-action="focus-high">聚焦高影响</button>
+        </div>
+      </div>
+      <div class="impact-console ${impactTone(score)}">
+        <span>IMPACT SCORE</span>
+        <strong>${score}</strong>
+        <em>${impactLevel(score)}</em>
+        <div class="impact-track"><i style="width: ${score}%"></i></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderAgentPanel(rows) {
+  const target = rows.find((item) => item.status === '待跟进') || rows[0];
+  const score = target ? impactScore(target) : 0;
+  return `
+    <section class="agent-panel">
+      <div class="section-head compact">
+        <div>
+          <span class="eyebrow">AGENT BRIEFING</span>
+          <h2>深度分析队列</h2>
+        </div>
+      </div>
+      ${target ? `
+        <article class="agent-focus">
+          <div>
+            <span>${escapeHtml(impactLevel(score))} · ${escapeHtml(target.status)}</span>
+            <h3>${escapeHtml(target.title)}</h3>
+            <p>${escapeHtml(target.why)}</p>
+          </div>
+          <button class="secondary-btn" data-action="open-news" data-news-id="${escapeHtml(target.id)}">查看分析</button>
+        </article>
+      ` : '<div class="empty-state">暂无待分析事件</div>'}
+      <div class="agent-steps">
+        <div><strong>01</strong><span>事件摘要</span></div>
+        <div><strong>02</strong><span>相关资产</span></div>
+        <div><strong>03</strong><span>后续观察</span></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderSchedulePanel() {
+  return `
+    <section class="schedule-panel">
+      <div class="section-head compact">
+        <div>
+          <span class="eyebrow">TRIGGER CLOCK</span>
+          <h2>定时触发</h2>
+        </div>
+      </div>
+      <div class="schedule-list">
+        <div><span>全球宏观</span><strong>10 min</strong><em>运行中</em></div>
+        <div><span>A股与政策</span><strong>5 min</strong><em>高频</em></div>
+        <div><span>加密资产</span><strong>15 min</strong><em>暂停</em></div>
+      </div>
+    </section>
+  `;
+}
+
 function renderNewsCard(item, index) {
   const score = impactScore(item);
   const critical = item.importance === '高' || score >= 90;
@@ -446,6 +655,13 @@ function renderNewsCard(item, index) {
           <div class="impact-stars" aria-label="影响评分 ${score}">
             <span>${impactStars(score)}</span>
             <strong>${score}</strong>
+          </div>
+          <div class="impact-bar ${impactTone(score)}" aria-label="影响评分条 ${score}">
+            <i style="width: ${score}%"></i>
+          </div>
+          <div class="impact-reason">
+            <strong>${escapeHtml(impactLevel(score))}</strong>
+            <span>${escapeHtml(item.why)}</span>
           </div>
           <div class="tag-row">
             ${unique([...(item.market || []), ...(item.theme || []), ...(item.assets || [])], 5).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
@@ -498,6 +714,14 @@ function renderModal() {
           <h2>${escapeHtml(item.title)}</h2>
           <p class="modal-summary">${escapeHtml(item.summary)}</p>
           <div class="modal-grid">
+            <section class="analysis-block">
+              <h3>Agent 深度分析</h3>
+              <div class="analysis-grid">
+                <div><span>事件摘要</span><p>${escapeHtml(item.summary)}</p></div>
+                <div><span>可能影响</span><p>${escapeHtml(item.why)}</p></div>
+                <div><span>后续观察</span><p>观察 ${escapeHtml(unique([...(item.assets || []), ...(item.market || [])], 3).join('、'))} 的价格反应、成交放量与二次新闻确认。</p></div>
+              </div>
+            </section>
             <section>
               <h3>为什么影响市场</h3>
               <p>${escapeHtml(item.why)}</p>
@@ -521,42 +745,55 @@ function renderModal() {
 function render() {
   const app = $('#app');
   const highCount = newsSeed.filter((item) => item.importance === '高').length;
+  const rows = filteredNews();
   app.innerHTML = `
     <div class="deep-space-page">
       ${renderTicker()}
+      ${renderStatusStrip(rows)}
       <section class="hero">
         <div class="hero-copy">
           <span class="eyebrow">MARKET EVENT RADAR</span>
-          <h2>把影响市场的新闻变成一面会发光的雷达墙</h2>
-          <p>用演示数据模拟全球宏观、美股、港股、A 股、商品和加密市场的事件流。当前版本只展示前端体验，不抓真实 API。</p>
+          <h2>把影响市场的新闻变成一面会判断优先级的雷达墙</h2>
+          <p>实时聚合全球宏观、美股、港股、A 股、商品和加密市场事件，用影响评分、主题热度和 Agent 分析队列帮助你先看最重要的变化。</p>
           <div class="hero-actions">
             <button class="primary-btn" data-action="trigger-pulse">触发新闻脉冲</button>
             <button class="ghost-btn" data-action="focus-high">查看高影响</button>
           </div>
         </div>
-        <div class="hero-orbit" aria-hidden="true">
+        <div class="hero-orbit">
           <div class="radar-core"><strong>${highCount}</strong><span>HIGH IMPACT</span></div>
-          <i></i><i></i><i></i>
+          <div class="radar-readout">
+            <span>市场脉冲</span>
+            <strong>${summarizeCounts(rows).avg}</strong>
+            <em>平均影响分</em>
+          </div>
         </div>
       </section>
+      ${renderCommandCenter(rows)}
       ${renderHeroMetrics()}
-      <div class="content-grid">
-        ${renderHeatmap()}
-        <section class="signal-panel">
-          <div class="section-head">
-            <div>
-              <span class="eyebrow">SIGNAL STACK</span>
-              <h2>市场信号</h2>
+      <div class="content-grid command-grid">
+        <div class="main-stack">
+          ${renderHeatmap()}
+          ${renderNewsWall()}
+        </div>
+        <div class="side-stack">
+          <section class="signal-panel">
+            <div class="section-head compact">
+              <div>
+                <span class="eyebrow">SIGNAL STACK</span>
+                <h2>市场信号</h2>
+              </div>
             </div>
-          </div>
-          <div class="signal-list">
-            <div><span>覆盖市场</span><strong>${unique(newsSeed.flatMap((item) => item.market || []), 20).length}</strong></div>
-            <div><span>关联资产</span><strong>${unique(newsSeed.flatMap((item) => item.assets || []), 40).length}</strong></div>
-            <div><span>平均影响分</span><strong>${Math.round(newsSeed.reduce((sum, item) => sum + impactScore(item), 0) / newsSeed.length)}</strong></div>
-          </div>
-        </section>
+            <div class="signal-list">
+              <div><span>覆盖市场</span><strong>${unique(newsSeed.flatMap((item) => item.market || []), 20).length}</strong></div>
+              <div><span>关联资产</span><strong>${unique(newsSeed.flatMap((item) => item.assets || []), 40).length}</strong></div>
+              <div><span>平均影响分</span><strong>${Math.round(newsSeed.reduce((sum, item) => sum + impactScore(item), 0) / newsSeed.length)}</strong></div>
+            </div>
+          </section>
+          ${renderAgentPanel(rows)}
+          ${renderSchedulePanel()}
+        </div>
       </div>
-      ${renderNewsWall()}
     </div>
     ${renderModal()}
   `;
@@ -626,14 +863,6 @@ function initParticles() {
   function tick() {
     ctx.clearRect(0, 0, width, height);
     for (const p of particles) {
-      const dx = p.x - state.mouse.x;
-      const dy = p.y - state.mouse.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 150) {
-        const force = (150 - dist) / 150;
-        p.vx += (dx / Math.max(dist, 1)) * force * 0.018;
-        p.vy += (dy / Math.max(dist, 1)) * force * 0.018;
-      }
       p.x += p.vx;
       p.y += p.vy;
       p.vx *= 0.992;
@@ -706,16 +935,6 @@ document.addEventListener('keydown', (event) => {
     state.selectedNewsId = '';
     render();
   }
-});
-
-window.addEventListener('mousemove', (event) => {
-  state.mouse.x = event.clientX;
-  state.mouse.y = event.clientY;
-});
-
-window.addEventListener('mouseleave', () => {
-  state.mouse.x = -1000;
-  state.mouse.y = -1000;
 });
 
 $('#globalSearch').addEventListener('input', (event) => {

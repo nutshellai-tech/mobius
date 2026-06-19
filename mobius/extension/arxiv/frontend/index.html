@@ -1,18 +1,15 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="light dark">
   <title>arXiv 论文抓取 · Mobius 拓展</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <script>
     (() => {
       const saved = localStorage.getItem('arxiv-extension-theme');
-      document.documentElement.dataset.theme = saved === 'light' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
     })();
   </script>
   <script type="module" src="/src/main.js"></script>

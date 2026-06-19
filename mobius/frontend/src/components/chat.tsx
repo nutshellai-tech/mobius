@@ -29,7 +29,7 @@ const GUIDED_DEMO_TOUR_EVENT = 'imac:guided-demo-tour:start'
 // "隐藏次要条目" 的展示过滤不修改源数据.
 const MAJOR_JSONL_TYPES = new Set([
   'user', 'assistant', 'attachment', 'system', 'queue-operation',
-  'session_meta', 'turn_context', 'event_msg', 'response_item',
+  'session_meta', 'turn_context', 'event_msg', 'response_item', 'error',
 ])
 // 连续重复 entry 也按次要条目处理. 这里额外忽略可能由后端附加的顶层行号字段,
 // 避免 "除了序号不同以外完全一致" 的卡片逃过合并.
@@ -1496,7 +1496,7 @@ export function ChatArea() {
 
   // 状态唯一真相源: 后端 GET /api/sessions/:id/status.
   //   alive   = hub.isAlive       — 进程存活 (TUI 可接收输入)
-  //   working = hub.isWorking     — 还在 turn 中 (正在生成 / 跑 tool / 等首条输出)
+  //   working = hub.isWorking     — 智能体正在执行 (生成回复 / 跑工具调用 / 等首条输出)
   // 不再从 jsonl 前端派生, 不再读 sessions_v2.agent_status, 不再相信 stream 推的 typing.
   // 2s 轮询. 乐观 pending: send 出去到下次轮询前显示 "执行中 (待确认)".
   type AgentStatus = 'pending' | 'running' | 'waiting' | 'idle'

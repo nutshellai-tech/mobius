@@ -76,5 +76,5 @@ trap cleanup EXIT INT TERM
 echo "[preview] Xtigervnc pid=$XVNC_PID novnc pid=$NOVNC_PID app pid=$APP_PID"
 echo "[preview] open http://127.0.0.1:$NOVNC_PORT/vnc.html?host=127.0.0.1&port=$NOVNC_PORT&autoconnect=true&resize=scale"
 echo "[preview] via mobius local http://127.0.0.1:45616/momo_mobile_preview/vnc.html?host=127.0.0.1&port=45616&path=momo_mobile_preview/websockify&autoconnect=true&resize=scale&preview_token=$PREVIEW_TOKEN"
-echo "[preview] via cloud https://cloud-17.agent-matrix.com/momo_mobile_preview/vnc.html?host=cloud-17.agent-matrix.com&port=443&encrypt=1&path=momo_mobile_preview/websockify&autoconnect=true&resize=scale&preview_token=$PREVIEW_TOKEN"
+echo "[preview] via cloud https://mobius.example.com/momo_mobile_preview/vnc.html?host=mobius.example.com&port=443&encrypt=1&path=momo_mobile_preview/websockify&autoconnect=true&resize=scale&preview_token=$PREVIEW_TOKEN"
 wait "$APP_PID"

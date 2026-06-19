@@ -346,6 +346,11 @@ const MIME = {
   '.wasm': 'application/wasm',
   '.ico':  'image/x-icon',
   '.map':  'application/json; charset=utf-8',
+  '.mp4':  'video/mp4',
+  '.webm': 'video/webm',
+  '.mov':  'video/quicktime',
+  '.m4v':  'video/mp4',
+  '.ogg':  'video/ogg',
 };
 
 function buildLoadingHtml(entry) {
@@ -483,7 +488,53 @@ async function serveExtension(req, res, name, rel) {
   res.set('content-type', mime);
   // SVG 走严格 CSP, 防 svg xss
   if (ext === '.svg') res.set('content-security-policy', "default-src 'none'");
-  fs.createReadStream(abs).pipe(res);
+  streamAssetWithRange(req, res, abs);
+}
+
+// 静态资源带 HTTP Range 支持 — 浏览器 <video>/<audio> 必须靠 Range 分块流式播放,
+// 否则会卡在缓冲(对大视频尤甚). 同时补 Content-Length / Accept-Ranges 头.
+function streamAssetWithRange(req, res, abs) {
+  let stat;
+  try { stat = fs.statSync(abs); } catch (e) { return res.status(404).send('not found'); }
+  if (!stat.isFile()) return res.status(404).send('not found');
+  const total = stat.size;
+  res.set('accept-ranges', 'bytes');
+
+  const rangeHdr = req.headers.range || req.headers['range'];
+  if (!rangeHdr) {
+    res.set('content-length', String(total));
+    if (req.method === 'HEAD') return res.end();
+    return fs.createReadStream(abs).pipe(res);
+  }
+  // 解析 Range: bytes=start-end
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHdr).trim());
+  if (!m) {
+    res.set('content-range', `bytes */${total}`);
+    return res.status(416).end();
+  }
+  let start = m[1] === '' ? NaN : parseInt(m[1], 10);
+  let end = m[2] === '' ? NaN : parseInt(m[2], 10);
+  if (Number.isNaN(start) && Number.isNaN(end)) {
+    res.set('content-range', `bytes */${total}`);
+    return res.status(416).end();
+  }
+  // 后缀式: bytes=-N → 最后 N 字节
+  if (Number.isNaN(start)) {
+    start = Math.max(0, total - end);
+    end = total - 1;
+  }
+  // 开放式: bytes=N- → 到末尾
+  if (Number.isNaN(end)) end = total - 1;
+  if (start > end || start < 0 || end >= total) {
+    res.set('content-range', `bytes */${total}`);
+    return res.status(416).end();
+  }
+  const length = end - start + 1;
+  res.status(206);
+  res.set('content-range', `bytes ${start}-${end}/${total}`);
+  res.set('content-length', String(length));
+  if (req.method === 'HEAD') return res.end();
+  fs.createReadStream(abs, { start, end }).pipe(res);
 }
 
 // SPA 框架 (如 Next.js) 静态导出的 chunk/runtime 走根路径 /_next/static/...,

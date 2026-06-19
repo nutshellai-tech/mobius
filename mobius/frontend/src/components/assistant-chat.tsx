@@ -48,6 +48,11 @@ const ASSISTANT_FILE_MAX_BYTES = 25 * 1024 * 1024
 const ASSISTANT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const ASSISTANT_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const ASSISTANT_INPUT_DRAFT_SAVE_DELAY_MS = 300
+const ASSISTANT_INTERNAL_NOTIFICATION_PROMPT_PREFIX = '[[mobius:assistant-internal-notification-prompt]]'
+const LEGACY_ASSISTANT_INTERNAL_NOTIFICATION_MARKERS = [
+  '请你撰写消息通知用户',
+  '请你撰写消息通知当前管理员',
+]
 
 type PanelInteraction = {
   type: 'drag' | 'resize'
@@ -820,6 +825,14 @@ function isCompactControlMessage(message: { content?: string | null }) {
   return String(message.content || '').trim().startsWith('/compact')
 }
 
+function isAssistantInternalUserMessage(message: { role?: string | null, content?: string | null }) {
+  if (message.role !== 'user') return false
+  const content = String(message.content || '').trim()
+  if (!content) return false
+  return content.startsWith(ASSISTANT_INTERNAL_NOTIFICATION_PROMPT_PREFIX)
+    || LEGACY_ASSISTANT_INTERNAL_NOTIFICATION_MARKERS.some(marker => content.includes(marker))
+}
+
 function isAfterClearCutoff(createdAt: string | null | undefined, cutoff: string) {
   if (!cutoff) return true
   if (!createdAt) return false
@@ -830,10 +843,11 @@ function isAfterClearCutoff(createdAt: string | null | undefined, cutoff: string
 }
 
 function shouldShowConversationMessage(
-  message: Pick<AssistantConversationMessage, 'content' | 'created_at'>,
+  message: Pick<AssistantConversationMessage, 'content' | 'created_at'> & { role?: string | null },
   cutoff: string,
 ) {
   if (isCompactControlMessage(message)) return false
+  if (isAssistantInternalUserMessage(message)) return false
   return isAfterClearCutoff(message.created_at, cutoff)
 }
 
@@ -2504,6 +2518,7 @@ export function AssistantChat() {
     const cutoff = sid ? clearCutoffs[sid] || '' : ''
     if (currentSessionId && sid && sid !== currentSessionId) return false
     return shouldShowConversationMessage({
+      role: 'user',
       content: turn.content,
       created_at: turn.created_at,
     }, cutoff)
