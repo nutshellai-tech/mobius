@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# imac-test 的启动入口：加载配置 -> 写 accepted_setting.log / 调试 env 快照 ->
+# 起 mobius -> 起 code-server tmux -> 端口健康检查 -> attach。
 from __future__ import annotations
 
 import argparse
@@ -8,7 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from imac_runtime import (
+# 启动相关的工具函数集中在 boot_utils，这里只编排流程，不重复实现细节。
+from boot_utils import (
     ConfigError,
     EnvFileLoader,
     RUNTIME_SETTINGS,
@@ -32,6 +35,7 @@ KNOWN_SETTINGS = RUNTIME_SETTINGS
 
 
 def parse_args(description: str) -> argparse.Namespace:
+    # CLI 选项都对应主流程里的分支开关；互斥校验在 main() 里做，这里只负责声明。
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--detach",
@@ -62,18 +66,22 @@ def parse_args(description: str) -> argparse.Namespace:
 
 
 def load_configuration(run_cwd: Path, script_name: str) -> tuple[EnvFileLoader, Path, Path, str, str]:
+    # 用一份受控的白名单（KNOWN_SETTINGS）来解析 .env，避免任意变量意外进入子进程环境。
     loader = EnvFileLoader(KNOWN_SETTINGS)
+    # 把启动前 os.environ 里就已经存在的键标记为 "external"，使后续 .env 不会覆盖外部已设的值。
     loader.mark_preexisting()
 
     env_file = run_cwd / ".env"
     env_default_file = run_cwd / ".env.default"
     env_file_status = loader.load_dotenv(env_file, "loaded from .env")
+    # .env.default 必须非空：它是"默认值兜底"，若被设成空字符串会静默把功能关掉，故在此 fail-fast。
     env_default_file_status = loader.load_dotenv(
         env_default_file,
         "loaded from .env.default",
         require_non_empty=True,
     )
 
+    # 这些是后续步骤（端口、工作目录、可执行路径）的硬依赖；缺一个都无法继续。
     for key in [
         "APP_DIR",
         "MOBIUS_PORT",
@@ -89,24 +97,30 @@ def load_configuration(run_cwd: Path, script_name: str) -> tuple[EnvFileLoader, 
     mobius_port = os.environ["MOBIUS_PORT"]
     code_server_port = os.environ["CODE_SERVER_PORT"]
 
+    # 派生默认值：仅在用户没显式设过时才写入（set_default 内部判断）。
     loader.set_default("IMAC_DEBUG_ENV_FILE", f"{app_dir}/.imac/debug-env.json")
     loader.set_default("VITE_API_TARGET", f"http://0.0.0.0:{mobius_port}")
+    # code-server 监听地址（host:port 格式），仅本机回环，避免裸暴露到外网。
     loader.set_default("CODE_SERVER_BIND", f"127.0.0.1:{code_server_port}")
+    # code-server 对外宣称的访问 URL；和 BIND 不同，这里用 0.0.0.0 是给浏览器端展示用的。
     loader.set_default("VSCODE_WEB_URL", f"http://0.0.0.0:{code_server_port}")
 
     return loader, env_file, env_default_file, env_file_status, env_default_file_status
 
 
 def env_snapshot_keys(loader: EnvFileLoader) -> list[str]:
+    # 顺序：先白名单（稳定可读），再补 .env 里出现过的其余键；ordered_unique 去重并保留首次出现顺序。
     return ordered_unique([*KNOWN_SETTINGS, *sorted(loader.loaded_env_keys)])
 
 
 def write_runtime_env_file(file_path: Path, loader: EnvFileLoader, generated_by: str) -> None:
+    # 把当前实际生效的环境写一份到 .imac/debug-env.json，便于事后排查"为什么是这个值"。
     env = {
         key: os.environ[key]
         for key in env_snapshot_keys(loader)
         if key in os.environ
     }
+    # write_json_private 会 chmod 0o600：调试文件里可能含敏感配置，不能给其他用户读。
     write_json_private(
         file_path,
         {
@@ -118,6 +132,7 @@ def write_runtime_env_file(file_path: Path, loader: EnvFileLoader, generated_by:
 
 
 def accepted_setting_rows(loader: EnvFileLoader) -> list[tuple[str, str, str]]:
+    # 生成 (key, 来源, 脱敏值) 三元组列表；mask_setting_value 会把名称里带 SECRET/TOKEN 等的值打码。
     rows: list[tuple[str, str, str]] = []
     for key in env_snapshot_keys(loader):
         if key not in os.environ:
@@ -137,6 +152,7 @@ def write_accepted_settings_log(
     env_default_file_status: str,
     debug_env_file: Path,
 ) -> None:
+    # 人可读的"本次启动实际生效的配置"快照；和 debug-env.json 互补（那个完整、这个脱敏+带来源）。
     lines = [
         f"accepted settings generated_at={utc_timestamp()}",
         f"root={os.environ['APP_DIR']}",
@@ -157,7 +173,10 @@ def write_accepted_settings_log(
 
 
 def apply_product_port() -> None:
+    # 关键约束：前端 dev server 和后端 API 必须用同一个端口（VITE 反代到自身）。
+    # 取值优先级：显式 VITE_PORT > 显式 MOBIUS_PORT > 硬编码兜底 45616。
     product_port = os.environ.get("VITE_PORT") or os.environ.get("MOBIUS_PORT") or "45616"
+    # 强制把两个变量对齐成同一个值，避免前端/后端各监听各的导致跨端口。
     os.environ["VITE_PORT"] = product_port
     os.environ["MOBIUS_PORT"] = product_port
     if not os.environ.get("VITE_API_TARGET"):
@@ -171,7 +190,9 @@ def start_mobius(
     hard_reset: str | None = None,
     only_update_frontend: bool = False,
 ) -> None:
+    # 委托给 mobius/start_product.py：编译 + 启动的工作不在主入口里展开，这里只透传 CLI 选项。
     start_script = root / "mobius" / start_script_name
+    # 用当前解释器（sys.executable）起子脚本，避免 PATH 里 python 指向别的版本。
     argv = [sys.executable, start_script]
     if other_versions:
         argv.extend(["--other-versions", other_versions])
@@ -183,6 +204,8 @@ def start_mobius(
 
 
 def code_server_is_healthy() -> bool:
+    # 健康判定要同时满足两个条件：tmux 会话还在 + 端口真的能连上。
+    # 单看 tmux 会进程已死但 session 残留；单看端口可能撞上别的服务。
     return tmux_session_exists("code-server") and port_is_listening(os.environ["CODE_SERVER_PORT"])
 
 
@@ -190,6 +213,7 @@ def start_code_server(*, force_restart: bool = True) -> None:
     print()
     print(f"=== [2/3] code-server {os.environ['CODE_SERVER_BIND']} ===")
 
+    # 幂等优化：默认启动时若已健康则跳过，减少无谓重启；--force-vscode-server-restart 可强制。
     if not force_restart and code_server_is_healthy():
         print("   code-server 已正常运行，跳过重启")
         print("   如需强制重启，执行 start.py 时加 --force-vscode-server-restart")
@@ -198,11 +222,14 @@ def start_code_server(*, force_restart: bool = True) -> None:
     if not force_restart:
         print("   code-server 未正常运行，准备启动")
 
+    # 先清理上一次的残留：kill 旧 tmux 会话 + 用 fuser 杀掉占用端口的进程。
+    # 注意两步缺一不可：tmux kill 不会释放已被 code-server 子进程占住的端口。
     if kill_tmux_session("code-server"):
         print("   旧 code-server tmux 已 kill")
 
     kill_tcp_port_with_fuser(os.environ["CODE_SERVER_PORT"])
 
+    # 构造实际要跑的 shell 命令：tee 一份到 /tmp/code-server.log 方便事后看输出。
     command = tee_command(
         [
             os.environ["CS_BIN"],
@@ -216,28 +243,34 @@ def start_code_server(*, force_restart: bool = True) -> None:
         ],
         "/tmp/code-server.log",
     )
+    # 必须前置 unset 这几个变量：它们是从启动者（可能是另一个 VS Code 终端）继承下来的 IPC 句柄，
+    # 若带进 code-server 子进程，会让新 code-server 误连到外层 VS Code 而不是自己起进程。
     command = "unset VSCODE_IPC_HOOK_CLI VSCODE_GIT_ASKPASS_NODE VSCODE_GIT_ASKPASS_MAIN; " + command
 
+    # 过滤环境变量再传给 tmux：safe_tmux_environment 剔除名称非法的键和 VSCODE_IPC_ENV 这类敏感 IPC 变量。
     env = safe_tmux_environment(os.environ, exclude=VSCODE_IPC_ENV)
     argv = [
         "tmux",
         "new-session",
-        "-d",
+        "-d",  # detached：不 attach，让脚本继续往下走
         "-s",
         "code-server",
         "-c",
         os.environ["CODE_SERVER_CWD"],
     ]
+    # add_tmux_environment 把每个环境变量转成 -e KEY=VAL 注入到 tmux 会话里。
     add_tmux_environment(argv, env)
     argv.append(command)
 
     run(argv)
+    # 给 code-server 一点时间完成启动，再做后续健康检查（否则端口探测太早会误报失败）。
     time.sleep(2)
 
 
 def print_health_check() -> None:
     print()
     print("=== [3/3] 端口健康检查 ===")
+    # 再多等一会儿：mobius 编译 + serve 起来比 code-server 慢，需要更长 grace period。
     time.sleep(3)
 
     ports = [os.environ["CODE_SERVER_PORT"], os.environ["MOBIUS_PORT"]]
@@ -276,6 +309,8 @@ def print_frontend_update_summary(root: Path) -> None:
 
 
 def attach_to_mobius() -> None:
+    # mobius 后端跑在 PM2 下而非前台 tmux，所以这里没有真正的 attach；
+    # 只打印查看日志的方式给用户参考（与 print_summary 一致，避免用户以为没启动）。
     print()
     print("后端由 PM2 管理。可手动查看日志: cd mobius && npx --no-install pm2 logs imac-mobius")
 
@@ -290,10 +325,12 @@ def main(
     start_script_name: str = "start_product.py",
 ) -> int:
     args = parse_args(description)
+    # 用解析后的绝对路径定位 .env；不依赖脚本文件位置，方便从不同目录调用。
     run_cwd = Path.cwd().resolve()
 
     try:
         loader, env_file, env_default_file, env_status, default_status = load_configuration(run_cwd, script_name)
+        # 互斥的 CLI 组合，提前报错比让 start_product 自己崩更清晰。
         if args.other_versions and args.hard_reset:
             raise ConfigError("--other-versions 和 --hard-reset 不能同时使用")
         if args.only_update_frontend and (args.other_versions or args.hard_reset):
@@ -303,6 +340,8 @@ def main(
         root = Path(os.environ["APP_DIR"])
         debug_env_file = Path(os.environ["IMAC_DEBUG_ENV_FILE"])
 
+        # 先落盘两份快照（debug-env.json 全量、accepted_setting.log 脱敏），再起服务；
+        # 这样即便后续启动失败也能事后看"当时打算用哪份配置"。
         write_runtime_env_file(debug_env_file, loader, script_name)
         write_accepted_settings_log(
             root / "accepted_setting.log",
@@ -314,10 +353,12 @@ def main(
             debug_env_file,
         )
 
+        # --only-update-frontend 走的是独立的 [1/1] 单步流程，到下面会 return 提前结束。
         if args.only_update_frontend:
             print(f"=== [1/1] 更新 mobius 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
         else:
             print(f"=== [1/3] 起 mobius (compile + serve :{os.environ['MOBIUS_PORT']}) ===")
+        # 显式 flush：start_mobius 内部 run 会阻塞编译，这里先确保步骤标题被打印出去再阻塞。
         sys.stdout.flush()
         start_mobius(
             root,
@@ -326,6 +367,7 @@ def main(
             args.hard_reset,
             args.only_update_frontend,
         )
+        # 纯前端更新模式到此结束：不起 code-server、不做端口健康检查、不 attach。
         if args.only_update_frontend:
             print_frontend_update_summary(root)
             return 0
@@ -334,18 +376,22 @@ def main(
         print_health_check()
         print_summary(root)
 
+        # 默认非 detach 模式下提示用户日志入口；--detach 用于自动化场景，跳过交互提示。
         if not args.detach:
             attach_to_mobius()
 
         return 0
 
     except ConfigError as exc:
+        # 配置类错误统一退出码 2，区别于命令执行失败的子进程退出码。
         print(f"{script_name}: {exc}", file=sys.stderr)
         return 2
     except subprocess.CalledProcessError as exc:
+        # 子进程失败时透传其退出码；若子进程退出码为 0（理论不该发生）则兜底 1。
         print(f"{script_name}: command failed with exit code {exc.returncode}: {exc.cmd}", file=sys.stderr)
         return exc.returncode or 1
 
 
 if __name__ == "__main__":
+    # 把 main 的返回值转成进程退出码；return 0 -> exit 0，return 2 -> exit 2。
     raise SystemExit(main())

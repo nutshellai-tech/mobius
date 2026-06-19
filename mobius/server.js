@@ -7,7 +7,7 @@
  *   - 走 backend/agents/ 抽象层, 默认 backend = 'tmux-claude-code' (见 backend/agents/tmux-claude-code.js)
  *
  * 端口: 45614 (HTTP+WS)
- * 启动: python3 start_debug.py / python3 start_product.py
+ * 启动: python3 start.py (项目根目录) -> 调用 mobius/start_product.py
  */
 
 const express = require('express');

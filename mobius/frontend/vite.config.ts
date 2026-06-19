@@ -11,7 +11,7 @@ const apiTarget = process.env.VITE_API_TARGET || `http://localhost:${mobiusPort}
 const allowedHosts = (process.env.VITE_ALLOWED_HOSTS || '.example.com')
   .split(',').map(s => s.trim()).filter(Boolean)
 // 经 https 域名反代时 HMR ws 客户端要连 wss:443 而非 ws:45616.
-// 由 start_debug.py 注入 VITE_HMR_*; 裸 `npm run dev` 本地直连不设 -> vite 默认行为.
+// VITE_HMR_* 由 .env.default 提供; 裸 `npm run dev` 本地直连不设 -> vite 默认行为.
 // 故意不设 hmr.host: 留空时客户端用页面自身 hostname 回连, 各 cloud-N 子域各自连对.
 const hmr: Record<string, unknown> = {}
 if (process.env.VITE_HMR_PROTOCOL) hmr.protocol = process.env.VITE_HMR_PROTOCOL

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # start-code-server.bash — 启动 code-server (VSCode Web).
 # 端口 45617, 仅本机访问, 无密码 (config 在 ~/.config/code-server/config.yaml).
-# 独立 tmux session, 与 debug.py 互不影响.
+# 独立 tmux session, 与 start.py 互不影响.
 #
 # 用法:
 #   bash start-code-server.bash            # 启动 (若已在跑则不重启)
