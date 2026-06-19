@@ -45,7 +45,6 @@ RUN PREFIX=/usr/local/bin bash ./scripts/install-dummy-bash-cmd-list.bash
 
 # uv (Rust 单文件 binary, 通过 pip 装最稳) + aimux bridge venv.
 # venv 不放 /app_image 而是放 mobius/.venv-aimux, 让 host 与 docker 共用同一份 setup 脚本.
-RUN pip install --break-system-packages uv
 RUN bash /app_image/mobius/scripts/setup-aimux-bridge.sh
 
 RUN mkdir -p /app /data
