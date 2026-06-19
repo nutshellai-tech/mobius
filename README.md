@@ -12,7 +12,9 @@
 - Build image (stage 1, environment only, no code):
    - `docker build -t imac-mobius:v0 -f deploy/Dockerfile .`
 - Build image (stage 2, copy code into image):
-
+   - `docker build -t imac-mobius:final .`
+- Run image:
+   - `docker-compose up`
 
 
 ## 核心工作流
