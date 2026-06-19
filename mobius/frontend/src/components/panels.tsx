@@ -1516,6 +1516,468 @@ function AdminAssistantCallbacksPanel() {
   )
 }
 
+type DoubaoMaskedSecret = { isSet: boolean; preview: string }
+
+type DoubaoVoiceMaskedSub = {
+  appId: DoubaoMaskedSecret
+  accessToken: DoubaoMaskedSecret
+  secretKey: DoubaoMaskedSecret
+  resourceId: string
+  endpoint: string
+  voiceType?: string
+}
+
+type DoubaoVoiceMasked = {
+  asr: DoubaoVoiceMaskedSub
+  tts: DoubaoVoiceMaskedSub
+}
+
+type DoubaoVoiceRevealedSub = {
+  appId: string
+  accessToken: string
+  secretKey: string
+  resourceId: string
+  endpoint: string
+  voiceType?: string
+}
+
+type DoubaoVoiceRevealed = {
+  asr: DoubaoVoiceRevealedSub
+  tts: DoubaoVoiceRevealedSub
+}
+
+type DoubaoFormState = {
+  appId: string
+  accessToken: string
+  secretKey: string
+  resourceId: string
+  endpoint: string
+  voiceType: string
+}
+
+const DOUBAO_FIELD_LABELS = {
+  appId: 'App ID',
+  accessToken: 'Access Token',
+  secretKey: 'Secret Key',
+  resourceId: 'Resource ID',
+  endpoint: 'Endpoint',
+  voiceType: '音色',
+} as const
+
+const DOUBAO_SECRET_FIELDS = ['appId', 'accessToken', 'secretKey'] as const
+
+function emptyDoubaoForm(defaults: { resourceId: string; endpoint: string; voiceType?: string }): DoubaoFormState {
+  return {
+    appId: '',
+    accessToken: '',
+    secretKey: '',
+    resourceId: defaults.resourceId,
+    endpoint: defaults.endpoint,
+    voiceType: defaults.voiceType || '',
+  }
+}
+
+function maskedToForm(sub: DoubaoVoiceMaskedSub, revealed: DoubaoVoiceRevealedSub | null): DoubaoFormState {
+  const secret = (key: 'appId' | 'accessToken' | 'secretKey') => {
+    if (revealed) return revealed[key] || ''
+    return ''
+  }
+  return {
+    appId: secret('appId'),
+    accessToken: secret('accessToken'),
+    secretKey: secret('secretKey'),
+    resourceId: sub.resourceId || '',
+    endpoint: sub.endpoint || '',
+    voiceType: sub.voiceType || '',
+  }
+}
+
+function DoubaoFieldInput({
+  fieldKey,
+  label,
+  value,
+  onChange,
+  secret,
+  revealed,
+  placeholder,
+}: {
+  fieldKey: string
+  label: string
+  value: string
+  onChange: (next: string) => void
+  secret?: boolean
+  revealed?: boolean
+  placeholder?: string
+}) {
+  const [showLocal, setShowLocal] = useState(false)
+  const isSecret = !!secret
+  const showValue = isSecret ? (revealed || showLocal) : true
+  return (
+    <label className="block" htmlFor={`doubao-${fieldKey}`}>
+      <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <div className="relative">
+        <input
+          id={`doubao-${fieldKey}`}
+          type={isSecret && !showValue ? 'password' : 'text'}
+          value={value}
+          placeholder={placeholder}
+          onChange={e => onChange(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-8 w-full rounded-md px-2.5 text-[12px]"
+          style={{
+            background: 'var(--input-bg)',
+            border: '1px solid var(--input-border)',
+            color: 'var(--text-primary)',
+          }}
+        />
+        {isSecret && (
+          <button
+            type="button"
+            title={showLocal ? '隐藏' : '显示'}
+            onClick={() => setShowLocal(s => !s)}
+            className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            {showLocal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        )}
+      </div>
+    </label>
+  )
+}
+
+function DoubaoSubCard({
+  title,
+  description,
+  service,
+  masked,
+  voices,
+  revealed,
+  onReveal,
+}: {
+  title: string
+  description: string
+  service: 'asr' | 'tts'
+  masked: DoubaoVoiceMaskedSub
+  voices: Array<{ id: string; label: string }>
+  revealed: DoubaoVoiceRevealedSub | null
+  onReveal: () => Promise<void>
+}) {
+  const isTts = service === 'tts'
+  const [form, setForm] = useState<DoubaoFormState>(() => maskedToForm(masked, revealed))
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [error, setError] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  useEffect(() => {
+    setForm(maskedToForm(masked, revealed))
+  }, [masked, revealed])
+
+  const update = (key: keyof DoubaoFormState) => (next: string) => {
+    setForm(prev => ({ ...prev, [key]: next }))
+    setTestResult(null)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const body = isTts
+        ? {
+            appId: form.appId,
+            accessToken: form.accessToken,
+            secretKey: form.secretKey,
+            resourceId: form.resourceId,
+            endpoint: form.endpoint,
+            voiceType: form.voiceType,
+          }
+        : {
+            appId: form.appId,
+            accessToken: form.accessToken,
+            secretKey: form.secretKey,
+            resourceId: form.resourceId,
+            endpoint: form.endpoint,
+          }
+      await api(`/api/admin/settings/doubao-voice/${service}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      })
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async () => {
+    setTesting(true)
+    setError('')
+    setTestResult(null)
+    try {
+      const result = await api('/api/admin/settings/doubao-voice/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          service,
+          appId: form.appId,
+          accessToken: form.accessToken,
+          secretKey: form.secretKey,
+          resourceId: form.resourceId,
+          endpoint: form.endpoint,
+          voiceType: isTts ? form.voiceType : undefined,
+        }),
+      }) as { ok: boolean; error?: string; audio_bytes?: number }
+      setTestResult({
+        ok: !!result.ok,
+        message: result.ok
+          ? (isTts ? `合成成功 (${result.audio_bytes ?? 0} bytes)` : '握手成功')
+          : (result.error || '测试失败'),
+      })
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const fields: Array<{ key: keyof DoubaoFormState; secret?: boolean; placeholder?: string }> = [
+    { key: 'appId', secret: true },
+    { key: 'accessToken', secret: true },
+    { key: 'secretKey', secret: true },
+    { key: 'resourceId' },
+    { key: 'endpoint' },
+  ]
+  if (isTts) fields.push({ key: 'voiceType' })
+
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h4>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{description}</div>
+        </div>
+        {!revealed && (
+          <button
+            type="button"
+            onClick={onReveal}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-color)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Eye className="h-3 w-3" />
+            查看明文
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-[11px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-2.5">
+        {fields.map(({ key, secret, placeholder }) => {
+          if (isTts && key === 'voiceType') {
+            return (
+              <label key={key} className="block">
+                <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  {DOUBAO_FIELD_LABELS[key]}
+                </span>
+                <select
+                  value={form.voiceType}
+                  onChange={e => update('voiceType')(e.target.value)}
+                  className="h-8 w-full rounded-md px-2 text-[12px]"
+                  style={{
+                    background: 'var(--input-bg)',
+                    border: '1px solid var(--input-border)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  {voices.length === 0 && (
+                    <option value={form.voiceType}>{form.voiceType || '加载中...'}</option>
+                  )}
+                  {voices.map(v => (
+                    <option key={v.id} value={v.id}>{v.label} ({v.id})</option>
+                  ))}
+                </select>
+              </label>
+            )
+          }
+          const sub = masked as DoubaoVoiceMaskedSub
+          const placeholderText = placeholder
+            || (secret && !revealed && sub[key as 'appId' | 'accessToken' | 'secretKey']?.isSet
+              ? `已保存 (${sub[key as 'appId' | 'accessToken' | 'secretKey'].preview})`
+              : '')
+          return (
+            <DoubaoFieldInput
+              key={key}
+              fieldKey={`${service}-${key}`}
+              label={DOUBAO_FIELD_LABELS[key]}
+              value={form[key]}
+              onChange={update(key)}
+              secret={secret}
+              revealed={!!revealed}
+              placeholder={placeholderText}
+            />
+          )
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || testing}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium text-white disabled:opacity-60"
+          style={{ background: 'var(--accent, #2563eb)' }}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {savedFlash ? '已保存' : '保存'}
+        </button>
+        <button
+          type="button"
+          onClick={test}
+          disabled={saving || testing}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          测试连接
+        </button>
+        {testResult && (
+          <span
+            className="text-[11px]"
+            style={{ color: testResult.ok ? '#10b981' : '#f87171' }}
+          >
+            {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AdminDoubaoVoiceCard() {
+  const [masked, setMasked] = useState<DoubaoVoiceMasked | null>(null)
+  const [revealed, setRevealed] = useState<DoubaoVoiceRevealed | null>(null)
+  const [revealUntil, setRevealUntil] = useState(0)
+  const [voices, setVoices] = useState<Array<{ id: string; label: string }>>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const next = await api('/api/admin/settings/doubao-voice') as DoubaoVoiceMasked
+      setMasked(next)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    api('/api/assistant/tts/voices').then((v: any) => {
+      if (Array.isArray(v?.voices)) {
+        setVoices(v.voices.map((x: any) => ({ id: x.id, label: x.label })))
+      } else if (Array.isArray(v)) {
+        setVoices(v.map((x: any) => ({ id: x.id, label: x.label })))
+      }
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!revealUntil) return
+    const remaining = revealUntil - Date.now()
+    if (remaining <= 0) {
+      setRevealed(null)
+      setRevealUntil(0)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setRevealed(null)
+      setRevealUntil(0)
+    }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [revealUntil])
+
+  const reveal = async () => {
+    try {
+      const next = await api('/api/admin/settings/doubao-voice/reveal') as DoubaoVoiceRevealed
+      setRevealed(next)
+      setRevealUntil(Date.now() + 30_000)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    }
+  }
+
+  if (!masked) {
+    return (
+      <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+        <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          {loading ? '加载豆包语音配置…' : (error || '暂无数据')}
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>豆包 ASR / TTS</h3>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            管理中心保存的值优先于环境变量；保存后点击「测试连接」验证
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {revealed && (
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              明文显示中（{Math.max(0, Math.ceil((revealUntil - Date.now()) / 1000))}s）
+            </span>
+          )}
+          <button type="button" onClick={load} disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+      <div className="grid gap-3 md:grid-cols-2">
+        <DoubaoSubCard
+          title="豆包 ASR"
+          description="语音转文字 (浏览器录音)"
+          service="asr"
+          masked={masked.asr}
+          voices={[]}
+          revealed={revealed?.asr ?? null}
+          onReveal={reveal}
+        />
+        <DoubaoSubCard
+          title="豆包 TTS"
+          description="文字转语音 (小莫播报)"
+          service="tts"
+          masked={masked.tts}
+          voices={voices}
+          revealed={revealed?.tts ?? null}
+          onReveal={reveal}
+        />
+      </div>
+    </section>
+  )
+}
+
 type ClaudeCodeModelConfig = {
   key: string
   session_model: string
@@ -3561,7 +4023,12 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
           {activeTab === 'models' && <AdminModelsPanel />}
 
-          {activeTab === 'assistant' && <AdminAssistantCallbacksPanel />}
+          {activeTab === 'assistant' && (
+            <div className="flex flex-col gap-3">
+              <AdminAssistantCallbacksPanel />
+              <AdminDoubaoVoiceCard />
+            </div>
+          )}
 
           {activeTab === 'extensions' && <HiddenExtensionsCard />}
 

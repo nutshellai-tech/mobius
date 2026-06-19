@@ -1142,7 +1142,7 @@ router.post('/transcribe', auth, (req, res) => {
     }
 
     try {
-      const result = await transcribeBrowserAudio({ user: req.user, file: req.file });
+      const result = await transcribeBrowserAudio({ file: req.file });
       return res.json({
         ok: true,
         text: result.text,
@@ -1180,7 +1180,7 @@ router.post('/speak', auth, async (req, res) => {
   }
 
   try {
-    const result = await synthesizeSpeech({ user: req.user, text, voice });
+    const result = await synthesizeSpeech({ text, voice });
     res.setHeader('Content-Type', result.mimeType);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Mobius-TTS-Request-Id', result.request_id);

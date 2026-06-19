@@ -1,9 +1,6 @@
 const crypto = require('crypto');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
-const { Memories } = require('../repositories/memories');
+const adminSettings = require('./admin-settings');
 
 const DEFAULT_ENDPOINT = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
 const DEFAULT_RESOURCE_ID = 'seed-tts-2.0';
@@ -109,132 +106,41 @@ class TtsError extends Error {
   }
 }
 
-function parseEnvFile(file) {
-  if (!file) return {};
-  const resolved = path.resolve(file.replace(/^~/, os.homedir()));
-  if (!fs.existsSync(resolved)) return {};
-  const out = {};
-  const raw = fs.readFileSync(resolved, 'utf8');
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) return;
-    const key = match[1];
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    out[key] = value;
-  });
-  return out;
-}
-
-function cleanCredentialValue(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^["'`]+|["'`]+$/g, '')
-    .replace(/[，,。;；]+$/g, '')
-    .trim();
-}
-
-function credentialEnvValue(value) {
-  const cleaned = cleanCredentialValue(value);
-  if (!cleaned || /^replace-me(?:-|$)/i.test(cleaned) || /^change-me(?:-|$)/i.test(cleaned)) {
-    return '';
-  }
+function envCredentialValue(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) return '';
+  if (/^replace-me(?:-|$)/i.test(cleaned) || /^change-me(?:-|$)/i.test(cleaned)) return '';
   return cleaned;
 }
 
-function firstCredentialMatch(text, patterns) {
-  for (const pattern of patterns) {
-    const match = String(text || '').match(pattern);
-    if (!match?.[1]) continue;
-    const value = credentialEnvValue(match[1]);
-    if (value) return value;
-  }
-  return '';
+function pickCredential(storedKey, envKey) {
+  const stored = adminSettings.getDoubaoVoice().tts[storedKey];
+  if (stored && !/^replace-me(?:-|$)/i.test(stored)) return stored;
+  return envCredentialValue(process.env[envKey]);
 }
 
-function extractDoubaoTtsCredentialsFromText(text) {
-  const appId = firstCredentialMatch(text, [
-    /\bDOUBAO_TTS_APP_ID\s*=\s*([^\s"'`]+)/i,
-    /\bVOLC_TTS_APP_ID\s*=\s*([^\s"'`]+)/i,
-    /\bAPP\s*ID\s*[:：]\s*([^\s\r\n]+)/i,
-    /\bApp\s*Key\s*[:：]\s*([^\s\r\n]+)/i,
-  ]);
-  const accessToken = firstCredentialMatch(text, [
-    /\bDOUBAO_TTS_ACCESS_TOKEN\s*=\s*([^\s"'`]+)/i,
-    /\bVOLC_TTS_ACCESS_TOKEN\s*=\s*([^\s"'`]+)/i,
-    /\bAccess\s*Token\s*[:：]\s*([^\s\r\n]+)/i,
-    /\bAccess\s*Key\s*[:：]\s*([^\s\r\n]+)/i,
-  ]);
-  if (!appId || !accessToken) return null;
+function pickNonSecret(storedKey, envKey, fallback) {
+  const stored = adminSettings.getDoubaoVoice().tts[storedKey];
+  if (stored) return stored;
+  return process.env[envKey] || fallback;
+}
+
+function resolveCredentials() {
   return {
-    appId,
-    accessToken,
-    resourceId: firstCredentialMatch(text, [
-      /\bDOUBAO_TTS_RESOURCE_ID\s*=\s*([^\s"'`]+)/i,
-      /\bResource\s*ID\s*[:：]\s*([A-Za-z0-9._-]+)/i,
-    ]) || DEFAULT_RESOURCE_ID,
-    endpoint: firstCredentialMatch(text, [
-      /\bDOUBAO_TTS_ENDPOINT\s*=\s*(https:\/\/[^\s"'`]+)/i,
-      /((?:https:\/\/)[^\s"'`]+\/api\/v3\/tts\/unidirectional)\b/i,
-    ]) || DEFAULT_ENDPOINT,
+    appId: pickCredential('appId', 'DOUBAO_TTS_APP_ID'),
+    accessToken: pickCredential('accessToken', 'DOUBAO_TTS_ACCESS_TOKEN'),
+    resourceId: pickNonSecret('resourceId', 'DOUBAO_TTS_RESOURCE_ID', DEFAULT_RESOURCE_ID),
+    endpoint: pickNonSecret('endpoint', 'DOUBAO_TTS_ENDPOINT', DEFAULT_ENDPOINT),
   };
 }
 
-function resolveCredentialsFromUserMemory(user) {
-  const userId = user?.id;
-  if (!userId) return null;
-  let memories = [];
-  try {
-    memories = Memories.listForUser(userId);
-  } catch {
-    return null;
-  }
-  const candidates = memories.filter((memory) => {
-    const haystack = [memory.name, memory.description, memory.body].filter(Boolean).join('\n');
-    return /豆包\s*TTS|DOUBAO_TTS|SeedTTS|seed-tts|openspeech/i.test(haystack);
-  });
-  for (const memory of candidates) {
-    const credentials = extractDoubaoTtsCredentialsFromText(memory.body || '');
-    if (credentials) return credentials;
-  }
-  return null;
-}
-
-function loadSecretEnv() {
-  const files = [
-    process.env.DOUBAO_TTS_ENV_FILE,
-    path.join(os.homedir(), '.codex', 'secrets', 'doubao-tts.env'),
-  ].filter(Boolean);
-  return files.reduce((acc, file) => ({ ...acc, ...parseEnvFile(file) }), {});
-}
-
-function resolveCredentials(user) {
-  const secretEnv = loadSecretEnv();
-  const get = (key) => process.env[key] || secretEnv[key] || '';
-  const getCredential = (key) => credentialEnvValue(process.env[key]) || credentialEnvValue(secretEnv[key]);
-  const appId = getCredential('DOUBAO_TTS_APP_ID') || getCredential('VOLC_TTS_APP_ID');
-  const accessToken = getCredential('DOUBAO_TTS_ACCESS_TOKEN') || getCredential('VOLC_TTS_ACCESS_TOKEN');
-  if (appId && accessToken) {
-    return {
-      appId,
-      accessToken,
-      resourceId: get('DOUBAO_TTS_RESOURCE_ID') || get('VOLC_TTS_RESOURCE_ID') || DEFAULT_RESOURCE_ID,
-      endpoint: get('DOUBAO_TTS_ENDPOINT') || DEFAULT_ENDPOINT,
-    };
-  }
-
-  const memoryCredentials = resolveCredentialsFromUserMemory(user);
-  if (memoryCredentials) return memoryCredentials;
-
+function resolveCredentialsFromPayload(payload = {}) {
+  const obj = payload && typeof payload === 'object' ? payload : {};
   return {
-    appId: '',
-    accessToken: '',
-    resourceId: get('DOUBAO_TTS_RESOURCE_ID') || DEFAULT_RESOURCE_ID,
-    endpoint: get('DOUBAO_TTS_ENDPOINT') || DEFAULT_ENDPOINT,
+    appId: String(obj.appId ?? '').trim(),
+    accessToken: String(obj.accessToken ?? '').trim(),
+    resourceId: String(obj.resourceId ?? '').trim() || DEFAULT_RESOURCE_ID,
+    endpoint: String(obj.endpoint ?? '').trim() || DEFAULT_ENDPOINT,
   };
 }
 
@@ -347,13 +253,13 @@ function parseTtsLine(line, logId = '') {
   }
 }
 
-async function synthesizeSpeech({ user, text, voice = DEFAULT_VOICE, format = DEFAULT_FORMAT } = {}) {
+async function synthesizeSpeech({ user, text, voice = DEFAULT_VOICE, format = DEFAULT_FORMAT, credentials: overrideCredentials } = {}) {
   const safeText = normalizeText(text);
   if (!safeText) {
     throw new TtsError('播报文本为空。', { code: 'TTS_TEXT_EMPTY', status: 400 });
   }
 
-  const credentials = resolveCredentials(user);
+  const credentials = overrideCredentials || resolveCredentials();
   if (!credentials.appId || !credentials.accessToken) {
     throw new TtsError('TTS 凭据未配置。', { code: 'TTS_NOT_CONFIGURED', status: 503 });
   }
@@ -488,5 +394,7 @@ module.exports = {
   getTtsCacheStats,
   getTtsVoices,
   isDoubaoTtsConfigured,
+  resolveCredentials,
+  resolveCredentialsFromPayload,
   synthesizeSpeech,
 };

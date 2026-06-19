@@ -6,7 +6,7 @@ const tls = require('tls');
 const zlib = require('zlib');
 const { spawn } = require('child_process');
 
-const { Memories } = require('../repositories/memories');
+const adminSettings = require('./admin-settings');
 
 const CLIENT_FULL_REQUEST = 0b0001;
 const CLIENT_AUDIO_ONLY_REQUEST = 0b0010;
@@ -36,99 +36,42 @@ class AsrError extends Error {
   }
 }
 
-function parseEnvFile(file) {
-  if (!file) return {};
-  const resolved = path.resolve(file.replace(/^~/, os.homedir()));
-  if (!fs.existsSync(resolved)) return {};
-  const out = {};
-  const raw = fs.readFileSync(resolved, 'utf8');
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const match = trimmed.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (!match) return;
-    const key = match[1];
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    out[key] = value;
-  });
-  return out;
-}
-
-function cleanCredentialValue(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^["'`]+|["'`]+$/g, '')
-    .replace(/[，,。;；]+$/g, '')
-    .trim();
-}
-
-function credentialEnvValue(value) {
-  const cleaned = cleanCredentialValue(value);
-  if (!cleaned || /^replace-me(?:-|$)/i.test(cleaned) || /^change-me(?:-|$)/i.test(cleaned)) {
-    return '';
-  }
+function envCredentialValue(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) return '';
+  if (/^replace-me(?:-|$)/i.test(cleaned) || /^change-me(?:-|$)/i.test(cleaned)) return '';
   return cleaned;
 }
 
-function firstCredentialMatch(text, patterns) {
-  for (const pattern of patterns) {
-    const match = String(text || '').match(pattern);
-    if (!match?.[1]) continue;
-    const value = credentialEnvValue(match[1]);
-    if (value) return value;
-  }
-  return '';
+function pickCredential(storedKey, envKey) {
+  const stored = adminSettings.getDoubaoVoice().asr[storedKey];
+  if (stored && !/^replace-me(?:-|$)/i.test(stored)) return stored;
+  return envCredentialValue(process.env[envKey]);
 }
 
-function extractDoubaoCredentialsFromText(text) {
-  const appId = firstCredentialMatch(text, [
-    /\bDOUBAO_ASR_APP_ID\s*=\s*([^\s"'`]+)/i,
-    /\bVOLC_ASR_APP_ID\s*=\s*([^\s"'`]+)/i,
-    /\bAPP\s*ID\s*[:：]\s*([^\s\r\n]+)/i,
-    /\bApp\s*Key\s*[:：]\s*([^\s\r\n]+)/i,
-  ]);
-  const accessToken = firstCredentialMatch(text, [
-    /\bDOUBAO_ASR_ACCESS_TOKEN\s*=\s*([^\s"'`]+)/i,
-    /\bVOLC_ASR_ACCESS_TOKEN\s*=\s*([^\s"'`]+)/i,
-    /\bAccess\s*Token\s*[:：]\s*([^\s\r\n]+)/i,
-    /\bAccess\s*Key\s*[:：]\s*([^\s\r\n]+)/i,
-  ]);
-  if (!appId || !accessToken) return null;
+function pickNonSecret(storedKey, envKey, fallback) {
+  const stored = adminSettings.getDoubaoVoice().asr[storedKey];
+  if (stored) return stored;
+  return process.env[envKey] || fallback;
+}
+
+function resolveCredentials() {
   return {
-    appId,
-    accessToken,
-    resourceId: firstCredentialMatch(text, [
-      /\bDOUBAO_ASR_RESOURCE_ID\s*=\s*([^\s"'`]+)/i,
-      /\bResource\s*ID\s*[:：]\s*([A-Za-z0-9._-]+)/i,
-    ]) || DEFAULT_RESOURCE_ID,
-    endpoint: firstCredentialMatch(text, [
-      /\bDOUBAO_ASR_ENDPOINT\s*=\s*(wss:\/\/[^\s"'`]+)/i,
-      /((?:wss:\/\/)[^\s"'`]+\/bigmodel_nostream)\b/i,
-    ]) || DEFAULT_ENDPOINT,
+    appId: pickCredential('appId', 'DOUBAO_ASR_APP_ID'),
+    accessToken: pickCredential('accessToken', 'DOUBAO_ASR_ACCESS_TOKEN'),
+    resourceId: pickNonSecret('resourceId', 'DOUBAO_ASR_RESOURCE_ID', DEFAULT_RESOURCE_ID),
+    endpoint: pickNonSecret('endpoint', 'DOUBAO_ASR_ENDPOINT', DEFAULT_ENDPOINT),
   };
 }
 
-function resolveCredentialsFromUserMemory(user) {
-  const userId = user?.id;
-  if (!userId) return null;
-  let memories = [];
-  try {
-    memories = Memories.listForUser(userId);
-  } catch {
-    return null;
-  }
-  const candidates = memories.filter((memory) => {
-    const haystack = [memory.name, memory.description, memory.body].filter(Boolean).join('\n');
-    return /豆包\s*ASR|DOUBAO_ASR|SAUC|seedasr|openspeech/i.test(haystack);
-  });
-  for (const memory of candidates) {
-    const credentials = extractDoubaoCredentialsFromText(memory.body || '');
-    if (credentials) return credentials;
-  }
-  return null;
+function resolveCredentialsFromPayload(payload = {}) {
+  const obj = payload && typeof payload === 'object' ? payload : {};
+  return {
+    appId: String(obj.appId ?? '').trim(),
+    accessToken: String(obj.accessToken ?? '').trim(),
+    resourceId: String(obj.resourceId ?? '').trim() || DEFAULT_RESOURCE_ID,
+    endpoint: String(obj.endpoint ?? '').trim() || DEFAULT_ENDPOINT,
+  };
 }
 
 function asAsrError(error, fallbackMessage = '语音转写失败，请稍后重试。', fallbackCode = 'ASR_FAILED') {
@@ -161,41 +104,6 @@ function asAsrError(error, fallbackMessage = '语音转写失败，请稍后重�
     });
   }
   return new AsrError(fallbackMessage, { code: fallbackCode, status: 500 });
-}
-
-function loadSecretEnv() {
-  const files = [
-    process.env.DOUBAO_ASR_ENV_FILE,
-    path.join(os.homedir(), '.codex', 'secrets', 'doubao-asr.env'),
-    path.join(os.homedir(), '.codex', 'secrets', 'doubao-tts.env'),
-  ].filter(Boolean);
-  return files.reduce((acc, file) => ({ ...acc, ...parseEnvFile(file) }), {});
-}
-
-function resolveCredentials(user) {
-  const secretEnv = loadSecretEnv();
-  const get = (key) => process.env[key] || secretEnv[key] || '';
-  const getCredential = (key) => credentialEnvValue(process.env[key]) || credentialEnvValue(secretEnv[key]);
-  const asrAppId = getCredential('DOUBAO_ASR_APP_ID') || getCredential('VOLC_ASR_APP_ID');
-  const asrAccessToken = getCredential('DOUBAO_ASR_ACCESS_TOKEN') || getCredential('VOLC_ASR_ACCESS_TOKEN');
-  if (asrAppId && asrAccessToken) {
-    return {
-      appId: asrAppId,
-      accessToken: asrAccessToken,
-      resourceId: get('DOUBAO_ASR_RESOURCE_ID') || get('VOLC_ASR_RESOURCE_ID') || DEFAULT_RESOURCE_ID,
-      endpoint: get('DOUBAO_ASR_ENDPOINT') || DEFAULT_ENDPOINT,
-    };
-  }
-
-  const memoryCredentials = resolveCredentialsFromUserMemory(user);
-  if (memoryCredentials) return memoryCredentials;
-
-  return {
-    appId: getCredential('DOUBAO_TTS_APP_ID'),
-    accessToken: getCredential('DOUBAO_TTS_ACCESS_TOKEN'),
-    resourceId: get('DOUBAO_ASR_RESOURCE_ID') || DEFAULT_RESOURCE_ID,
-    endpoint: get('DOUBAO_ASR_ENDPOINT') || DEFAULT_ENDPOINT,
-  };
 }
 
 function isDoubaoAsrConfigured() {
@@ -644,9 +552,9 @@ async function normalizeAudioToPcm(inputPath) {
 }
 
 async function transcribePcm(pcm, opts = {}) {
-  const credentials = resolveCredentials(opts.user);
+  const credentials = opts.credentials || resolveCredentials();
   if (!credentials.appId || !credentials.accessToken) {
-    throw new AsrError('豆包 ASR 未配置，请在后端环境变量或本机 secrets 文件中配置 DOUBAO_ASR_APP_ID 和 DOUBAO_ASR_ACCESS_TOKEN。', {
+    throw new AsrError('豆包 ASR 未配置，请在管理中心 → 管理员小莫配置 中设置 ASR 凭证。', {
       code: 'ASR_NOT_CONFIGURED',
       status: 503,
     });
@@ -724,6 +632,10 @@ async function transcribeAudioFile(filePath, opts = {}) {
   }
 }
 
+async function transcribePcmWithCredentials(pcm, credentials) {
+  return transcribePcm(pcm, { credentials });
+}
+
 function safeUploadExtension(file) {
   const raw = String(file?.originalname || '');
   const ext = path.extname(raw).replace(/[^A-Za-z0-9.]/g, '').slice(0, 16);
@@ -756,11 +668,12 @@ async function transcribeBrowserAudio({ user, file }) {
 
 module.exports = {
   AsrError,
-  extractDoubaoCredentialsFromText,
   isDoubaoAsrConfigured,
   normalizeAudioToPcm,
   resolveCredentials,
+  resolveCredentialsFromPayload,
   transcribeAudioFile,
   transcribeBrowserAudio,
   transcribePcm,
+  transcribePcmWithCredentials,
 };

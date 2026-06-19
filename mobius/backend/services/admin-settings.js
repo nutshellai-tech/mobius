@@ -21,6 +21,14 @@ const MODEL_PROMPT_LIMIT_WINDOW_MINUTES = 5
 const MODEL_PROMPT_LIMIT_MAX = 100000
 const DEFAULT_MODEL_TMUX_WINDOW_LIMIT = 12
 
+const DOUBAO_ASR_DEFAULT_RESOURCE_ID = 'volc.seedasr.sauc.duration'
+const DOUBAO_ASR_DEFAULT_ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream'
+const DOUBAO_TTS_DEFAULT_RESOURCE_ID = 'seed-tts-2.0'
+const DOUBAO_TTS_DEFAULT_ENDPOINT = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional'
+const DOUBAO_TTS_DEFAULT_VOICE_TYPE = 'zh_female_vv_uranus_bigtts'
+
+const DOUBAO_SECRET_FIELDS = Object.freeze(['appId', 'accessToken', 'secretKey'])
+
 const DEFAULTS = Object.freeze({
   modelPromptLimits: {
     windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
@@ -32,6 +40,23 @@ const DEFAULTS = Object.freeze({
   },
   adminAssistantCallbacks: {
     enabledAdminUserIds: [],
+  },
+  doubaoVoice: {
+    asr: {
+      appId: '',
+      accessToken: '',
+      secretKey: '',
+      resourceId: DOUBAO_ASR_DEFAULT_RESOURCE_ID,
+      endpoint: DOUBAO_ASR_DEFAULT_ENDPOINT,
+    },
+    tts: {
+      appId: '',
+      accessToken: '',
+      secretKey: '',
+      resourceId: DOUBAO_TTS_DEFAULT_RESOURCE_ID,
+      endpoint: DOUBAO_TTS_DEFAULT_ENDPOINT,
+      voiceType: DOUBAO_TTS_DEFAULT_VOICE_TYPE,
+    },
   },
 })
 
@@ -187,6 +212,92 @@ function normalizeAdminAssistantCallbacksForRead(value) {
   return { enabledAdminUserIds: ids }
 }
 
+function normalizeDoubaoString(value, maxLength = 512) {
+  const trimmed = String(value ?? '').trim()
+  if (trimmed.length > maxLength) {
+    throw new Error(`字段长度不能超过 ${maxLength} 个字符`)
+  }
+  if (trimmed.includes('\0')) throw new Error('字段包含非法字符')
+  return trimmed
+}
+
+function normalizeDoubaoEndpoint(value, expectedProtocol) {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return ''
+  const re = expectedProtocol === 'wss'
+    ? /^wss:\/\/[^\s"'`]+/i
+    : /^https:\/\/[^\s"'`]+/i
+  if (!re.test(trimmed)) {
+    throw new Error(`endpoint 必须以 ${expectedProtocol}:// 开头`)
+  }
+  if (trimmed.length > 1024) throw new Error('endpoint 过长')
+  return trimmed
+}
+
+function normalizeDoubaoVoiceSubForRead(value, defaults) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    appId: String(obj.appId ?? obj.app_id ?? '').trim(),
+    accessToken: String(obj.accessToken ?? obj.access_token ?? '').trim(),
+    secretKey: String(obj.secretKey ?? obj.secret_key ?? '').trim(),
+    resourceId: String(obj.resourceId ?? obj.resource_id ?? '').trim() || defaults.resourceId,
+    endpoint: String(obj.endpoint ?? '').trim() || defaults.endpoint,
+    ...(defaults.voiceType !== undefined
+      ? { voiceType: String(obj.voiceType ?? obj.voice_type ?? '').trim() || defaults.voiceType }
+      : {}),
+  }
+}
+
+function normalizeDoubaoVoiceSubForWrite(value, defaults, expectedProtocol) {
+  const obj = value && typeof value === 'object' ? value : {}
+  const out = {
+    appId: normalizeDoubaoString(obj.appId ?? obj.app_id ?? ''),
+    accessToken: normalizeDoubaoString(obj.accessToken ?? obj.access_token ?? ''),
+    secretKey: normalizeDoubaoString(obj.secretKey ?? obj.secret_key ?? ''),
+    resourceId: normalizeDoubaoString(obj.resourceId ?? obj.resource_id ?? '') || defaults.resourceId,
+    endpoint: normalizeDoubaoEndpoint(obj.endpoint ?? '', expectedProtocol) || defaults.endpoint,
+  }
+  if (defaults.voiceType !== undefined) {
+    out.voiceType = normalizeDoubaoString(obj.voiceType ?? obj.voice_type ?? '') || defaults.voiceType
+  }
+  return out
+}
+
+function normalizeDoubaoVoiceForRead(value) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    asr: normalizeDoubaoVoiceSubForRead(obj.asr, DEFAULTS.doubaoVoice.asr),
+    tts: normalizeDoubaoVoiceSubForRead(obj.tts, DEFAULTS.doubaoVoice.tts),
+  }
+}
+
+function maskSecret(value) {
+  const str = String(value ?? '')
+  if (!str) return { isSet: false, preview: '' }
+  const last = str.slice(-4)
+  return { isSet: true, preview: `••••${last}` }
+}
+
+function maskDoubaoVoiceSub(sub) {
+  const out = {}
+  for (const [key, value] of Object.entries(sub)) {
+    if (DOUBAO_SECRET_FIELDS.includes(key)) {
+      out[key] = maskSecret(value)
+    } else {
+      out[key] = value
+    }
+  }
+  return out
+}
+
+function maskDoubaoVoice(value) {
+  const normalized = normalizeDoubaoVoiceForRead(value)
+  return {
+    asr: maskDoubaoVoiceSub(normalized.asr),
+    tts: maskDoubaoVoiceSub(normalized.tts),
+  }
+}
+
 function writeSettings(next) {
   const dir = path.dirname(SETTINGS_FILE)
   fs.mkdirSync(dir, { recursive: true })
@@ -209,6 +320,9 @@ function loadSettings() {
     }
     if (parsed && typeof parsed === 'object' && parsed.adminAssistantCallbacks) {
       merged.adminAssistantCallbacks = normalizeAdminAssistantCallbacksForRead(parsed.adminAssistantCallbacks)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.doubaoVoice) {
+      merged.doubaoVoice = normalizeDoubaoVoiceForRead(parsed.doubaoVoice)
     }
     return merged
   } catch (e) {
@@ -311,6 +425,34 @@ function setAdminAssistantCallbackForUser(userId, enabled) {
   return getAdminAssistantCallbackForUser(id)
 }
 
+function getDoubaoVoice() {
+  return loadSettings().doubaoVoice
+}
+
+function getDoubaoVoiceMasked() {
+  return maskDoubaoVoice(loadSettings().doubaoVoice)
+}
+
+function setDoubaoVoiceAsr(payload) {
+  const next = loadSettings()
+  const current = normalizeDoubaoVoiceForRead(next.doubaoVoice).asr
+  const merged = { ...current, ...normalizeDoubaoVoiceSubForWrite(payload, DEFAULTS.doubaoVoice.asr, 'wss') }
+  if (!next.doubaoVoice || typeof next.doubaoVoice !== 'object') next.doubaoVoice = normalizeDoubaoVoiceForRead({})
+  next.doubaoVoice.asr = merged
+  writeSettings(next)
+  return maskDoubaoVoiceSub(next.doubaoVoice.asr)
+}
+
+function setDoubaoVoiceTts(payload) {
+  const next = loadSettings()
+  const current = normalizeDoubaoVoiceForRead(next.doubaoVoice).tts
+  const merged = { ...current, ...normalizeDoubaoVoiceSubForWrite(payload, DEFAULTS.doubaoVoice.tts, 'https') }
+  if (!next.doubaoVoice || typeof next.doubaoVoice !== 'object') next.doubaoVoice = normalizeDoubaoVoiceForRead({})
+  next.doubaoVoice.tts = merged
+  writeSettings(next)
+  return maskDoubaoVoiceSub(next.doubaoVoice.tts)
+}
+
 module.exports = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
@@ -327,4 +469,8 @@ module.exports = {
   listAdminAssistantCallbackUserIds,
   getAdminAssistantCallbackForUser,
   setAdminAssistantCallbackForUser,
+  getDoubaoVoice,
+  getDoubaoVoiceMasked,
+  setDoubaoVoiceAsr,
+  setDoubaoVoiceTts,
 }

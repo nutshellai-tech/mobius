@@ -786,6 +786,134 @@ router.put('/settings/admin-assistant-callbacks', adminAuth, (req, res) => {
   }
 });
 
+// ── 豆包 ASR / TTS 凭证: 管理中心 → 管理员小莫配置 ──
+
+router.get('/settings/doubao-voice', adminAuth, (req, res) => {
+  try {
+    res.json(adminSettings.getDoubaoVoiceMasked());
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
+});
+
+router.get('/settings/doubao-voice/reveal', adminAuth, (req, res) => {
+  try {
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'reveal',
+      resourceType: 'doubao-voice',
+      resourceId: 'all',
+    });
+    res.json(adminSettings.getDoubaoVoice());
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
+});
+
+router.put('/settings/doubao-voice/asr', adminAuth, (req, res) => {
+  try {
+    const masked = adminSettings.setDoubaoVoiceAsr(req.body || {});
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'update-asr',
+      resourceType: 'doubao-voice',
+      resourceId: 'asr',
+    });
+    res.json(masked);
+  } catch (e) {
+    res.status(400).json({ error: e.message || String(e) });
+  }
+});
+
+router.put('/settings/doubao-voice/tts', adminAuth, (req, res) => {
+  try {
+    const masked = adminSettings.setDoubaoVoiceTts(req.body || {});
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'update-tts',
+      resourceType: 'doubao-voice',
+      resourceId: 'tts',
+    });
+    res.json(masked);
+  } catch (e) {
+    res.status(400).json({ error: e.message || String(e) });
+  }
+});
+
+router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
+  const service = String(req.body?.service || '').toLowerCase();
+  const payload = req.body || {};
+  try {
+    if (service === 'asr') {
+      const { transcribePcmWithCredentials } = require('../services/doubao-asr');
+      const credentials = {
+        appId: String(payload.appId || '').trim(),
+        accessToken: String(payload.accessToken || '').trim(),
+        resourceId: String(payload.resourceId || '').trim(),
+        endpoint: String(payload.endpoint || '').trim(),
+      };
+      if (!credentials.appId || !credentials.accessToken) {
+        return res.status(400).json({ ok: false, error: '缺少 appId 或 accessToken' });
+      }
+      if (!/^wss:\/\//i.test(credentials.endpoint)) {
+        return res.status(400).json({ ok: false, error: 'endpoint 必须以 wss:// 开头' });
+      }
+      const SAMPLE_RATE = 16000;
+      const SAMPLE_BYTES = 2;
+      const CHANNELS = 1;
+      const DURATION_SECONDS = 1;
+      const pcm = Buffer.alloc(SAMPLE_RATE * SAMPLE_BYTES * CHANNELS * DURATION_SECONDS, 0);
+      try {
+        await transcribePcmWithCredentials(pcm, credentials);
+        AdminAuditLog.record({
+          adminId: req.user.id,
+          action: 'test-asr',
+          resourceType: 'doubao-voice',
+          resourceId: 'asr',
+        });
+        return res.json({ ok: true });
+      } catch (e) {
+        return res.json({ ok: false, error: e?.message || String(e) });
+      }
+    }
+    if (service === 'tts') {
+      const { synthesizeSpeech } = require('../services/doubao-tts');
+      const credentials = {
+        appId: String(payload.appId || '').trim(),
+        accessToken: String(payload.accessToken || '').trim(),
+        resourceId: String(payload.resourceId || '').trim(),
+        endpoint: String(payload.endpoint || '').trim(),
+      };
+      const voice = String(payload.voiceType || '').trim();
+      if (!credentials.appId || !credentials.accessToken) {
+        return res.status(400).json({ ok: false, error: '缺少 appId 或 accessToken' });
+      }
+      if (!/^https:\/\//i.test(credentials.endpoint)) {
+        return res.status(400).json({ ok: false, error: 'endpoint 必须以 https:// 开头' });
+      }
+      try {
+        const result = await synthesizeSpeech({
+          credentials,
+          text: '测试',
+          voice,
+        });
+        AdminAuditLog.record({
+          adminId: req.user.id,
+          action: 'test-tts',
+          resourceType: 'doubao-voice',
+          resourceId: 'tts',
+        });
+        return res.json({ ok: true, audio_bytes: result.audio.length });
+      } catch (e) {
+        return res.json({ ok: false, error: e?.message || String(e) });
+      }
+    }
+    return res.status(400).json({ ok: false, error: 'service 必须是 asr 或 tts' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 // ── Claude Code 模型接入 (raw settings JSON, 不做 secret 管理) ──
 router.get('/model-access/claude-code', adminAuth, (req, res) => {
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));
