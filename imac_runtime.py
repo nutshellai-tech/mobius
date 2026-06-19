@@ -71,8 +71,6 @@ RUNTIME_SETTINGS = ordered_unique(
         "HOME_WORKSPACE_ROOT",
         "LOCAL_WORKSPACE_ROOT",
         "TURNS_SUMMARY_DIR",
-        "SHARED_SKILL_LIBRARY_DIR",
-        "SHARED_SKILL_BACKUP_DIR",
         "ASSISTANT_API_BASE",
         "ASSISTANT_API_KEY",
         "BEST_API_KEY",

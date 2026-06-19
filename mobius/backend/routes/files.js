@@ -8,34 +8,21 @@ const { canReadProject } = require('../services/access-control');
 const {
   APP_DIR,
   UPLOAD_DIR,
-  SHARED_SKILL_LIBRARY_DIR,
-  SHARED_SKILL_BACKUP_DIR,
   EXTENSION_DATA_ROOT,
 } = require('../config');
 
 const router = express.Router();
 const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 50 * 1024 * 1024 } });
 
-// scope=shared 时切到 shared-skill-library, 否则用户自己的 work_dir
-function getFileRoot(req) {
-  return req.query.scope === 'shared' ? SHARED_SKILL_LIBRARY_DIR : req.user.work_dir;
-}
-
-// 解析 path query 到绝对路径并做 root 越界检查
+// 解析 path query 到绝对路径并做 root 越界检查 (限制在用户 work_dir 内)
 function resolveScopedPath(req, rawPath = '/') {
-  const root = path.resolve(getFileRoot(req));
+  const root = path.resolve(req.user.work_dir);
   const relPath = String(rawPath || '/').replace(/\.\./g, '');
   const absPath = path.resolve(root, relPath.replace(/^\//, ''));
   if (absPath !== root && !absPath.startsWith(root + path.sep)) {
     return { error: 'Access denied' };
   }
   return { root, relPath, absPath };
-}
-
-function isSharedSkillPath(absPath) {
-  const resolved = path.resolve(absPath);
-  const root = path.resolve(SHARED_SKILL_LIBRARY_DIR);
-  return resolved === root || resolved.startsWith(root + path.sep);
 }
 
 function isExtensionUserDataPath(absPath, userId) {
@@ -57,19 +44,8 @@ function canDownloadPath(req, absPath) {
   const userRoot = path.resolve(req.user.work_dir);
   return absPath === userRoot
     || absPath.startsWith(userRoot + path.sep)
-    || isSharedSkillPath(absPath)
     || isExtensionUserDataPath(absPath, req.user.id)
     || isMobiusUploadPath(absPath);
-}
-
-// 编辑前自动备份: 落到 SHARED_SKILL_BACKUP_DIR/<timestamp>/<相对路径>
-function backupSharedSkillFile(absPath) {
-  if (!isSharedSkillPath(absPath) || !fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return;
-  const rel = path.relative(SHARED_SKILL_LIBRARY_DIR, absPath);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = path.join(SHARED_SKILL_BACKUP_DIR, stamp, rel);
-  fs.mkdirSync(path.dirname(backupPath), { recursive: true });
-  fs.copyFileSync(absPath, backupPath);
 }
 
 router.post('/upload', auth, upload.single('file'), (req, res) => {
@@ -185,34 +161,6 @@ router.get('/files/read', auth, (req, res) => {
     res.json({ type: 'text', content, size: stat.size, ext });
   } catch {
     res.status(500).json({ error: 'Read failed' });
-  }
-});
-
-// PUT /api/files/write?scope=shared
-// 仅允许编辑 shared-skill-library 内文件 (用户自己的 workspace 上传走 /upload),
-// 写入前自动备份原文件到 SHARED_SKILL_BACKUP_DIR
-router.put('/files/write', auth, (req, res) => {
-  if (req.query.scope !== 'shared') {
-    return res.status(403).json({ error: 'Only shared skill library files are editable here' });
-  }
-  if (!(req.user?.role === 'admin')) {
-    return res.status(403).json({ error: 'Only admin can edit shared skill library files' });
-  }
-  const { path: filePath, content } = req.body || {};
-  if (!filePath || typeof content !== 'string') return res.status(400).json({ error: 'Path and content required' });
-  const resolved = resolveScopedPath(req, filePath);
-  if (resolved.error) return res.status(403).json({ error: resolved.error });
-  const { absPath } = resolved;
-  if (fs.existsSync(absPath) && !fs.statSync(absPath).isFile()) return res.status(400).json({ error: 'Not a file' });
-  if (Buffer.byteLength(content, 'utf8') > 1024 * 1024) return res.status(413).json({ error: 'File too large (>1MB)' });
-  try {
-    fs.mkdirSync(path.dirname(absPath), { recursive: true });
-    backupSharedSkillFile(absPath);
-    fs.writeFileSync(absPath, content, 'utf8');
-    const stat = fs.statSync(absPath);
-    res.json({ ok: true, path: filePath, size: stat.size, modified: stat.mtime });
-  } catch {
-    res.status(500).json({ error: 'Write failed' });
   }
 });
 

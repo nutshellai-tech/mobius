@@ -36,8 +36,6 @@ const MOBIUS_DATA_PATH = process.env.MOBIUS_DATA_PATH || '/data';
 const CORE_DATA_PATH = process.env.CORE_DATA_PATH || '/data/protected_data';
 const MODEL_ACCESS_PATH = process.env.MODEL_ACCESS_PATH || path.join(MOBIUS_DATA_PATH, 'model-access.json');
 const BACKEND_WORKER_LOG_DIR = path.join(CORE_DATA_PATH, 'backend_worker_log');
-const SHARED_SKILL_LIBRARY_DIR = process.env.SHARED_SKILL_LIBRARY_DIR || path.join(CORE_DATA_PATH, 'shared-skill-library');
-const SHARED_SKILL_BACKUP_DIR = process.env.SHARED_SKILL_BACKUP_DIR || path.join(CORE_DATA_PATH, 'shared-skill-library-backups');
 const MODEL_OPTIONS = {
   opus: {
     id: 'opus-4.8',
@@ -118,9 +116,6 @@ module.exports = {
   fallbackWorkDirFor,
   LEGACY_LOCAL_WORKSPACE_ROOT,
   legacyFallbackWorkDirFor,
-
-  SHARED_SKILL_LIBRARY_DIR,
-  SHARED_SKILL_BACKUP_DIR,
 
   // 拓展系统: APP_DIR = TEST_ROOT (mobius 源码所在仓库根). 特殊拓展项目的 bind_path
   // 锁死指向这里, 不启用 worktree / research. 拓展代码扫描 mobius/extension/*/,

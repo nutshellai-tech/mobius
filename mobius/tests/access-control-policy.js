@@ -205,15 +205,6 @@ function verifyWriteRouteGuards() {
   ]) {
     expectContains(label, routeBlock(integration, marker), 'canManageIssue guard', (text) => /canManageIssue/.test(text))
   }
-
-  const filesPath = path.join(__dirname, '..', 'backend', 'routes', 'files.js')
-  const files = fs.readFileSync(filesPath, 'utf8')
-  expectContains(
-    'shared skill-library write route should require admin or explicit maintainer permission',
-    routeBlock(files, "router.put('/files/write'"),
-    'adminAuth/admin role guard',
-    (text) => /adminAuth|role\s*===\s*['"]admin['"]/.test(text),
-  )
 }
 
 function main() {

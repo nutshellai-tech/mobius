@@ -117,7 +117,7 @@ app.use('/extension', extRoutes.staticRouter);
 // 见 routes/ext.js 里 unprefixedNextRouter 的注释, 要先于 catchall 之前.
 app.use('/_next', extRoutes.unprefixedNextRouter);
 // files.js 的路由名是相对 /api 写的 (/files, /files/mkdir, /files/read,
-// /files/write, /upload, /download) — 前端 PathPicker/FileManager/上传/下载 全
+// /upload, /download) — 前端 PathPicker/FileManager/上传/下载 全
 // 按 /api/files、/api/files/mkdir、/api/upload、/api/download 调. 故必须挂在
 // /api 而非 /api/files (后者会变成 /api/files/files 一类, 全 404 → "读取目录失败").
 // 放在所有 /api/<具体> 之后: 那些已先匹配响应, 不会落到这里.
