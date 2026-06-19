@@ -97,3 +97,4 @@ mobius/.build/public.next
 deploy/host-data
 projects/
 .deploy_data/
+host-data/

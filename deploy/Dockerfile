@@ -1,6 +1,6 @@
 FROM node:18-bookworm
 
-
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN sed -i 's@//.*deb.debian.org@//mirrors.aliyun.com@g; s@//.*security.debian.org@//mirrors.aliyun.com@g' /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -53,7 +53,7 @@ COPY ./deploy/codex /opt/codex-seed
 COPY ./deploy/claude /opt/claude-seed
 
 # 安装占位图片展示命令到全局 PATH, 供 agent 在容器内直接调用 display_images。
-RUN PREFIX=/usr/local/bin bash ./install-dummy-bash-cmd-list.bash
+RUN PREFIX=/usr/local/bin bash ./scripts/install-dummy-bash-cmd-list.bash
 
 RUN cd /app_image/mobius && $fq npm install
 RUN cd /app_image/mobius/frontend && $fq npm install
