@@ -2,7 +2,7 @@
 # imac-deployment (minimal)
 ```bash
 # build from v1
-podman build -t imac-mobius:v0 -f deploy/DockerfileV0 .
+docker build -t imac-mobius:v0 -f deploy/DockerfileV0 .
 
 ```
 
@@ -10,15 +10,15 @@ podman build -t imac-mobius:v0 -f deploy/DockerfileV0 .
 ```bash
 cd /root/imac && git pull
 # at project root
-podman build -t imac-mobius:local .
+docker build -t imac-mobius:local .
 
 # copy config for a new /data-based deployment, then review ports/secrets
 cp .env.default ./deploy/.env
 
 # at deploy
 cd deploy
-podman compose down
-podman compose up
+docker compose down
+docker compose up
 ```
 
 ## Persistent data (host bind mounts)
