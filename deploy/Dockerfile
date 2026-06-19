@@ -53,7 +53,7 @@ COPY ./deploy/codex /opt/codex-seed
 COPY ./deploy/claude /opt/claude-seed
 
 # 安装占位图片展示命令到全局 PATH, 供 agent 在容器内直接调用 display_images。
-RUN PREFIX=/usr/local/bin bash mobius/scripts/install-dummy-bash-cmd-list.bash
+RUN PREFIX=/usr/local/bin bash ./scripts/install-dummy-bash-cmd-list.bash
 
 RUN cd /app_image/mobius && $fq npm install
 RUN cd /app_image/mobius/frontend && $fq npm install
