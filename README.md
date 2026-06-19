@@ -1,8 +1,19 @@
-# 莫比乌斯AI
+# Mobius AI System
 
 莫比乌斯AI 是一个面向真实项目协作的自进化 Agent 工作台。系统把项目、任务、执行会话和上下文管理放在同一个 Web 应用里，让用户可以直接在平台中提出需求、创建 Issue、启动 Session，并让 Agent 在绑定目录里完成实现、验证和汇报。
 
 当前项目的核心特点是“自举自迭代”：莫比乌斯自身也作为一个普通项目存在，任何想修改平台细节的需求，都可以在 `imac-self-develop` 项目中创建 Issue 和 Session，让 Agent 在同一套流程里改造当前系统。
+
+
+## 容器中安装和运行（推荐）
+
+- Git clone with command:
+   - `git clone https://github.com/nutshellai-tech/mobius.git && cd mobius`
+- Build image (stage 1, environment only, no code):
+   - `docker build -t imac-mobius:v0 -f deploy/Dockerfile .`
+- Build image (stage 2, copy code into image):
+
+
 
 ## 核心工作流
 
