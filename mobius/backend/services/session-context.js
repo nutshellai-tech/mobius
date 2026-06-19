@@ -130,8 +130,6 @@ function researchBlackboardUrl(researchId) {
 // ---------- 中文版 ----------
 
 function zh_add_header(lines) {
-  lines.push('# 上下文');
-  lines.push('');
   lines.push('以下信息描述了你正在协助的用户、当前Project、Issue/Research 与 Session.');
   lines.push('');
 }
@@ -141,6 +139,7 @@ function zh_add_user_level_info(lines, user) {
   lines.push('## 用户');
   lines.push(`- 姓名: ${user.display_name || user.id}`);
   lines.push(`- 角色: ${user.role === 'admin' ? '管理员' : '成员'}`);
+  lines.push(`- 倾向语言: 中文`);
   lines.push('');
 }
 
@@ -229,7 +228,7 @@ function zh_add_research_peer_info(lines, peers) {
   lines.push('');
 }
 
-function zh_add_memory_info(lines, memories) {
+function zh_add_memory_info(lines, memories, project) {
   const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
   if (all.length === 0) return;
   lines.push('## 持久 Memory');
@@ -246,7 +245,10 @@ function zh_add_memory_info(lines, memories) {
       lines.push('');
     }
   });
-  lines.push('');
+  if (project && project.bind_path) {
+    lines.push(`此外，如果需要记住一些信息供未来使用，请写入 ${project.bind_path}/.imac/project_knowledge.md，不要写入 ~/.codex 或者 ~/.claude。`);
+    lines.push('');
+  }
 }
 
 function zh_add_skill_info(lines, skills) {
@@ -327,8 +329,6 @@ function zh_add_completion_flag_info(lines, session, project) {
 // ---------- 英文版 ----------
 
 function en_add_header(lines) {
-  lines.push('# Context');
-  lines.push('');
   lines.push('The following describes the user you are assisting, and the Project, Issue/Research, and Session this work belongs to.');
   lines.push('Use it to calibrate how you address the user and the scope of your work; do not ask for fields already listed here.');
   lines.push('');
@@ -339,6 +339,7 @@ function en_add_user_level_info(lines, user) {
   lines.push('## User');
   lines.push(`- Name: ${user.display_name || user.id}`);
   lines.push(`- Role: ${user.role === 'admin' ? 'Admin' : 'Member'}`);
+  lines.push(`- Language Preference: English`);
   lines.push('');
 }
 
@@ -427,7 +428,7 @@ function en_add_research_peer_info(lines, peers) {
   lines.push('');
 }
 
-function en_add_memory_info(lines, memories) {
+function en_add_memory_info(lines, memories, project) {
   const all = shuffled([...BUILTIN_MEMORIES, ...(Array.isArray(memories) ? memories : [])]);
   if (all.length === 0) return;
   lines.push('## Persistent Memory');
@@ -444,7 +445,10 @@ function en_add_memory_info(lines, memories) {
       lines.push('');
     }
   });
-  lines.push('');
+  if (project && project.bind_path) {
+    lines.push(`Additionally, if you need to remember additional information for future sessions, please write to ${project.bind_path}/.imac/project_knowledge.md, do not write to ~/.codex or ~/.claude.`);
+    lines.push('');
+  }
 }
 
 function en_add_skill_info(lines, skills) {
@@ -575,7 +579,7 @@ function formatBody({ user, project, issue, research, session, skills, memories,
   fns.research(lines, research);
   fns.researchBlackboard(lines, research, session);
   fns.researchPeer(lines, research_peers);
-  fns.memory(lines, memories);
+  fns.memory(lines, memories, project);
   fns.skill(lines, skills);
   fns.worktree(lines, issue, project, session);
   fns.completionFlag(lines, session, project);
