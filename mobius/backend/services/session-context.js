@@ -735,6 +735,30 @@ function filterBuiltinByWhitelist(items, whitelistIds) {
   return (Array.isArray(items) ? items : []).filter(item => item.scope !== 'builtin' || allowed.has(item.id));
 }
 
+// 把 forcedSkillSet 应用到已通过白名单过滤的 builtinSkills / userProjectSkills.
+// 当白名单启用且不包含某个必选 skill 时, 白名单为准: 不注入该 skill, 并把冲突信息
+// {id, name} 收集到返回数组, 交由前端在 skill 选择界面提示 "必选skill与当前的skill白名单冲突".
+// 否则 (无白名单 或 白名单允许) 保持原有行为: 把必选 skill 补齐到 builtinSkills.
+// 注意: 调用方传入的 builtinSkills 是按引用传递, 本函数会在其上 push 新元素.
+function applyForcedSkills(builtinSkills, userProjectSkills, forcedSkillSet, userWhitelist) {
+  const conflicts = [];
+  const wlBuiltin = userWhitelist ? userWhitelist.builtin_skill_ids : null;
+  const wlUser = userWhitelist ? userWhitelist.skill_ids : null;
+  for (const id of forcedSkillSet) {
+    if (builtinSkills.some(s => s.id === id) || userProjectSkills.some(s => s.id === id)) continue;
+    const isBuiltin = id.startsWith('builtin:');
+    const wl = isBuiltin ? wlBuiltin : wlUser;
+    if (Array.isArray(wl) && !wl.includes(id)) {
+      const sk = Skills.findById(id);
+      if (sk) conflicts.push({ id, name: sk.name });
+      continue; // 白名单为准, 不注入
+    }
+    const forced = Skills.findById(id);
+    if (forced) builtinSkills.push(forced);
+  }
+  return conflicts;
+}
+
 function shapeSkillForContext(s) {
   const parsed = parseSkillId(s.id);
   return {
@@ -817,18 +841,16 @@ function gatherIssueSources(user, issue, sessionExclusions) {
   const exMemSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.memories) ? sessionExclusions.memories : []);
 
   let effectiveSkills = [];
+  let forcedSkillConflicts = [];
   if (issue && projectId && user) {
     const userProjectSkills = resolveEffectiveSkills(
       listUserProjectContextSkills(user, projectId),
       { selected: skillSelected, excluded: skillExcluded },
     );
     let builtinSkills = listBuiltinContextSkills(user, projectId);
-    for (const id of forcedSkillSet) {
-      if (!builtinSkills.some(s => s.id === id) && !userProjectSkills.some(s => s.id === id)) {
-        const forced = Skills.findById(id);
-        if (forced) builtinSkills = [...builtinSkills, forced];
-      }
-    }
+    // 必选 skill 与白名单冲突时, 白名单为准: 仅在白名单允许 (或无白名单) 的前提下补齐
+    // 必选 skill; 否则记录冲突交由前端提示, 不强行注入.
+    forcedSkillConflicts = applyForcedSkills(builtinSkills, userProjectSkills, forcedSkillSet, userWhitelist);
     effectiveSkills = [...userProjectSkills, ...builtinSkills]
       .filter(s => forcedSkillSet.has(s.id) || !exSkillSet.has(s.id))
       .map(shapeSkillForContext);
@@ -865,6 +887,7 @@ function gatherIssueSources(user, issue, sessionExclusions) {
     } : null,
     skills: effectiveSkills,
     memories: effectiveMemories,
+    forced_skill_conflicts: forcedSkillConflicts,
   };
 }
 
@@ -878,18 +901,14 @@ function gatherResearchSources(user, research, sessionExclusions) {
   const exMemSet = new Set(sessionExclusions && Array.isArray(sessionExclusions.memories) ? sessionExclusions.memories : []);
 
   let effectiveSkills = [];
+  let forcedSkillConflicts = [];
   if (research && projectId && user) {
     const userProjectSkills = resolveEffectiveSkills(
       listUserProjectContextSkills(user, projectId),
       { selected: [], excluded: [] },
     );
     let builtinSkills = listBuiltinContextSkills(user, projectId);
-    for (const id of forcedSkillSet) {
-      if (!builtinSkills.some(s => s.id === id) && !userProjectSkills.some(s => s.id === id)) {
-        const forced = Skills.findById(id);
-        if (forced) builtinSkills = [...builtinSkills, forced];
-      }
-    }
+    forcedSkillConflicts = applyForcedSkills(builtinSkills, userProjectSkills, forcedSkillSet, userWhitelist);
     effectiveSkills = [...userProjectSkills, ...builtinSkills]
       .filter(s => forcedSkillSet.has(s.id) || !exSkillSet.has(s.id))
       .map(shapeSkillForContext);
@@ -927,6 +946,7 @@ function gatherResearchSources(user, research, sessionExclusions) {
     } : null,
     skills: effectiveSkills,
     memories: effectiveMemories,
+    forced_skill_conflicts: forcedSkillConflicts,
   };
 }
 

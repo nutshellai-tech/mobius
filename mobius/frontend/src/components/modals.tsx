@@ -1717,6 +1717,7 @@ interface WizardPreview {
   sources: {
     skills?: WizardItem[]
     memories?: { id: string; name: string; description?: string; scope: string }[]
+    forced_skill_conflicts?: { id: string; name: string }[]
   } | null
 }
 interface SelectionDefaults {
@@ -2081,6 +2082,8 @@ export function NewSessionModal({
   // Issue 默认就有的全集 (从第一次 preview 拉到, 不随勾选变化)
   const [availableSkills, setAvailableSkills] = useState<WizardItem[]>([])
   const [availableMemories, setAvailableMemories] = useState<WizardItem[]>([])
+  // 必选 skill 被项目/用户白名单过滤掉时, 后端返回的冲突列表; 用于在 skill 选择界面提示.
+  const [forcedSkillConflicts, setForcedSkillConflicts] = useState<{ id: string; name: string }[]>([])
   // 用户取消勾选的 id 集合 (默认全勾)
   const [excludedSkills, setExcludedSkills] = useState<Set<string>>(new Set())
   const [excludedMemories, setExcludedMemories] = useState<Set<string>>(new Set())
@@ -2365,6 +2368,7 @@ export function NewSessionModal({
       const p0 = hasInheritedExclusions ? await fetchPreview(defaultSkillEx, defaultMemoryEx) : pAll
       setAvailableMemories((pAll.sources?.memories || []) as WizardItem[])
       setAvailableSkills((pAll.sources?.skills || []) as WizardItem[])
+      setForcedSkillConflicts((pAll.sources?.forced_skill_conflicts || []) as { id: string; name: string }[])
       setExcludedSkills(defaultSkillEx)
       setExcludedMemories(defaultMemoryEx)
       setPreview(p0)
@@ -2757,6 +2761,15 @@ export function NewSessionModal({
                   </div>
 
                   <section data-tour="session-preview-skills">
+                    {forcedSkillConflicts.length > 0 && (
+                      <div className="mb-2 rounded-md border px-2.5 py-1.5 text-[11px] leading-relaxed"
+                           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)', color: isDark ? '#fca5a5' : '#b91c1c' }}>
+                        <div className="font-medium">【必选skill与当前的skill白名单冲突】</div>
+                        <div className="mt-0.5 opacity-90">
+                          以下必选 Skill 被白名单过滤, 本次 Session 不会注入: {forcedSkillConflicts.map(s => s.name).join('、')}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mb-1.5">
                       <h4 className="text-[12px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                         Skill ({skillCheckedCount}/{availableSkills.length})
