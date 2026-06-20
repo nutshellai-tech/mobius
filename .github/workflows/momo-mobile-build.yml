@@ -71,6 +71,22 @@ jobs:
           name: momo-android-debug-apk-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
           path: ${{ env.PROJECT_DIR }}/build/artifacts/android-debug/
           if-no-files-found: error
+      - name: Install and launch Debug APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r "$PROJECT_DIR/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
+            adb shell am start -W -n com.mobius.momo/.MainActivity | tee "$RUNNER_TEMP/momo-android-launch.log"
+            sleep 8
+            adb shell pidof com.mobius.momo
+            adb shell uiautomator dump /sdcard/momo-ui.xml
+            adb pull /sdcard/momo-ui.xml "$RUNNER_TEMP/momo-ui.xml"
+            grep -q "请输入用户名" "$RUNNER_TEMP/momo-ui.xml"
 
       - name: Detect Android signing secrets
         if: github.event_name != 'pull_request'
@@ -303,9 +319,12 @@ jobs:
           APP="$RUNNER_TEMP/momo-ios-derived/Build/Products/Debug-iphonesimulator/iosApp.app"
           test -d "$APP"
           xcrun simctl install "$DEVICE_ID" "$APP"
-          xcrun simctl launch "$DEVICE_ID" com.mobius.momo.iosApp | tee "$RUNNER_TEMP/momo-ios-launch.log"
+          LAUNCH_OUTPUT="$(xcrun simctl launch "$DEVICE_ID" com.mobius.momo.iosApp)"
+          printf '%s\n' "$LAUNCH_OUTPUT" | tee "$RUNNER_TEMP/momo-ios-launch.log"
+          APP_PID="$(printf '%s\n' "$LAUNCH_OUTPUT" | awk -F': ' 'NF == 2 { print $2 }')"
+          test -n "$APP_PID"
           sleep 8
-          xcrun simctl spawn "$DEVICE_ID" launchctl print system | grep -q "com.mobius.momo.iosApp"
+          xcrun simctl spawn "$DEVICE_ID" /bin/kill -0 "$APP_PID"
       - name: Package Simulator app
         shell: bash
         run: |

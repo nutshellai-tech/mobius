@@ -643,7 +643,11 @@ class MomoAppViewModel(
             textToSpeech.stop()
             storage.clear()
             clearStreamState()
-            _state.value = UiState(username = state.value.username, passwordRequired = state.value.passwordRequired)
+            _state.value = UiState(
+                username = state.value.username,
+                passwordRequired = state.value.passwordRequired,
+                serverBaseUrl = currentBaseUrl,
+            )
         }
     }
 
@@ -824,6 +828,7 @@ class MomoAppViewModel(
         _state.value = UiState(
             username = state.value.username,
             passwordRequired = state.value.passwordRequired,
+            serverBaseUrl = currentBaseUrl,
             toast = "登录已过期，请重新登录",
         )
         scheduleToastClear("登录已过期，请重新登录")
