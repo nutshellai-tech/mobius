@@ -21,8 +21,7 @@ private class DesktopMockSpeechRecognizer : SpeechRecognizer {
         onEventRef = onEvent
         thread(name = "momo-mock-speech") {
             emit { onEvent(SpeechRecognitionEvent.Ready) }
-            val parts = listOf("测试", "测试语音", "测试语音识别结果")
-            parts.forEachIndexed { index, part ->
+            listOf("测试", "测试语音", "测试语音识别结果").forEachIndexed { index, part ->
                 Thread.sleep(360L)
                 if (!active) return@thread
                 emit {

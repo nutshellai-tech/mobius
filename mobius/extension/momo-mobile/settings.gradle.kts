@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "momo-mobile"
 include(":shared")
 include(":androidApp")
+include(":desktopPreview")
+include(":desktopApp")

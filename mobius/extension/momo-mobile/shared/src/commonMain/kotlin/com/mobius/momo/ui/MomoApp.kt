@@ -282,6 +282,36 @@ private fun SettingsScreen(state: UiState, theme: MomoTheme, vm: MomoAppViewMode
         SettingSwitch("消息推送", state.pushEnabled, theme, vm::togglePush)
         SettingSwitch("自动播报", state.ttsEnabled, theme, vm::toggleTts)
         Spacer(Modifier.height(14.dp))
+        SettingSectionTitle("服务器", theme)
+        BasicTextField(
+            value = state.serverBaseUrl,
+            onValueChange = vm::setServerBaseUrl,
+            singleLine = true,
+            textStyle = TextStyle(color = theme.textPrimary, fontSize = 14.sp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(theme.bgSecondary)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            decorationBox = { inner ->
+                if (state.serverBaseUrl.isBlank()) {
+                    Text("https://你的-mobius-服务器", color = theme.textMuted, fontSize = 14.sp)
+                }
+                inner()
+            },
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .background(theme.bgSecondary)
+                .clickable { vm.saveServerBaseUrl() }
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text("保存服务器地址", color = theme.accentPrimary, fontSize = 15.sp)
+        }
+        Spacer(Modifier.height(14.dp))
         SettingSectionTitle("主题风格", theme)
         ThemePaletteSelector(state.themePalette, theme, vm::setThemePalette)
         Spacer(Modifier.height(14.dp))

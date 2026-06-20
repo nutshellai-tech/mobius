@@ -8,6 +8,7 @@ plugins {
 
 kotlin {
     androidTarget()
+    jvm("desktop")
 
     listOf(
         iosX64(),
@@ -40,6 +41,14 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.security.crypto)
         }
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.desktop.common)
+                implementation(libs.ktor.client.core)
+                implementation("io.ktor:ktor-client-cio:2.3.12")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
+            }
+        }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
@@ -50,7 +59,17 @@ android {
     namespace = "com.mobius.momo.shared"
     compileSdk = 35
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         minSdk = 26
+        val configuredBaseUrl = providers.gradleProperty("MOMO_BASE_URL")
+            .orElse(providers.environmentVariable("MOMO_BASE_URL"))
+            .getOrElse("")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "MOMO_BASE_URL", "\"$configuredBaseUrl\"")
     }
 }

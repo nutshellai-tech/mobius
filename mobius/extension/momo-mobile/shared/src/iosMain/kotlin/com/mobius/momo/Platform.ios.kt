@@ -23,6 +23,7 @@ import platform.AVFoundation.AVSpeechSynthesizer
 import platform.AVFoundation.AVSpeechUtterance
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
+import platform.Foundation.NSBundle
 import platform.Foundation.NSLocale
 import platform.Foundation.NSTimeZone
 import platform.Foundation.NSUserDefaults
@@ -38,6 +39,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 actual fun createSecureStorage(): SecureStorage = IosSecureStorage()
+
+actual fun platformBuildBaseUrl(): String =
+    NSBundle.mainBundle.objectForInfoDictionaryKey("MOMO_BASE_URL") as? String ?: ""
 
 actual fun createFilePicker(): FilePicker = object : FilePicker {
     override fun pickFiles(

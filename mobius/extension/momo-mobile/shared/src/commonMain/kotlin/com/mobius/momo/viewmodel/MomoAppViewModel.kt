@@ -4,6 +4,7 @@ import com.mobius.momo.data.FilePicker
 import com.mobius.momo.data.AssistantPromptAttachment
 import com.mobius.momo.data.MobiusApi
 import com.mobius.momo.data.PickedFile
+import com.mobius.momo.data.SERVER_BASE_URL_PREFERENCE
 import com.mobius.momo.data.SecureStorage
 import com.mobius.momo.data.SpeechPermissionController
 import com.mobius.momo.data.SpeechPermissionStatus
@@ -15,7 +16,10 @@ import com.mobius.momo.data.createSecureStorage
 import com.mobius.momo.data.createSpeechPermissionController
 import com.mobius.momo.data.createSpeechRecognizer
 import com.mobius.momo.data.createTextToSpeech
+import com.mobius.momo.data.normalizeMobiusBaseUrl
 import com.mobius.momo.data.nowShortTime
+import com.mobius.momo.data.platformBuildBaseUrl
+import com.mobius.momo.data.resolveMobiusBaseUrl
 import com.mobius.momo.domain.AssistantSnapshot
 import com.mobius.momo.domain.AssistantWorkspace
 import com.mobius.momo.domain.ChatMessage
@@ -104,6 +108,7 @@ data class UiState(
     val voiceVolumeLevel: Int = 0,
     val ttsSpeakingMessageId: String? = null,
     val passwordRequired: Boolean = false,
+    val serverBaseUrl: String = "",
 )
 
 private fun sampleMessages(): List<ChatMessage> = listOf(
@@ -116,9 +121,14 @@ class MomoAppViewModel(
     private val speechPermissionController: SpeechPermissionController = createSpeechPermissionController(),
     private val speechRecognizer: SpeechRecognizer = createSpeechRecognizer(),
     private val textToSpeech: TextToSpeech = createTextToSpeech(),
+    private val buildBaseUrl: String = platformBuildBaseUrl(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val api = MobiusApi(storage = storage, onUnauthorized = { logoutFrom401() })
+    private var currentBaseUrl = resolveMobiusBaseUrl(
+        buildDefault = buildBaseUrl,
+        savedValue = storage.getPreference(SERVER_BASE_URL_PREFERENCE),
+    )
+    private var api = createApi(currentBaseUrl)
     private var streamJob: Job? = null
     private var toastJob: Job? = null
     private var snapshotPollJob: Job? = null
@@ -137,7 +147,7 @@ class MomoAppViewModel(
     private var inFlightAssistantVoiceText: String? = null
     private var pendingVoiceOnlyText: String? = null
 
-    private val _state = MutableStateFlow(UiState())
+    private val _state = MutableStateFlow(UiState(serverBaseUrl = currentBaseUrl))
     val state: StateFlow<UiState> = _state
 
     init {
@@ -154,6 +164,7 @@ class MomoAppViewModel(
         voiceCommitJob?.cancel()
         speechRecognizer.dispose()
         textToSpeech.dispose()
+        api.close()
         scope.cancel()
     }
 
@@ -162,6 +173,36 @@ class MomoAppViewModel(
     fun setPassword(value: String) = _state.update { it.copy(password = value, toast = null) }
 
     fun setInput(value: String) = _state.update { it.copy(input = value) }
+
+    fun setServerBaseUrl(value: String) = _state.update { it.copy(serverBaseUrl = value, toast = null) }
+
+    fun saveServerBaseUrl() {
+        val normalized = runCatching { normalizeMobiusBaseUrl(state.value.serverBaseUrl) }
+            .onFailure { showToast(it.message ?: "服务器地址无效") }
+            .getOrNull() ?: return
+        if (normalized.isBlank()) {
+            showToast("请输入 Mobius 服务器地址")
+            return
+        }
+        storage.savePreference(SERVER_BASE_URL_PREFERENCE, normalized)
+        if (normalized != currentBaseUrl) {
+            api.close()
+            currentBaseUrl = normalized
+            api = createApi(normalized)
+            storage.clear()
+            clearStreamState()
+        }
+        _state.update {
+            it.copy(
+                serverBaseUrl = normalized,
+                screen = AppScreen.Login,
+                user = null,
+                loading = false,
+            )
+        }
+        refreshAuthConfig()
+        showToast("服务器地址已保存")
+    }
 
     fun toggleComposerMode() {
         if (state.value.voiceRecording || state.value.voiceTranscribing) return
@@ -236,6 +277,11 @@ class MomoAppViewModel(
     }
 
     fun nextLoginStep() {
+        if (currentBaseUrl.isBlank()) {
+            _state.update { it.copy(screen = AppScreen.Settings) }
+            showToast("请先配置 Mobius 服务器地址")
+            return
+        }
         val username = state.value.username.trim()
         if (username.isBlank()) {
             showToast("请输入用户名")
@@ -602,6 +648,7 @@ class MomoAppViewModel(
     }
 
     private fun restoreToken() {
+        if (currentBaseUrl.isBlank()) return
         scope.launch {
             val token = storage.getToken()
             if (token.isNullOrBlank()) return@launch
@@ -629,6 +676,7 @@ class MomoAppViewModel(
     }
 
     private fun refreshAuthConfig() {
+        if (currentBaseUrl.isBlank()) return
         scope.launch {
             runCatching { api.authConfig() }
                 .onSuccess { config -> _state.update { it.copy(passwordRequired = config.passwordRequired) } }
@@ -1045,6 +1093,13 @@ class MomoAppViewModel(
             _state.update { if (it.toast == message) it.copy(toast = null) else it }
         }
     }
+
+    private fun createApi(baseUrl: String): MobiusApi =
+        MobiusApi(
+            baseUrl = baseUrl,
+            storage = storage,
+            onUnauthorized = { logoutFrom401() },
+        )
 }
 
 private const val THEME_MODE_KEY = "theme_mode"

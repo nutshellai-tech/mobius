@@ -57,7 +57,7 @@ data class AssistantPromptAttachment(
 )
 
 class MobiusApi(
-    private val baseUrl: String = "https://mobius.example.com",
+    private val baseUrl: String,
     private val storage: SecureStorage,
     private val onUnauthorized: suspend () -> Unit,
 ) {
@@ -70,6 +70,10 @@ class MobiusApi(
     private val client: HttpClient = createMobiusHttpClient(
         onUnauthorized = onUnauthorized,
     )
+
+    fun close() {
+        client.close()
+    }
 
     suspend fun authConfig(): AuthConfig =
         client.get("$baseUrl/api/auth/config").body()

@@ -1,5 +1,7 @@
 package com.mobius.momo.data
 
+import com.mobius.momo.shared.BuildConfig
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -149,6 +151,8 @@ actual fun createSecureStorage(): SecureStorage {
         }
     }
 }
+
+actual fun platformBuildBaseUrl(): String = BuildConfig.MOMO_BASE_URL
 
 actual fun createFilePicker(): FilePicker = object : FilePicker {
     override fun pickFiles(

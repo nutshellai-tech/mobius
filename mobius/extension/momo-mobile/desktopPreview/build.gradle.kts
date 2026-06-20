@@ -45,8 +45,9 @@ configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
             }
         }
         val desktopMain by getting {
+            kotlin.srcDir("../shared/src/desktopMain/kotlin")
             dependencies {
-                implementation("org.jetbrains.compose.desktop:desktop-jvm-linux-x64:1.6.11")
+                implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
                 implementation("io.ktor:ktor-client-cio:2.3.12")
             }

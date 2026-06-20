@@ -36,7 +36,11 @@ actual fun createFilePicker(): FilePicker = object : FilePicker {
                 fileSelectionMode = JFileChooser.FILES_ONLY
             }
             if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return
-            val files = if (chooser.isMultiSelectionEnabled) chooser.selectedFiles.toList() else listOfNotNull(chooser.selectedFile)
+            val files = if (chooser.isMultiSelectionEnabled) {
+                chooser.selectedFiles.toList()
+            } else {
+                listOfNotNull(chooser.selectedFile)
+            }
             onResult(
                 files.take(maxFiles).map { file ->
                     PickedFile(
@@ -51,7 +55,7 @@ actual fun createFilePicker(): FilePicker = object : FilePicker {
 }
 
 private class DesktopSecureStorage : SecureStorage {
-    private val prefs = Preferences.userRoot().node("com.mobius.momo.preview")
+    private val prefs = Preferences.userRoot().node("com.mobius.momo")
 
     override fun saveToken(token: String) {
         prefs.put("token", token)
@@ -89,6 +93,11 @@ actual fun createMobiusHttpClient(
         }
     }
 }
+
+actual fun platformBuildBaseUrl(): String =
+    System.getProperty("momo.base.url")
+        ?: System.getenv("MOMO_BASE_URL")
+        ?: ""
 
 actual fun nowShortTime(): String =
     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
