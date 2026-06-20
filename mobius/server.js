@@ -131,12 +131,6 @@ const codeServerProxy = require('./backend/routes/code-server-proxy');
 app.use('/code-server', codeServerProxy.router);
 app.use('/api/admin/code-server', codeServerProxy.adminRouter);
 
-// ===== 小莫移动端桌面预览反代 =====
-// /momo_mobile_preview/* → 本机 noVNC (:6088). 支持 WebSocket /websockify,
-// 访问需带 desktopPreview/run-local-preview.sh 生成的 preview_token。
-const momoMobilePreviewProxy = require('./backend/routes/momo-mobile-preview-proxy');
-app.use('/momo_mobile_preview', momoMobilePreviewProxy.router);
-
 // ===== Health =====
 app.get('/api/v2/health', (req, res) => {
   const now = Date.now();
@@ -210,8 +204,6 @@ server.on('upgrade', (req, socket, head) => {
   const p = (req.url || '').split('?')[0];
   if (p.startsWith('/code-server/')) {
     codeServerProxy.handleUpgrade(req, socket, head);
-  } else if (p === '/momo_mobile_preview' || p.startsWith('/momo_mobile_preview/')) {
-    momoMobilePreviewProxy.handleUpgrade(req, socket, head);
   } else {
     socket.destroy();
   }
