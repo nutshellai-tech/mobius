@@ -3,11 +3,25 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const AIMUX_BIN = process.env.AIMUX_BIN || path.join(os.homedir(), '.local', 'bin', 'aimux');
+// Candidate aimux binaries, in priority order:
+//   1. AIMUX_BIN env (explicit override)
+//   2. ~/.local/bin/aimux (user-level install)
+//   3. mobius/.venv-aimux/bin/aimux — the project venv provisioned by
+//      start_product.py and used by ecosystem.config.js to run the bridge;
+//      always present in this deployment.
+//   4. bare 'aimux' on PATH (last resort, avoids ENOENT if none of the above exist)
+const AIMUX_BIN_CANDIDATES = [
+  process.env.AIMUX_BIN,
+  path.join(os.homedir(), '.local', 'bin', 'aimux'),
+  path.join(__dirname, '..', '..', '.venv-aimux', 'bin', 'aimux'),
+];
 const MAX_BUFFER = 1024 * 1024;
 
 function aimuxBin() {
-  return fs.existsSync(AIMUX_BIN) ? AIMUX_BIN : 'aimux';
+  for (const candidate of AIMUX_BIN_CANDIDATES) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return 'aimux';
 }
 
 function cleanOneLine(value, { max = 200, required = false, field = '字段' } = {}) {
