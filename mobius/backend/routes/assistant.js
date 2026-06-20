@@ -25,7 +25,7 @@ const {
   assistantSessionKeyLike,
   isAssistantSession,
 } = require('../services/assistant-session');
-const { safeRemoveRunningFlag, safeWriteFailedFlag } = require('../utils/session-flags');
+const { safeRemoveRunningFlag, safeWriteFailedFlag, readJobFlagState } = require('../utils/session-flags');
 const { APP_DIR, CORE_DATA_PATH } = require('../config');
 const { AsrError, transcribeBrowserAudio } = require('../services/doubao-asr');
 const { DEFAULT_VOICE, TtsError, getTtsVoices, synthesizeSpeech } = require('../services/doubao-tts');
@@ -739,6 +739,17 @@ function readAssistantSnapshot(user, sessionId) {
   const question = readQuestion(sessionId);
   const messages = conversationMessages(sessionId, responses);
   const status = sessionStatus(session);
+  // 与 /api/sessions/:id/status 一致:优先看项目 bind_path 仓库根下的 flag 目录。
+  // 没 bind_path 则给 null,前端回退到 status.agent_status 显示。
+  let job_accomplished = null;
+  const proj = session.project_id ? Projects.findById(session.project_id) : null;
+  const root = (proj && proj.bind_path) ? path.resolve(proj.bind_path) : null;
+  if (root) {
+    try { job_accomplished = readJobFlagState(root, sessionId).accomplished; }
+    catch { job_accomplished = backend.isJobGoalAccomplished(sessionId); }
+  } else {
+    job_accomplished = backend.isJobGoalAccomplished(sessionId);
+  }
   return {
     session: {
       session_id: session.session_id,
@@ -755,6 +766,7 @@ function readAssistantSnapshot(user, sessionId) {
     messages,
     responses,
     status,
+    job_accomplished,
     jsonl: {
       total: history?.total ?? entries.length,
       total_approximate: !!history?.totalApproximate,

@@ -249,11 +249,6 @@ async function sendSseJsonlHistory(res, sessionId, hist) {
   return flush(true);
 }
 
-function isWorkspaceConfigFailureFlag(root, sessionId) {
-  // 保留为薄包装，避免老调用点失效；新代码直接用 utils/session-flags。
-  return require('../utils/session-flags').isWorkspaceConfigFailureFlag(root, sessionId);
-}
-
 
 router.patch('/:id', auth, (req, res) => {
   const session = findSessionOperable(req.params.id, req.user);

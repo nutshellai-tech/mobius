@@ -222,6 +222,7 @@ type AssistantSnapshot = {
     failed?: boolean
     agent_status?: string
   }
+  job_accomplished?: boolean | null
   jsonl?: {
     total?: number
     total_approximate?: boolean
@@ -1513,6 +1514,10 @@ function CreateCloneSessionModal({
 
 export function AssistantChat() {
   const [open, setOpen] = useState(false)
+  // 缩小态时任务完成未读计数；点击 FAB 展开时清零。
+  const [unreadCompletion, setUnreadCompletion] = useState(0)
+  const openRef = useRef(open)
+  openRef.current = open
   const [panelSize, setPanelSize] = useState<AssistantPanelSize>('compact')
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
   const [input, setInputState] = useState('')
@@ -1701,6 +1706,26 @@ export function AssistantChat() {
   useEffect(() => {
     setClearCutoffs(readAssistantClearCutoffs(clearCutoffStorageKey))
   }, [clearCutoffStorageKey])
+
+  // 任务完成上升沿检测:任意 session 的 job_accomplished 从 false 变 true,
+  // 且当前是缩小态,就累加未读计数。首次见到的 session 跳过,避免页面加载误报。
+  const prevAccomplishedRef = useRef<Record<string, boolean>>({})
+  useEffect(() => {
+    const next: Record<string, boolean> = {}
+    let hasNewCompletion = false
+    for (const snap of sessions) {
+      const sid = snap.session?.session_id
+      if (!sid) continue
+      const acc = snap.job_accomplished === true
+      next[sid] = acc
+      if (prevAccomplishedRef.current[sid] === undefined) continue
+      if (!prevAccomplishedRef.current[sid] && acc && !openRef.current) {
+        hasNewCompletion = true
+      }
+    }
+    if (hasNewCompletion) setUnreadCompletion(c => c + 1)
+    prevAccomplishedRef.current = next
+  }, [sessions])
 
   useEffect(() => {
     cloneReportCursorsRef.current = readCloneReportCursors(cloneReportCursorStorageKey)
@@ -2170,6 +2195,7 @@ export function AssistantChat() {
       return
     }
     setOpen(value => !value)
+    setUnreadCompletion(0)
   }, [])
 
   const cleanupSpeechAudio = useCallback(() => {
@@ -3375,6 +3401,11 @@ export function AssistantChat() {
         {open ? (
           <span className="assistant-fab__close">
             <X className="h-4 w-4" strokeWidth={2.2} />
+          </span>
+        ) : null}
+        {!open && unreadCompletion > 0 ? (
+          <span className="assistant-fab__completion-badge" aria-hidden="true">
+            {unreadCompletion === 1 ? '任务已完成' : `${unreadCompletion} 项任务完成`}
           </span>
         ) : null}
       </button>

@@ -1544,6 +1544,47 @@ body::after {
     0 0 0 4px rgba(239, 68, 68, .16);
   animation: assistant-fab-recording-badge 1s ease-in-out infinite;
 }
+.assistant-fab__completion-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -6px);
+  z-index: 6;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  color: #fff;
+  background: #22c55e;
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow:
+    0 6px 16px rgba(22, 101, 52, .35),
+    0 0 0 3px rgba(34, 197, 94, .14);
+  pointer-events: none;
+  animation: assistant-fab-completion-in .32s cubic-bezier(.2, .9, .25, 1) both;
+}
+.assistant-fab__completion-badge::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, -1px);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #22c55e;
+}
+@keyframes assistant-fab-completion-in {
+  from { opacity: 0; transform: translate(-50%, 4px) scale(.88); }
+  to   { opacity: 1; transform: translate(-50%, -6px) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .assistant-fab__completion-badge { animation: none; }
+}
 .assistant-fab--voice-recording::before {
   opacity: .9;
   background: conic-gradient(from 25deg, rgba(248, 113, 113, .44), rgba(56, 189, 248, .26), rgba(250, 204, 21, .30), rgba(248, 113, 113, .44));
