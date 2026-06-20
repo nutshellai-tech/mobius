@@ -22,6 +22,7 @@ data/*.db-shm
 data/*.db-wal
 data/*.json
 data/turn-summaries/
+data/momo-mobile/
 
 # Local runtime data (运行期状态、DB、hub 快照, 不提交)
 local_data/

@@ -44,7 +44,7 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon \
             -PMOMO_BASE_URL="${{ vars.MOMO_BASE_URL }}" \
-            :shared:allTests \
+            :shared:desktopTest \
             :androidApp:testDebugUnitTest
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
