@@ -92,7 +92,7 @@ module.exports = {
       name: 'imac-mobius-bridge',
       cwd: mobiusDir,
       script: path.join(mobiusDir, '.venv-aimux', 'bin', 'aimux'),
-      args: `bridge deploy --host ${process.env.AIMUX_BRIDGE_HOST || '127.0.0.1'} --port ${process.env.AIMUX_BRIDGE_PORT || '45615'}`,
+      args: `bridge deploy --host ${process.env.AIMUX_BRIDGE_HOST || '127.0.0.1'} --port ${process.env.AIMUX_BRIDGE_PORT || '33315'}`,
       interpreter: 'none',
       exec_mode: 'fork',
       autorestart: true,
