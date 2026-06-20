@@ -19,6 +19,20 @@ apply(plugin = "org.jetbrains.kotlin.plugin.serialization")
 apply(plugin = "org.jetbrains.compose")
 apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 
+val desktopComposeArtifact = when {
+    System.getProperty("os.name").startsWith("Windows", ignoreCase = true) ->
+        "desktop-jvm-windows-x64"
+    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) &&
+        System.getProperty("os.arch") == "aarch64" ->
+        "desktop-jvm-macos-arm64"
+    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) ->
+        "desktop-jvm-macos-x64"
+    System.getProperty("os.arch") == "aarch64" ->
+        "desktop-jvm-linux-arm64"
+    else ->
+        "desktop-jvm-linux-x64"
+}
+
 configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
     jvm("desktop")
 
@@ -47,7 +61,7 @@ configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
         val desktopMain by getting {
             kotlin.srcDir("../shared/src/desktopMain/kotlin")
             dependencies {
-                implementation(compose.desktop.currentOs)
+                implementation("org.jetbrains.compose.desktop:$desktopComposeArtifact:1.6.11")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
                 implementation("io.ktor:ktor-client-cio:2.3.12")
             }

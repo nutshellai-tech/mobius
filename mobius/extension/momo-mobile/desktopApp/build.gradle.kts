@@ -1,14 +1,27 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
 }
 
-dependencies {
-    implementation(project(":shared"))
-    implementation(compose.desktop.currentOs)
+kotlin {
+    jvm("desktop")
+
+    sourceSets {
+        val desktopMain by getting {
+            dependencies {
+                implementation(project(":shared"))
+                implementation(compose.desktop.currentOs)
+            }
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
+    }
 }
 
 compose.desktop {
@@ -33,6 +46,10 @@ compose.desktop {
             macOS {
                 bundleID = "com.mobius.momo.desktop"
                 dockName = "小莫助理"
+                // Apple's package tooling rejects a zero major version. The
+                // product version remains 0.1.0; this is the DMG package version.
+                packageVersion = "1.0.0"
+                dmgPackageVersion = "1.0.0"
             }
         }
     }

@@ -1,0 +1,421 @@
+name: momo-mobile native builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "mobius/extension/momo-mobile/**"
+      - ".github/workflows/momo-mobile-build.yml"
+      - ".github/workflows/momo-mobile-screenshot-verify.yml"
+  push:
+    branches: ["main"]
+    tags: ["momo-mobile-v*"]
+    paths:
+      - "mobius/extension/momo-mobile/**"
+      - ".github/workflows/momo-mobile-build.yml"
+      - ".github/workflows/momo-mobile-screenshot-verify.yml"
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_DIR: mobius/extension/momo-mobile
+  APP_VERSION: "0.1.0"
+
+jobs:
+  android-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - id: meta
+        shell: bash
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Test shared and Android code
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            -PMOMO_BASE_URL="${{ vars.MOMO_BASE_URL }}" \
+            :shared:allTests \
+            :androidApp:testDebugUnitTest
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          ./gradlew --no-daemon \
+            -PMOMO_BASE_URL="${{ vars.MOMO_BASE_URL }}" \
+            :androidApp:assembleDebug
+      - name: Verify APK and calculate checksum
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          APK="androidApp/build/outputs/apk/debug/androidApp-debug.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose "$APK"
+          mkdir -p build/artifacts/android-debug
+          cp "$APK" "build/artifacts/android-debug/MomoAssistant-${APP_VERSION}-${{ steps.meta.outputs.sha }}-debug.apk"
+          cd build/artifacts/android-debug
+          sha256sum *.apk > checksums.txt
+          ls -lh *.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momo-android-debug-apk-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: ${{ env.PROJECT_DIR }}/build/artifacts/android-debug/
+          if-no-files-found: error
+
+      - name: Detect Android signing secrets
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MOMO_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MOMO_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOMO_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MOMO_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "ANDROID_SIGNING_READY=true" >> "$GITHUB_ENV"
+          else
+            echo "ANDROID_SIGNING_READY=false" >> "$GITHUB_ENV"
+            echo "Android release signing materials are absent; signed APK/AAB skipped."
+          fi
+      - name: Build signed Android release
+        if: env.ANDROID_SIGNING_READY == 'true'
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MOMO_ANDROID_KEYSTORE_BASE64 }}
+          MOMO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.MOMO_ANDROID_KEYSTORE_PASSWORD }}
+          MOMO_ANDROID_KEY_ALIAS: ${{ secrets.MOMO_ANDROID_KEY_ALIAS }}
+          MOMO_ANDROID_KEY_PASSWORD: ${{ secrets.MOMO_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/momo-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          export MOMO_ANDROID_KEYSTORE_PATH="$KEYSTORE_PATH"
+          trap 'rm -f "$KEYSTORE_PATH"' EXIT
+          ./gradlew --no-daemon \
+            -PMOMO_BASE_URL="${{ vars.MOMO_BASE_URL }}" \
+            :androidApp:assembleRelease \
+            :androidApp:bundleRelease
+          mkdir -p build/artifacts/android-release
+          cp androidApp/build/outputs/apk/release/*.apk build/artifacts/android-release/
+          cp androidApp/build/outputs/bundle/release/*.aab build/artifacts/android-release/
+          cd build/artifacts/android-release
+          sha256sum * > checksums.txt
+      - uses: actions/upload-artifact@v4
+        if: env.ANDROID_SIGNING_READY == 'true'
+        with:
+          name: momo-android-release-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: ${{ env.PROJECT_DIR }}/build/artifacts/android-release/
+          if-no-files-found: error
+
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - id: meta
+        shell: pwsh
+        run: '"sha=$($env:GITHUB_SHA.Substring(0,7))" >> $env:GITHUB_OUTPUT'
+      - name: Test and package Windows application
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: pwsh
+        run: |
+          .\gradlew.bat --no-daemon :shared:desktopTest :desktopApp:desktopTest
+          .\gradlew.bat --no-daemon :desktopApp:createDistributable :desktopApp:packageExe :desktopApp:packageMsi
+      - name: Smoke-test Windows app image
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem -Recurse desktopApp\build\compose\binaries\main\app -Filter MomoAssistant.exe | Select-Object -First 1
+          if (-not $app) { throw "MomoAssistant.exe missing from app image" }
+          $log = Join-Path $env:RUNNER_TEMP "momo-windows-smoke.log"
+          $process = Start-Process -FilePath $app.FullName -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          Start-Sleep -Seconds 10
+          if ($process.HasExited -and $process.ExitCode -ne 0) {
+            Get-Content "$log.err" -ErrorAction SilentlyContinue
+            throw "MomoAssistant exited during smoke test with code $($process.ExitCode)"
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+      - name: Collect Windows artifacts
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build\artifacts\windows-exe, build\artifacts\windows-msi | Out-Null
+          Get-ChildItem -Recurse desktopApp\build\compose\binaries\main\exe -Filter *.exe | Copy-Item -Destination build\artifacts\windows-exe
+          Get-ChildItem -Recurse desktopApp\build\compose\binaries\main\msi -Filter *.msi | Copy-Item -Destination build\artifacts\windows-msi
+          Get-FileHash build\artifacts\windows-exe\* -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content build\artifacts\windows-exe\checksums.txt
+          Get-FileHash build\artifacts\windows-msi\* -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } | Set-Content build\artifacts\windows-msi\checksums.txt
+          Copy-Item "$env:RUNNER_TEMP\momo-windows-smoke.log*" build\artifacts\windows-exe -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momo-windows-exe-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: ${{ env.PROJECT_DIR }}/build/artifacts/windows-exe/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momo-windows-msi-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: ${{ env.PROJECT_DIR }}/build/artifacts/windows-msi/
+          if-no-files-found: error
+
+  macos-desktop-build:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - id: meta
+        shell: bash
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Package macOS application
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :shared:desktopTest :desktopApp:createDistributable :desktopApp:packageDmg
+      - name: Smoke-test macOS app image
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          APP="$(find desktopApp/build/compose/binaries/main/app -maxdepth 2 -name '*.app' -print -quit)"
+          test -n "$APP"
+          EXECUTABLE="$APP/Contents/MacOS/MomoAssistant"
+          test -x "$EXECUTABLE"
+          "$EXECUTABLE" > "$RUNNER_TEMP/momo-macos-smoke.log" 2>&1 &
+          PID=$!
+          sleep 10
+          if ! kill -0 "$PID" 2>/dev/null; then
+            wait "$PID"
+            STATUS=$?
+            cat "$RUNNER_TEMP/momo-macos-smoke.log"
+            test "$STATUS" -eq 0
+          else
+            kill "$PID"
+          fi
+      - name: Collect DMG
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          mkdir -p build/artifacts/macos-dmg
+          find desktopApp/build/compose/binaries/main/dmg -name '*.dmg' -exec cp {} build/artifacts/macos-dmg/ \;
+          test -n "$(find build/artifacts/macos-dmg -name '*.dmg' -print -quit)"
+          cd build/artifacts/macos-dmg
+          shasum -a 256 *.dmg > checksums.txt
+          ls -lh *.dmg
+          cp "$RUNNER_TEMP/momo-macos-smoke.log" . 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momo-macos-dmg-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: ${{ env.PROJECT_DIR }}/build/artifacts/macos-dmg/
+          if-no-files-found: error
+
+  ios-simulator-build:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install XcodeGen
+        shell: bash
+        run: brew install xcodegen
+      - id: meta
+        shell: bash
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Select and boot an iPhone simulator
+        shell: bash
+        run: |
+          DEVICE_ID="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          candidates = [
+              device["udid"]
+              for runtime_devices in devices.values()
+              for device in runtime_devices
+              if device["isAvailable"] and device["name"].startswith("iPhone")
+          ]
+          if not candidates:
+              raise SystemExit("No available iPhone simulator")
+          print(candidates[0])
+          ')"
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Build shared framework
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          chmod +x gradlew
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            TARGET="iosSimulatorArm64"
+            TASK="linkDebugFrameworkIosSimulatorArm64"
+          else
+            TARGET="iosX64"
+            TASK="linkDebugFrameworkIosX64"
+          fi
+          echo "IOS_KMP_TARGET=$TARGET" >> "$GITHUB_ENV"
+          ./gradlew --no-daemon ":shared:$TASK"
+          mkdir -p iosApp/Frameworks
+          cp -R "shared/build/bin/$TARGET/debugFramework/MomoShared.framework" iosApp/Frameworks/
+      - name: Build unsigned Simulator app
+        working-directory: ${{ env.PROJECT_DIR }}/iosApp
+        env:
+          MOMO_BASE_URL: ${{ vars.MOMO_BASE_URL }}
+        shell: bash
+        run: |
+          xcodegen generate --spec project.yml
+          xcodebuild \
+            -project iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath "$RUNNER_TEMP/momo-ios-derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            MOMO_BASE_URL="$MOMO_BASE_URL" \
+            build
+      - name: Install and launch Simulator app
+        shell: bash
+        run: |
+          APP="$RUNNER_TEMP/momo-ios-derived/Build/Products/Debug-iphonesimulator/iosApp.app"
+          test -d "$APP"
+          xcrun simctl install "$DEVICE_ID" "$APP"
+          xcrun simctl launch "$DEVICE_ID" com.mobius.momo.iosApp | tee "$RUNNER_TEMP/momo-ios-launch.log"
+          sleep 8
+          xcrun simctl spawn "$DEVICE_ID" launchctl print system | grep -q "com.mobius.momo.iosApp"
+      - name: Package Simulator app
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/build/artifacts/ios-simulator"
+          APP="$RUNNER_TEMP/momo-ios-derived/Build/Products/Debug-iphonesimulator/iosApp.app"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$GITHUB_WORKSPACE/build/artifacts/ios-simulator/MomoAssistant-${APP_VERSION}-${{ steps.meta.outputs.sha }}-simulator.app.zip"
+          cp "$RUNNER_TEMP/momo-ios-launch.log" "$GITHUB_WORKSPACE/build/artifacts/ios-simulator/"
+          cd "$GITHUB_WORKSPACE/build/artifacts/ios-simulator"
+          shasum -a 256 *.zip > checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momo-ios-simulator-app-${{ env.APP_VERSION }}-${{ steps.meta.outputs.sha }}
+          path: build/artifacts/ios-simulator/
+          if-no-files-found: error
+
+  ios-release-build:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Detect Apple signing materials
+        env:
+          TEAM_ID: ${{ secrets.MOMO_IOS_TEAM_ID }}
+          P12_BASE64: ${{ secrets.MOMO_IOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MOMO_IOS_P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.MOMO_IOS_PROVISIONING_PROFILE_BASE64 }}
+          BUNDLE_ID: ${{ secrets.MOMO_IOS_BUNDLE_ID }}
+        shell: bash
+        run: |
+          if [[ -n "$TEAM_ID" && -n "$P12_BASE64" && -n "$P12_PASSWORD" && -n "$PROFILE_BASE64" && -n "$BUNDLE_ID" ]]; then
+            echo "IOS_SIGNING_READY=true" >> "$GITHUB_ENV"
+          else
+            echo "IOS_SIGNING_READY=false" >> "$GITHUB_ENV"
+            echo "Simulator .app 已构建；真机 IPA 因缺少 Apple 签名材料而跳过。"
+          fi
+      - uses: actions/checkout@v4
+        if: env.IOS_SIGNING_READY == 'true'
+      - uses: actions/setup-java@v4
+        if: env.IOS_SIGNING_READY == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        if: env.IOS_SIGNING_READY == 'true'
+      - name: Build signed IPA
+        if: env.IOS_SIGNING_READY == 'true'
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          TEAM_ID: ${{ secrets.MOMO_IOS_TEAM_ID }}
+          P12_BASE64: ${{ secrets.MOMO_IOS_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MOMO_IOS_P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.MOMO_IOS_PROVISIONING_PROFILE_BASE64 }}
+          BUNDLE_ID: ${{ secrets.MOMO_IOS_BUNDLE_ID }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/momo-signing.keychain-db"
+          P12="$RUNNER_TEMP/momo-signing.p12"
+          PROFILE="$RUNNER_TEMP/momo.mobileprovision"
+          cleanup() {
+            security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+            rm -f "$P12" "$PROFILE"
+          }
+          trap cleanup EXIT
+          printf '%s' "$P12_BASE64" | base64 --decode > "$P12"
+          printf '%s' "$PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          PROFILE_UUID="$(security cms -D -i "$PROFILE" | plutil -extract UUID raw -)"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          trap 'rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"; cleanup' EXIT
+          brew install xcodegen
+          ./gradlew --no-daemon :shared:linkReleaseFrameworkIosArm64
+          mkdir -p iosApp/Frameworks
+          cp -R shared/build/bin/iosArm64/releaseFramework/MomoShared.framework iosApp/Frameworks/
+          cd iosApp
+          xcodegen generate --spec project.yml
+          xcodebuild archive \
+            -project iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/MomoAssistant.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>method</key><string>app-store-connect</string>
+          <key>teamID</key><string>$TEAM_ID</string>
+          <key>signingStyle</key><string>manual</string>
+          <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$PROFILE_UUID</string></dict>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/MomoAssistant.xcarchive" \
+            -exportPath "$GITHUB_WORKSPACE/build/artifacts/ios-ipa" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          cd "$GITHUB_WORKSPACE/build/artifacts/ios-ipa"
+          shasum -a 256 *.ipa > checksums.txt
+      - uses: actions/upload-artifact@v4
+        if: env.IOS_SIGNING_READY == 'true'
+        with:
+          name: momo-ios-ipa-${{ env.APP_VERSION }}-${{ github.sha }}
+          path: build/artifacts/ios-ipa/
+          if-no-files-found: error

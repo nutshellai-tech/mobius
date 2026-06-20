@@ -35,13 +35,24 @@ momo-mobile/
 └── desktopPreview/           # Linux/macOS/Windows 桌面预览，复用 commonMain
 ```
 
-## API
+## API 与服务器地址
 
-默认基础 URL 是：
+正式应用不再把 `https://mobius.example.com` 作为固定服务端。服务器地址按以下顺序
+解析：
 
-```text
-https://mobius.example.com
+1. 用户在“设置 → 服务器”中保存的地址；
+2. 构建参数或运行环境中的 `MOMO_BASE_URL`；
+3. 空值。此时登录页会引导用户先配置服务器地址。
+
+Android/CI 构建时可以使用：
+
+```bash
+./gradlew -PMOMO_BASE_URL=https://mobius.your-domain.example :androidApp:assembleDebug
 ```
+
+桌面端也可以在运行时使用环境变量 `MOMO_BASE_URL` 或 JVM 参数
+`-Dmomo.base.url=https://mobius.your-domain.example`。服务器地址不是密码或 token，
+可以存放为 GitHub repository variable；登录密码、JWT 和 API key 不会编译进客户端。
 
 主要接口：
 
@@ -65,27 +76,100 @@ https://mobius.example.com
   抽象接入 `NSUserDefaults` 可运行实现；替换点是
   `shared/src/iosMain/kotlin/com/mobius/momo/Platform.ios.kt`。
 
-## 构建
+## 构建环境
 
-当前机器没有 JDK、Android SDK 和 Xcode，无法在本机完成真实移动端构建。具备
-移动端环境后：
+- Java 17；
+- 项目自带 Gradle 8.8 Wrapper；
+- Android SDK 35 和 Build Tools；
+- Windows EXE/MSI 必须在 Windows 构建；
+- macOS DMG 和 iOS Simulator `.app` 必须在 macOS/Xcode 构建；
+- iOS 工程生成还需要 XcodeGen。
+
+所有命令都从本目录执行，不依赖全局 Gradle。
+
+### Android
 
 ```bash
-cd mobius/extension/momo-mobile
-./gradlew :androidApp:assembleDebug
-./gradlew :shared:embedAndSignAppleFrameworkForXcode
+./gradlew --no-daemon :shared:allTests
+./gradlew --no-daemon :androidApp:test
+./gradlew --no-daemon :androidApp:assembleDebug
 ```
 
-如果没有 Gradle wrapper，可在 Android Studio 中直接打开本目录，让 IDE 使用本机
-Gradle/JDK 同步；或先在有 Java 的机器上执行：
+Debug APK：
+
+```text
+androidApp/build/outputs/apk/debug/androidApp-debug.apk
+```
+
+Release 只有在 `MOMO_ANDROID_KEYSTORE_PATH`、`MOMO_ANDROID_KEYSTORE_PASSWORD`、
+`MOMO_ANDROID_KEY_ALIAS` 和 `MOMO_ANDROID_KEY_PASSWORD` 全部存在时才签名。GitHub
+Actions 接受 Base64 keystore secret 并在 runner 临时目录解码；仓库不保存 keystore。
+
+### Windows 和 macOS 正式桌面应用
+
+正式入口是 `desktopApp`，直接显示 `MomoApp()`，不会显示 `desktopPreview` 的刘海、
+状态栏和 Home indicator。
+
+Windows：
+
+```powershell
+.\gradlew.bat --no-daemon :shared:desktopTest :desktopApp:desktopTest
+.\gradlew.bat --no-daemon :desktopApp:createDistributable :desktopApp:packageExe :desktopApp:packageMsi
+```
+
+macOS：
 
 ```bash
-gradle wrapper --gradle-version 8.8
+./gradlew --no-daemon :desktopApp:createDistributable :desktopApp:packageDmg
 ```
 
-桌面预览用于没有 Android 模拟器或 Xcode 的开发机。当前 imac-test 机器已把
-JDK、Gradle、TigerVNC、noVNC 和 `proot` 安装到项目局部目录 `.tmp/tools/`
-下，不需要 sudo。启动可交互预览：
+Compose Desktop 的 macOS 打包工具不接受主版本号为 0，因此应用产品版本仍为
+`0.1.0`，DMG package version 使用 `1.0.0`。
+
+桌面端当前语音识别是可见的 mock 流程，TTS 是空实现；文件选择器使用系统
+`JFileChooser`。这些限制与安装包构建成功是两个独立概念。
+
+### iOS Simulator
+
+Apple Silicon：
+
+```bash
+./gradlew --no-daemon :shared:linkDebugFrameworkIosSimulatorArm64
+```
+
+Intel：
+
+```bash
+./gradlew --no-daemon :shared:linkDebugFrameworkIosX64
+```
+
+复制 `MomoShared.framework` 到 `iosApp/Frameworks/`，运行
+`xcodegen generate --spec project.yml`，再用 `CODE_SIGNING_ALLOWED=NO`
+构建 Simulator `.app`。Simulator `.app` 的 ZIP 不是 IPA。
+
+真机 IPA 需要 Team ID、Distribution `.p12`、`.p12` 密码、provisioning profile
+和匹配的 bundle identifier。缺少任一材料时，CI 会明确跳过 IPA。
+
+### GitHub Actions
+
+`.github/workflows/momo-mobile-build.yml` 支持手动触发、PR、`main` push 和
+`momo-mobile-v*` tag，生成：
+
+- `momo-android-debug-apk-*`
+- `momo-android-release-*`（仅有签名 secrets 时）
+- `momo-windows-exe-*`
+- `momo-windows-msi-*`
+- `momo-macos-dmg-*`
+- `momo-ios-simulator-app-*`
+- `momo-ios-ipa-*`（仅有 Apple 签名 secrets 时）
+
+每个 artifact 包含 `checksums.txt`。编译成功只说明代码和包结构可生成；发布签名
+完成还要求有效证书、私钥和 provisioning profile。
+
+## Desktop Preview
+
+桌面预览用于没有 Android 模拟器或 Xcode 的开发机。安装 Java 17、Xvfb/noVNC
+等本地预览工具后，可以启动可交互预览：
 
 ```bash
 tmux kill-session -t momo_mobile_preview 2>/dev/null || true
