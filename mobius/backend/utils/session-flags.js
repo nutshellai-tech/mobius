@@ -151,6 +151,41 @@ function safeRemoveFlagDir(root, sessionId, label = 'session-flags') {
   }
 }
 
+// 项目绑定路径配置类失败 (非任务失败)，不计入 failed/accomplished。
+function isWorkspaceConfigFailureFlag(root, sessionId) {
+  try {
+    const p = failedFlagPathOf(root, sessionId)
+    if (!fs.existsSync(p)) return false
+    const body = fs.readFileSync(p, 'utf8')
+    return body.includes('项目绑定路径不是 Git 仓库根')
+      || body.includes('项目绑定路径当前还不是可用于 worktree 的 Git 仓库根')
+      || body.includes('请把项目移动到对应位置')
+      || body.includes('工作目录不可用')
+      || body.includes('workspace unavailable')
+  } catch {
+    return false
+  }
+}
+
+// 权威任务状态：flag 目录存在 + 无 running.flag = 已完成；failed.flag 在 = 失败；
+// workspace 配置类失败不算业务结果，两字段都返回 false。
+function readJobFlagState(root, sessionId) {
+  const hasFlagDir = fs.existsSync(flagDirOf(root, sessionId))
+  const workspaceConfigFailure = isWorkspaceConfigFailureFlag(root, sessionId)
+  const failed = hasFlagDir && !workspaceConfigFailure
+    ? fs.existsSync(failedFlagPathOf(root, sessionId))
+    : false
+  const failedInfo = failed ? readFailedFlag(root, sessionId) : null
+  return {
+    accomplished: hasFlagDir && !workspaceConfigFailure
+      ? !fs.existsSync(runningFlagPathOf(root, sessionId))
+      : false,
+    failed,
+    failedReason: failedInfo?.reason || '',
+    failedAt: failedInfo?.failedAt || null,
+  }
+}
+
 module.exports = {
   flagDirOf,
   runningFlagPathOf,
@@ -166,4 +201,6 @@ module.exports = {
   safeWriteFailedFlag,
   readFailedFlag,
   safeRemoveFlagDir,
+  isWorkspaceConfigFailureFlag,
+  readJobFlagState,
 }

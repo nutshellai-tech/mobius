@@ -42,6 +42,7 @@ const {
   failedFlagPathOf,
   readFailedFlag,
   safeRemoveRunningFlag,
+  readJobFlagState,
 } = require('../utils/session-flags');
 const { DEFAULT_WINDOW_HOURS, statsSince, statsSinceMinutes } = require('../services/agent-prompt-events');
 const modelPromptLimits = require('../services/model-prompt-limits');
@@ -249,36 +250,10 @@ async function sendSseJsonlHistory(res, sessionId, hist) {
 }
 
 function isWorkspaceConfigFailureFlag(root, sessionId) {
-  try {
-    const p = failedFlagPathOf(root, sessionId);
-    if (!fs.existsSync(p)) return false;
-    const body = fs.readFileSync(p, 'utf8');
-    return body.includes('项目绑定路径不是 Git 仓库根')
-      || body.includes('项目绑定路径当前还不是可用于 worktree 的 Git 仓库根')
-      || body.includes('请把项目移动到对应位置')
-      || body.includes('工作目录不可用')
-      || body.includes('workspace unavailable');
-  } catch {
-    return false;
-  }
+  // 保留为薄包装，避免老调用点失效；新代码直接用 utils/session-flags。
+  return require('../utils/session-flags').isWorkspaceConfigFailureFlag(root, sessionId);
 }
 
-function readJobFlagState(root, sessionId) {
-  const hasFlagDir = fs.existsSync(flagDirOf(root, sessionId));
-  const workspaceConfigFailure = isWorkspaceConfigFailureFlag(root, sessionId);
-  const failed = hasFlagDir && !workspaceConfigFailure
-    ? fs.existsSync(failedFlagPathOf(root, sessionId))
-    : false;
-  const failedInfo = failed ? readFailedFlag(root, sessionId) : null;
-  return {
-    accomplished: hasFlagDir && !workspaceConfigFailure
-      ? !fs.existsSync(runningFlagPathOf(root, sessionId))
-      : false,
-    failed,
-    failedReason: failedInfo?.reason || '',
-    failedAt: failedInfo?.failedAt || null,
-  };
-}
 
 router.patch('/:id', auth, (req, res) => {
   const session = findSessionOperable(req.params.id, req.user);

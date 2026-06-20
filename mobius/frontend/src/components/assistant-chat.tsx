@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent, ComponentPropsWithoutRef, CSSProperties, DragEvent as ReactDragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
@@ -1597,6 +1597,8 @@ export function AssistantChat() {
   const setProjects = useStore(state => state.setProjects)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottomRef = useRef(true)
+  const [submitNonce, setSubmitNonce] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const interactionRef = useRef<PanelInteraction | null>(null)
@@ -2869,13 +2871,39 @@ export function AssistantChat() {
     return () => window.clearInterval(timer)
   }, [currentStreamConnected, open, refreshSnapshot, sessions, voicePlaybackEnabled])
 
+  // 用户在日志区内滚动时,实时记录是否吸附在底部;
+  // 离底部超过阈值视为"在阅读历史",新消息不再打断滚动。
   useEffect(() => {
     if (!open) return
-    requestAnimationFrame(() => {
-      const el = logRef.current
-      if (el) el.scrollTop = el.scrollHeight
-    })
-  }, [open, pendingTurns, sessions])
+    const el = logRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      stickToBottomRef.current = distanceFromBottom <= 80
+    }
+    handleScroll()
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [open])
+
+  // 强制吸附底部:打开面板、切换 Session、用户主动发送消息时,
+  // 用 useLayoutEffect 在浏览器绘制前完成滚动,避免顶→底闪屏。
+  useLayoutEffect(() => {
+    if (!open) return
+    const el = logRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    stickToBottomRef.current = true
+  }, [open, currentSessionId, submitNonce])
+
+  // 流式新内容到达时,只在用户已经吸附底部的情况下跟随滚动。
+  useLayoutEffect(() => {
+    if (!open) return
+    if (!stickToBottomRef.current) return
+    const el = logRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [sessions, pendingTurns])
 
   useEffect(() => {
     setPendingTurns(prev => {
@@ -3001,6 +3029,7 @@ export function AssistantChat() {
     }
     if (restoreOnError) setInput('', { persist: false })
     setPendingTurns(prev => prev.concat(optimisticTurn))
+    setSubmitNonce(n => n + 1)
     setSending(true)
     setErr('')
     try {
