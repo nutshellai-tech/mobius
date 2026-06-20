@@ -6,6 +6,7 @@ import { TopNav, timeAgo } from '../components/shell'
 import { ConfirmModal, NewProjectModal, ProjectSettingsModal, ExtensionDeleteModal } from '../components/modals'
 import { SkillsManager } from '../components/skills'
 import { MemoriesManager } from '../components/memories'
+import { ResizablePanel } from '../components/resizable-panel'
 
 type ProjectFilterKey = 'owned' | 'starred' | 'extension'
 const PROJECT_FILTERS: Array<{ key: ProjectFilterKey; label: string; title: string }> = [
@@ -314,7 +315,15 @@ export default function UserPage() {
       <TopNav />
       <div className="flex flex-1 min-h-0">
         {/* 左侧 sidebar */}
-        <aside data-tour="user-projects-sidebar" className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:user-projects"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          data-tour="user-projects-sidebar"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
             <span className="text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
               所有项目 <span className="ml-1 text-[11px] font-medium">{visibleProjectCount}</span>
@@ -473,7 +482,7 @@ export default function UserPage() {
               </div>
             )}
           </div>
-        </aside>
+        </ResizablePanel>
 
         {/* 右侧主区 */}
         <main data-tour="user-projects-main" className="flex-1 overflow-y-auto p-6" style={{ background: 'var(--bg-secondary)' }}>
@@ -755,7 +764,14 @@ export default function UserPage() {
             )}
             </div>
             {userParam === user?.id && (
-              <aside className="w-[340px] flex-shrink-0 hidden lg:block space-y-4">
+              <ResizablePanel
+                storageKey="mobius:ui:sidebar:user-skills"
+                defaultWidth={340}
+                minWidth={260}
+                maxWidth={520}
+                side="right"
+                className="hidden lg:block space-y-4"
+                style={{ background: 'transparent' }}>
                 <div>
                   <div className="mb-3">
                     <h2 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>个人 Skill</h2>
@@ -770,7 +786,7 @@ export default function UserPage() {
                   </div>
                   <MemoriesManager scope="user" />
                 </div>
-              </aside>
+              </ResizablePanel>
             )}
           </div>
         </main>

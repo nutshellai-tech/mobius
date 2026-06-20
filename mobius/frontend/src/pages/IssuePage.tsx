@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, MessageSquarePlus, Sparkles } from 'lucide-react'
 import { useStore, api } from '../store'
 import { TopNav, timeAgo } from '../components/shell'
+import { ResizablePanel } from '../components/resizable-panel'
 import {
   NewSessionModal, RenameSessionModal, RenameIssueModal, ConfirmModal,
 } from '../components/modals'
@@ -25,7 +26,7 @@ export default function IssuePage() {
   const params = useParams()
   const [search, setSearch] = useSearchParams()
   const { projects, setProjects, setCurrentProject, setCurrentIssue,
-          issuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask } = useStore()
+          issuesMap, setIssuesMap, sessionsMap, setSessionsMap, currentSession, setCurrentSession, setCurrentTask } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
   const issueId = params.issue || ''
@@ -129,6 +130,20 @@ export default function IssuePage() {
 
   const refreshSessions = () => api(`/api/issues/${issueId}/sessions`).then((arr: any) => setSessionsMap(issueId, arr)).catch(() => {})
 
+  const toggleIssueStar = (iss: any) => {
+    if (!iss) return
+    const next = !iss.starred
+    // 乐观更新本地
+    setIssueState((prev: any) => prev ? { ...prev, starred: next ? 1 : 0 } : prev)
+    const cur = useStore.getState().currentIssue as any
+    if (cur && cur.id === iss.id) setCurrentIssue({ ...cur, starred: next ? 1 : 0 } as any)
+    // 同时更新 ProjectPage 传下来的缓存
+    setIssuesMap(projectId, (issuesMap[projectId] || []).map((i: any) => i.id === iss.id ? { ...i, starred: next ? 1 : 0 } : i))
+    api(`/api/issues/${iss.id}/star`, { method: 'PATCH', body: JSON.stringify({ starred: next }) })
+      .then((updated: any) => { if (updated && !updated.error) { setIssueState(updated); setCurrentIssue(updated) } })
+      .catch(() => {})
+  }
+
   const goToSession = (sid: string) => {
     const next = new URLSearchParams(search)
     next.set('session', sid)
@@ -191,11 +206,19 @@ export default function IssuePage() {
       <TopNav />
       <div className="flex flex-1 min-h-0">
         {/* 左侧 sidebar */}
-        <aside className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:issue-sessions"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           {/* Issue 元数据 */}
           <div data-tour="issue-created-summary" className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-start gap-2 mb-2">
-              {!!issue?.pinned && <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
+              {!!issue?.starred && <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>}
+              {!!issue?.pinned && <svg className="w-3 h-3 mt-1 flex-shrink-0" style={{ color: '#38bdf8' }} fill="currentColor" viewBox="0 0 24 24"><path d="M16 3l5 5-3 1-2 4-3 1-3-3-3 1-2-2 6-6-1-3 3-3-3-2 4-1z" /></svg>}
               <svg className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: issue?.status === 'completed' ? '#22c55e' : '#60a5fa' }}
                 fill={issue?.status === 'completed' ? '#22c55e' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
               <div className="flex-1 min-w-0">
@@ -214,6 +237,10 @@ export default function IssuePage() {
                   </Link>
                 )}
               </div>
+              <button onClick={() => toggleIssueStar(issue)} title={issue?.starred ? '取消收藏' : '收藏'}
+                className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: issue?.starred ? '#f59e0b' : 'var(--text-muted)' }}>
+                <svg className="w-3.5 h-3.5" fill={issue?.starred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+              </button>
               <button onClick={() => setEditingIssue(true)} title="编辑 Issue"
                 className="p-1 rounded hover:bg-[var(--bg-hover)] transition-colors flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -299,7 +326,7 @@ export default function IssuePage() {
             ))}
 
           </div>
-        </aside>
+        </ResizablePanel>
 
         {/* 右侧:
               - 已选中 session → ChatArea

@@ -784,6 +784,27 @@ function migrateProjectUserStars() {
 }
 migrateProjectUserStars();
 
+// ===== 每用户的 issue 星标 =====
+// 用户在 issue 上的个人收藏, 用于列表排序 (区别于 issues.pinned 的项目级全局置顶,
+// 后者是 manager 权限设置, 所有用户共享).
+function migrateIssueUserStars() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS issue_user_stars (
+        issue_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        PRIMARY KEY (issue_id, user_id),
+        FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_issue_user_stars_user ON issue_user_stars(user_id);
+    `);
+  } catch (e) {
+    console.warn('[mobius/db] ⚠️  issue user stars 迁移失败:', e.message);
+  }
+}
+migrateIssueUserStars();
 // ===== 每项目、每用户的用户级 Skill/Memory 与内置 Skill 白名单 =====
 // 行不存在 = 两类白名单都不存在, 创建 Session 时沿用原行为展示全部用户级条目.
 // 某列为 NULL = 该类白名单不存在; 某列为 JSON 数组 = 该类白名单已启用.

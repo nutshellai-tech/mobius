@@ -97,7 +97,7 @@ projectScoped.get('/', auth, (req, res) => {
   const project = Projects.findById(req.params.projectId);
   if (!project) return res.status(404).json({ error: '未找到' });
   if (!canReadProject(req.user, project)) return res.status(404).json({ error: '未找到' });
-  const issues = Issues.listForProject(req.params.projectId, req.query.status)
+  const issues = Issues.listForProject(req.params.projectId, req.query.status, req.user?.id)
     .filter((issue) => canReadIssue(req.user, issue))
   if (req.user?.role === 'admin' && project.created_by !== req.user.id) {
     recordAdminAuditIfCrossUser(req.user, 'list_issues', 'project', project.id, project.created_by);
@@ -205,14 +205,14 @@ projectScoped.post('/', auth, (req, res) => {
     });
   }
   res.json({
-    ...shapeIssueForUser(Issues.findById(issueId), req.user),
+    ...shapeIssueForUser(Issues.findById(issueId, req.user?.id), req.user),
     ...(planningSessionId ? { planning_session_id: planningSessionId } : {}),
   });
 });
 
 // 直接在 /api/issues 下
 router.get('/:id', auth, (req, res) => {
-  const issue = Issues.findById(req.params.id);
+  const issue = Issues.findById(req.params.id, req.user?.id);
   if (!issue) return res.status(404).json({ error: '未找到' });
   if (!canReadIssue(req.user, issue)) return res.status(404).json({ error: '未找到' });
   auditIssueAccess(req.user, 'read_issue', issue);
@@ -285,7 +285,7 @@ router.patch('/:id', auth, (req, res) => {
     Issues.updateSkillOverrides(req.params.id, { selected: sel, excluded: exc });
   }
 
-  res.json(shapeIssueForUser(Issues.findById(req.params.id), req.user));
+  res.json(shapeIssueForUser(Issues.findById(req.params.id, req.user?.id), req.user));
 });
 
 function parseSkillArrays(issue) {
@@ -332,6 +332,19 @@ function handleContextPreview(req, res) {
 router.get('/:id/context-preview', auth, handleContextPreview);
 router.post('/:id/context-preview', auth, handleContextPreview);
 
+// 用户对 issue 的个人收藏 (区别于 PATCH /:id body.pinned 的项目级全局置顶).
+// 权限: 只要有读权限就能 star/unstar, 不要求 canManage.
+router.patch('/:id/star', auth, (req, res) => {
+  const issue = Issues.findById(req.params.id);
+  if (!issue) return res.status(404).json({ error: '未找到' });
+  if (!canReadIssue(req.user, issue)) return res.status(404).json({ error: '未找到' });
+  if (typeof req.body?.starred !== 'boolean') {
+    return res.status(400).json({ error: '星标状态格式错误' });
+  }
+  Issues.setStarred(req.params.id, req.user.id, req.body.starred);
+  res.json(shapeIssueForUser(Issues.findById(req.params.id, req.user?.id), req.user));
+});
+
 // 新建 Session Wizard 默认勾选状态:
 // 若同一 Issue 已有其他非删除 Session, 参考最新创建 Session 的 Skill/Memory 勾选状态.
 router.get('/:id/session-selection-defaults', auth, (req, res) => {
@@ -355,7 +368,7 @@ router.post('/:id/complete', auth, (req, res) => {
       console.warn(`[issues] archive planning session failed (${req.params.id}): ${e.message}`);
     }
   }
-  res.json(shapeIssueForUser(Issues.findById(req.params.id), req.user));
+  res.json(shapeIssueForUser(Issues.findById(req.params.id, req.user?.id), req.user));
 });
 
 router.delete('/:id', auth, (req, res) => {

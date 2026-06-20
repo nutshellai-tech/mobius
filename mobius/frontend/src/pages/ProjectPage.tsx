@@ -10,6 +10,7 @@ import {
 import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
 import { ProjectSettingsPanel } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
+import { ResizablePanel } from '../components/resizable-panel'
 import type { GitRepoDraft, IssueConfirmAction, ProjectFilter, ProjectListSection } from '../components/project-page/types'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
@@ -206,7 +207,11 @@ export default function ProjectPage() {
       const q = search.toLowerCase()
       arr = arr.filter((i: any) => i.title?.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q))
     }
-    return [...arr].sort((a: any, b: any) => Number(!!b.pinned) - Number(!!a.pinned))
+    return [...arr].sort((a: any, b: any) => {
+      const s = Number(!!b.starred) - Number(!!a.starred)
+      if (s) return s
+      return Number(!!b.pinned) - Number(!!a.pinned)
+    })
   }, [projectIssues, filter, search])
 
   const filteredResearches = useMemo(() => {
@@ -494,6 +499,17 @@ export default function ProjectPage() {
     refreshIssues()
   }
 
+  const toggleIssueStar = (issue: any) => {
+    const next = !issue.starred
+    // 乐观更新 issuesMap, 让 UI 立即响应
+    const updated = (issuesMap[projectId] || []).map((i: any) => i.id === issue.id ? { ...i, starred: next ? 1 : 0 } : i)
+    setIssuesMap(projectId, updated)
+    if (!issuesMap[projectId]) setIssues(updated)
+    api(`/api/issues/${issue.id}/star`, { method: 'PATCH', body: JSON.stringify({ starred: next }) })
+      .then(() => refreshIssues())
+      .catch(() => { refreshIssues() })
+  }
+
   const toggleResearchStatus = (research: any, status: 'active' | 'completed') => {
     api(`/api/researches/${research.id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
       .then(refreshResearches)
@@ -514,24 +530,34 @@ export default function ProjectPage() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
       <div className="flex flex-1 min-h-0">
-        <ProjectSidebar
-          userParam={userParam}
-          projectId={projectId}
-          issues={pagedIssues}
-          search={search}
-          filter={filter}
-          pagination={{
-            page: currentIssuePage,
-            pageSize: ISSUE_PAGE_SIZE,
-            totalItems: filteredIssues.length,
-            totalPages: issueTotalPages,
-            onPageChange: setIssuePage,
-          }}
-          onSearchChange={setSearch}
-          onFilterChange={setFilter}
-          canCreateIssue={canCreateIssue}
-          onCreateIssue={openNewIssue}
-        />
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:project-issues"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+          <ProjectSidebar
+            userParam={userParam}
+            projectId={projectId}
+            issues={pagedIssues}
+            search={search}
+            filter={filter}
+            pagination={{
+              page: currentIssuePage,
+              pageSize: ISSUE_PAGE_SIZE,
+              totalItems: filteredIssues.length,
+              totalPages: issueTotalPages,
+              onPageChange: setIssuePage,
+            }}
+            onSearchChange={setSearch}
+            onFilterChange={setFilter}
+            canCreateIssue={canCreateIssue}
+            onCreateIssue={openNewIssue}
+            onToggleStar={toggleIssueStar}
+          />
+        </ResizablePanel>
 
         <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
           <div className="max-w-7xl mx-auto p-6">
@@ -614,6 +640,7 @@ export default function ProjectPage() {
                 onEditResearch={setEditingResearch}
                 onIssueConfirm={setConfirmAction}
                 onToggleResearchStatus={toggleResearchStatus}
+                onToggleIssueStar={toggleIssueStar}
               />
             </div>
           </div>

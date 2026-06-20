@@ -1703,8 +1703,6 @@ body::after {
   border-radius: 1rem;
 }
 .assistant-session-sidebar {
-  width: 176px;
-  min-width: 176px;
   display: flex;
   flex-direction: column;
   gap: .5rem;
@@ -1714,6 +1712,21 @@ body::after {
     linear-gradient(180deg, rgba(15, 23, 42, .58), rgba(15, 23, 42, .34)),
     rgba(2, 6, 23, .28);
   overflow: visible;
+  position: relative;
+}
+.assistant-session-sidebar:not(.assistant-session-sidebar--collapsed) {
+  /* 非 collapsed 时由 inline style 接管 width; 这里仅留 fallback 防止初始无样式 */
+  width: 176px;
+  min-width: 176px;
+}
+.assistant-session-sidebar__resize {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 5;
 }
 .light .assistant-session-sidebar {
   border-right-color: rgba(15, 23, 42, .10);
@@ -4901,3 +4914,22 @@ body::after {
 .code-diff-marker--added { color: var(--diff-added-marker); }
 .code-diff-marker--removed { color: var(--diff-removed-marker); }
 .code-diff-marker--hunk { color: var(--diff-hunk-marker); }
+
+/* ===== ResizablePanel 拖拽手柄 ===== */
+.mobius-resizable-handle {
+  background: transparent;
+}
+.mobius-resizable-handle:hover,
+.mobius-resizable-handle:active {
+  background: rgba(59, 130, 246, .45);
+}
+body.mobius-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.mobius-resizing * {
+  pointer-events: none !important;
+}
+body.mobius-resizing .mobius-resizable-handle {
+  pointer-events: none !important;
+}

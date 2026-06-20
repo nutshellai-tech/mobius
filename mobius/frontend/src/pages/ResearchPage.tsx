@@ -7,6 +7,7 @@ import { ErrBanner, NewSessionModal, RenameSessionModal, RenameResearchModal } f
 import { ChatArea, SessionRow } from '../components/chat'
 import { ProjectFilesCard } from '../components/project-files'
 import { Loading } from '../components/shell'
+import { ResizablePanel } from '../components/resizable-panel'
 import ResearchGraph from '../components/research-graph'
 import ResearchBlackboard from '../components/research-blackboard'
 
@@ -160,7 +161,14 @@ export default function ResearchPage() {
     <div className="flex flex-col h-screen" style={{ background: 'var(--bg-primary)' }}>
       <TopNav />
       <div className="flex flex-1 min-h-0">
-        <aside className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        <ResizablePanel
+          storageKey="mobius:ui:sidebar:research"
+          defaultWidth={288}
+          minWidth={200}
+          maxWidth={480}
+          side="left"
+          className="border-r flex flex-col"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-start gap-2 mb-2">
               <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -247,7 +255,7 @@ export default function ResearchPage() {
               />
             ))}
           </div>
-        </aside>
+        </ResizablePanel>
 
         {showGraph ? (
           <main className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-secondary)' }}>

@@ -1512,6 +1512,52 @@ export function AssistantChat() {
   const [sessions, setSessions] = useState<AssistantSnapshot[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('mobius:ui:sidebar:assistant-sessions')
+      if (raw) {
+        const v = Number(raw)
+        if (Number.isFinite(v)) return Math.max(140, Math.min(280, Math.round(v)))
+      }
+    } catch {}
+    return 176
+  })
+  const sidebarDragRef = useRef<{ startX: number; startWidth: number; raf: number | null } | null>(null)
+  const onSidebarResizeStart = useCallback((event: React.MouseEvent) => {
+    if (sidebarCollapsed) return
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startWidth = sidebarWidth
+    sidebarDragRef.current = { startX: event.clientX, startWidth, raf: null }
+    document.body.classList.add('mobius-resizing')
+    const onMove = (e: globalThis.MouseEvent) => {
+      const drag = sidebarDragRef.current
+      if (!drag) return
+      e.preventDefault()
+      const delta = e.clientX - drag.startX
+      const next = Math.max(140, Math.min(280, drag.startWidth + delta))
+      if (drag.raf !== null) cancelAnimationFrame(drag.raf)
+      drag.raf = requestAnimationFrame(() => { setSidebarWidth(next) })
+    }
+    const onUp = () => {
+      const drag = sidebarDragRef.current
+      if (drag && drag.raf !== null) cancelAnimationFrame(drag.raf)
+      sidebarDragRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.classList.remove('mobius-resizing')
+      setSidebarWidth((w) => {
+        try { localStorage.setItem('mobius:ui:sidebar:assistant-sessions', String(w)) } catch {}
+        return w
+      })
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [sidebarCollapsed, sidebarWidth])
+  const onSidebarResizeReset = useCallback(() => {
+    setSidebarWidth(176)
+    try { localStorage.setItem('mobius:ui:sidebar:assistant-sessions', '176') } catch {}
+  }, [])
   const [creatingClone, setCreatingClone] = useState(false)
   const [cloneModalOpen, setCloneModalOpen] = useState(false)
   const [cloneDraft, setCloneDraft] = useState<CloneDraft>({ task: '', model: 'codex', language: 'zh' })
@@ -3308,7 +3354,18 @@ export function AssistantChat() {
           ) : null}
 
           <div className="assistant-chat-shell">
-            <aside className={`assistant-session-sidebar${sidebarCollapsed ? ' assistant-session-sidebar--collapsed' : ''}`}>
+            <aside
+              className={`assistant-session-sidebar${sidebarCollapsed ? ' assistant-session-sidebar--collapsed' : ''}`}
+              style={sidebarCollapsed ? undefined : { width: sidebarWidth, minWidth: sidebarWidth }}
+            >
+              {!sidebarCollapsed && (
+                <div
+                  className="mobius-resizable-handle assistant-session-sidebar__resize"
+                  onMouseDown={onSidebarResizeStart}
+                  onDoubleClick={onSidebarResizeReset}
+                  title="拖拽调整宽度 · 双击恢复默认"
+                />
+              )}
               <div className="assistant-session-sidebar__header">
                 {!sidebarCollapsed ? (
                   <div>

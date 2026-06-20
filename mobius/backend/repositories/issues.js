@@ -1,12 +1,40 @@
 const { db } = require('../../db');
 
 const Issues = {
-  findById: (id) => db.prepare('SELECT * FROM issues WHERE id = ?').get(id),
+  findById: (id, userId) => {
+    if (!userId) {
+      return db.prepare('SELECT *, 0 AS starred FROM issues WHERE id = ?').get(id);
+    }
+    return db.prepare(`
+      SELECT i.*, CASE WHEN ius.user_id IS NULL THEN 0 ELSE 1 END AS starred
+      FROM issues i
+      LEFT JOIN issue_user_stars ius ON ius.issue_id = i.id AND ius.user_id = ?
+      WHERE i.id = ?
+    `).get(userId, id);
+  },
   findByProjectAndTitle: (projectId, title) => db.prepare(
     'SELECT * FROM issues WHERE project_id = ? AND title = ? ORDER BY created_at ASC LIMIT 1'
   ).get(projectId, title),
 
-  listForProject: (projectId, statusFilter) => {
+  listForProject: (projectId, statusFilter, userId) => {
+    if (userId) {
+      let where = 'i.project_id = ?';
+      const params = [userId, projectId];
+      if (statusFilter === 'active' || statusFilter === 'completed') {
+        where += ' AND i.status = ?';
+        params.push(statusFilter);
+      }
+      return db.prepare(`
+        SELECT i.*, u.display_name as created_by_name,
+          CASE WHEN ius.user_id IS NULL THEN 0 ELSE 1 END AS starred,
+          (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active') as session_count
+        FROM issues i
+        LEFT JOIN users u ON i.created_by = u.id
+        LEFT JOIN issue_user_stars ius ON ius.issue_id = i.id AND ius.user_id = ?
+        WHERE ${where}
+        ORDER BY i.last_active DESC
+      `).all(...params);
+    }
     let where = 'i.project_id = ?';
     const params = [projectId];
     if (statusFilter === 'active' || statusFilter === 'completed') {
@@ -14,7 +42,7 @@ const Issues = {
       params.push(statusFilter);
     }
     return db.prepare(`
-      SELECT i.*, u.display_name as created_by_name,
+      SELECT i.*, u.display_name as created_by_name, 0 AS starred,
         (SELECT COUNT(*) FROM sessions_v2 WHERE issue_id = i.id AND scope_type = 'issue' AND status = 'active') as session_count
       FROM issues i
       LEFT JOIN users u ON i.created_by = u.id
@@ -32,6 +60,23 @@ const Issues = {
   updateDescription: (id, desc) => db.prepare('UPDATE issues SET description = ? WHERE id = ?').run(desc, id),
   updateStatus: (id, status) => db.prepare('UPDATE issues SET status = ? WHERE id = ?').run(status, id),
   updatePinned: (id, pinned) => db.prepare('UPDATE issues SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id),
+  setStarred: (id, userId, starred) => {
+    const uid = String(userId || '').trim();
+    if (!uid) return false;
+    if (starred) {
+      db.prepare(`
+        INSERT INTO issue_user_stars (issue_id, user_id)
+        VALUES (?, ?)
+        ON CONFLICT(issue_id, user_id) DO NOTHING
+      `).run(id, uid);
+    } else {
+      db.prepare(`
+        DELETE FROM issue_user_stars
+        WHERE issue_id = ? AND user_id = ?
+      `).run(id, uid);
+    }
+    return true;
+  },
   updateVisibility: (id, visibility) => db.prepare('UPDATE issues SET visibility = ? WHERE id = ?').run(visibility, id),
   markCompleted: (id) => db.prepare(
     "UPDATE issues SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?"

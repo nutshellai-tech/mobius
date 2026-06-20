@@ -33,6 +33,7 @@ type ProjectItemsPanelProps = {
   onEditResearch: (research: any) => void
   onIssueConfirm: (action: IssueConfirmAction) => void
   onToggleResearchStatus: (research: any, status: 'active' | 'completed') => void
+  onToggleIssueStar: (issue: any) => void
 }
 
 export function ProjectItemsPanel({
@@ -56,6 +57,7 @@ export function ProjectItemsPanel({
   onEditResearch,
   onIssueConfirm,
   onToggleResearchStatus,
+  onToggleIssueStar,
 }: ProjectItemsPanelProps) {
   const extensionName = typeof project.extension_name === 'string' ? project.extension_name : ''
   const canRunExtension = project.kind === 'extension' && !!extensionName && !project.disabled
@@ -168,6 +170,7 @@ export function ProjectItemsPanel({
           onCreatePlanningIssue={onCreatePlanningIssue}
           onEditIssue={onEditIssue}
           onIssueConfirm={onIssueConfirm}
+          onToggleIssueStar={onToggleIssueStar}
         />
       ) : !project.research_enabled ? (
         <div className="rounded-2xl border-dashed border-2 p-10 text-center" style={{ borderColor: 'var(--border-color)' }}>
@@ -206,6 +209,7 @@ type IssueListProps = {
   onCreatePlanningIssue?: () => void
   onEditIssue: (issue: any) => void
   onIssueConfirm: (action: IssueConfirmAction) => void
+  onToggleIssueStar: (issue: any) => void
 }
 
 function IssueList({
@@ -221,6 +225,7 @@ function IssueList({
   onCreatePlanningIssue,
   onEditIssue,
   onIssueConfirm,
+  onToggleIssueStar,
 }: IssueListProps) {
   if (issues.length === 0) {
     const showQuickPlanning = !search.trim() && filter === 'all' && !!onCreatePlanningIssue
@@ -260,6 +265,7 @@ function IssueList({
             projectId={projectId}
             onEdit={onEditIssue}
             onConfirm={onIssueConfirm}
+            onToggleStar={onToggleIssueStar}
           />
         ))}
       </div>
