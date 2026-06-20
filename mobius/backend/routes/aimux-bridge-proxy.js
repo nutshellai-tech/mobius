@@ -106,7 +106,11 @@ function proxyRequest(req, res) {
       path: upstreamPath,
       headers,
     }, (upstreamRes) => {
-      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      // nginx 默认 proxy_buffering on 会缓冲 SSE 响应, 导致反向连接的 client 收不到任务事件
+      // (session.create / send-keys / capture) → broker 端 30s 超时, 表现为"连上了却下发不了指令".
+      // X-Accel-Buffering: no 让 nginx 对该响应关闭缓冲, 心跳/事件即时 flush 到 client.
+      const sseHeaders = { ...upstreamRes.headers, 'x-accel-buffering': 'no' };
+      res.writeHead(upstreamRes.statusCode, sseHeaders);
       upstreamRes.pipe(res);
     });
     upstreamReq.on('error', (err) => {
