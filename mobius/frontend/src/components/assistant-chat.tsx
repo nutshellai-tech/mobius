@@ -1708,11 +1708,12 @@ export function AssistantChat() {
   }, [clearCutoffStorageKey])
 
   // 任务完成上升沿检测:任意 session 的 job_accomplished 从 false 变 true,
-  // 且当前是缩小态,就累加未读计数。首次见到的 session 跳过,避免页面加载误报。
+  // 且当前是缩小态,就累加未读计数 (同一轮里 N 个 session 同时完成 → +N)。
+  // 首次见到的 session 跳过,避免页面加载误报。
   const prevAccomplishedRef = useRef<Record<string, boolean>>({})
   useEffect(() => {
     const next: Record<string, boolean> = {}
-    let hasNewCompletion = false
+    let newCompletions = 0
     for (const snap of sessions) {
       const sid = snap.session?.session_id
       if (!sid) continue
@@ -1720,10 +1721,10 @@ export function AssistantChat() {
       next[sid] = acc
       if (prevAccomplishedRef.current[sid] === undefined) continue
       if (!prevAccomplishedRef.current[sid] && acc && !openRef.current) {
-        hasNewCompletion = true
+        newCompletions += 1
       }
     }
-    if (hasNewCompletion) setUnreadCompletion(c => c + 1)
+    if (newCompletions > 0) setUnreadCompletion(c => c + newCompletions)
     prevAccomplishedRef.current = next
   }, [sessions])
 
