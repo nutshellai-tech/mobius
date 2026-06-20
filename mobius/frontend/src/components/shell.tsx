@@ -524,10 +524,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
 
   return (
     <>
-      <div className="h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
+      <div className="mobius-topnav h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         {/* Logo + 面包屑 */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
             <MobiusLogo size={28} />
             <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>Mobius</span>
@@ -632,7 +632,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         </div>
 
         {/* 右侧操作 */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="mobius-topnav-actions flex items-center gap-2 flex-shrink-0">
           {rightExtra}
           <button
             type="button"

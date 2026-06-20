@@ -1,5 +1,30 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
+// 移动端断点: 与 index.css 里的 @media (max-width: 768px) 保持一致.
+// 侧栏在窄屏下从「固定像素宽度 + 可拖拽」切换为「全宽纵向堆叠 + 不可拖拽」,
+// 否则在 375px 宽的手机上侧栏会吃掉大半屏幕, 主内容被挤没.
+const MOBILE_BREAKPOINT = 768
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
+    const onChange = (e: MediaQueryListEvent) => setMobile(e.matches)
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    }
+    // 旧版 Safari 兜底
+    mql.addListener(onChange)
+    return () => mql.removeListener(onChange)
+  }, [])
+  return mobile
+}
+
 // 通用可拖拽宽度面板. 用法:
 //   <ResizablePanel storageKey="..." defaultWidth={288} minWidth={200} maxWidth={480} side="left">
 //     ...内容...
@@ -53,6 +78,9 @@ export function ResizablePanel({
   children,
 }: ResizablePanelProps) {
   const [width, setWidth] = useState<number>(() => readStoredWidth(storageKey, defaultWidth, minWidth, maxWidth))
+  // 窄屏下不再使用固定宽度: 整个侧栏全宽堆叠在主内容之上 (配合 index.css 的 :has 规则把
+  // 父级 flex 行改成纵向), 拖拽手柄在触屏上无意义故不渲染.
+  const isMobile = useIsMobile()
   const dragStateRef = useRef<{
     startX: number
     startWidth: number
@@ -157,29 +185,47 @@ export function ResizablePanel({
     transition: 'background-color .15s ease',
   }
   const handleClass = 'mobius-resizable-handle'
-  const innerStyle: CSSProperties = {
-    width,
-    minWidth,
-    maxWidth,
-    flexShrink: 0,
-    position: 'relative',
-    ...style,
-  }
+  // mobius-resizable 是给 index.css 媒体查询用的稳定锚点类; --mobile 修饰窄屏堆叠态.
+  const asideClass = [
+    'mobius-resizable',
+    isMobile ? 'mobius-resizable--mobile' : '',
+    className || '',
+  ].filter(Boolean).join(' ')
+  const innerStyle: CSSProperties = isMobile
+    ? {
+        // 全宽堆叠: 不再用固定像素宽度, 也不阻止收缩.
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        flexShrink: 1,
+        position: 'relative',
+        ...style,
+      }
+    : {
+        width,
+        minWidth,
+        maxWidth,
+        flexShrink: 0,
+        position: 'relative',
+        ...style,
+      }
 
   return (
     <aside
       data-tour={dataTour}
-      className={className}
+      className={asideClass}
       style={innerStyle}
     >
       {children}
-      <div
-        className={handleClass}
-        style={handleStyle}
-        onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
-        title="拖拽调整宽度 · 双击恢复默认"
-      />
+      {!isMobile && (
+        <div
+          className={handleClass}
+          style={handleStyle}
+          onMouseDown={handleMouseDown}
+          onDoubleClick={handleDoubleClick}
+          title="拖拽调整宽度 · 双击恢复默认"
+        />
+      )}
     </aside>
   )
 }
