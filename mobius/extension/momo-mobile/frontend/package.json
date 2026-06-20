@@ -1,0 +1,7 @@
+{
+  "name": "momo-mobile-shared-web-preview",
+  "private": true,
+  "scripts": {
+    "build": "bash ../scripts/build-web-preview.sh"
+  }
+}
