@@ -4591,6 +4591,15 @@ body::after {
 .mo-avatar--active .mo-avatar__particle {
   animation-duration: 6.4s;
 }
+/* lite：消息列表里逐条渲染的头像，禁用所有无限动画，避免长会话滚动时持续重绘掉帧 */
+.mo-avatar--lite .mo-avatar__field,
+.mo-avatar--lite .mo-avatar__core {
+  animation: none !important;
+}
+.mo-avatar--lite .mo-avatar__field {
+  transform: none;
+  filter: saturate(1.18);
+}
 .mo-avatar__particle--1 { left: 47%; top: 5%; color: #e0f2fe; animation-name: mo-particle-drift-a; animation-delay: -1.1s; }
 .mo-avatar__particle--2 { left: 63%; top: 10%; width: .055em; height: .055em; color: #a7f3d0; animation-name: mo-particle-drift-b; animation-delay: -4.3s; }
 .mo-avatar__particle--3 { left: 75%; top: 22%; color: #fde68a; animation-name: mo-particle-drift-c; animation-delay: -2.6s; }

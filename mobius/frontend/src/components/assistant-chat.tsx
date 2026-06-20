@@ -611,7 +611,17 @@ async function fetchAssistantSpeech(text: string, voice: string, signal?: AbortS
   return res.blob()
 }
 
-function MoAvatar({ size = 'lg', active = false }: { size?: 'sm' | 'lg'; active?: boolean }) {
+function MoAvatar({ size = 'lg', active = false, lite = false }: { size?: 'sm' | 'lg'; active?: boolean; lite?: boolean }) {
+  // lite 版用于消息列表：每条消息一个头像，若保留 18 个无限动画粒子 + filter/box-shadow
+  // 关键帧动画会持续触发重绘，在长会话滚动时严重掉帧。lite 只渲染静态渐变球。
+  if (lite) {
+    return (
+      <span className={`mo-avatar mo-avatar--${size} mo-avatar--lite`} aria-hidden="true">
+        <span className="mo-avatar__field" />
+        <span className="mo-avatar__core" />
+      </span>
+    )
+  }
   return (
     <span
       className={`mo-avatar mo-avatar--${size}${active ? ' mo-avatar--active' : ''}`}
@@ -1043,7 +1053,7 @@ function AssistantMessage({ response, index }: { response: AssistantResponse; in
   return (
     <div className="assistant-session-message assistant-session-message--assistant">
       <div className="assistant-session-message__meta">
-        <span className="assistant-msg-avatar assistant-msg-avatar--mo"><MoAvatar size="sm" active /></span>
+        <span className="assistant-msg-avatar assistant-msg-avatar--mo"><MoAvatar size="sm" lite /></span>
         <span className="assistant-msg-name">{ASSISTANT_NAME}</span>
         <span className="assistant-msg-turn">response {index + 1}</span>
         {response.created_at ? <span>{formatTime(response.created_at)}</span> : null}
@@ -1179,7 +1189,7 @@ const ConversationMessage = memo(function ConversationMessage({
           </>
         ) : (
           <>
-            <span className="assistant-msg-avatar assistant-msg-avatar--mo"><MoAvatar size="sm" active /></span>
+            <span className="assistant-msg-avatar assistant-msg-avatar--mo"><MoAvatar size="sm" lite /></span>
             <span className="assistant-msg-name">{ASSISTANT_NAME}</span>
             <span className="assistant-msg-turn">response {(message.response_index ?? 0) + 1}</span>
             {message.created_at ? <span>{formatTime(message.created_at)}</span> : null}
@@ -1854,10 +1864,17 @@ export function AssistantChat() {
     if (!open) return
     const el = textareaRef.current
     if (!el) return
-    const maxHeight = Math.max(120, Math.floor(window.innerHeight * (inputExpanded ? 0.50 : 0.30)))
-    const minHeight = inputExpanded ? 180 : 62
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`
+    // 用 rAF 节流自适应高度：每次按键直接读 scrollHeight 会强制同步回流，
+    // 叠加面板里大量正在跑动画的元素后会让打字明显发卡。改到下一帧统一测量。
+    const raf = window.requestAnimationFrame(() => {
+      const node = textareaRef.current
+      if (!node) return
+      const maxHeight = Math.max(120, Math.floor(window.innerHeight * (inputExpanded ? 0.50 : 0.30)))
+      const minHeight = inputExpanded ? 180 : 62
+      node.style.height = 'auto'
+      node.style.height = `${Math.min(Math.max(node.scrollHeight, minHeight), maxHeight)}px`
+    })
+    return () => window.cancelAnimationFrame(raf)
   }, [input, inputExpanded, open])
 
   useEffect(() => {

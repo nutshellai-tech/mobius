@@ -93,13 +93,19 @@ function scanFilesystem() {
     return { found: out, errors };
   }
   for (const entry of fs.readdirSync(EXTENSION_ROOT, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    const entryPath = path.join(EXTENSION_ROOT, entry.name);
+    const isDirectory = entry.isDirectory() || (
+      entry.isSymbolicLink() &&
+      fs.existsSync(entryPath) &&
+      fs.statSync(entryPath).isDirectory()
+    );
+    if (!isDirectory) continue;
     const name = entry.name;
     if (!EXT_NAME_RE.test(name)) {
       errors.push({ name, error: `目录名不符合 slug 规则 ${EXT_NAME_RE} -- 已跳过` });
       continue;
     }
-    const dir = path.join(EXTENSION_ROOT, name);
+    const dir = entryPath;
     const manifestPath = path.join(dir, MANIFEST_FILENAME);
     if (!fs.existsSync(manifestPath)) {
       errors.push({ name, error: 'extension.json 缺失' });
