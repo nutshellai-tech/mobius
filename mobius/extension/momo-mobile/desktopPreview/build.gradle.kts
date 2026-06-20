@@ -51,6 +51,11 @@ configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
                 implementation("io.ktor:ktor-client-cio:2.3.12")
             }
         }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }
 

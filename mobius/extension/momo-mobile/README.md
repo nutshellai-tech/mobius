@@ -115,6 +115,69 @@ tmux kill-session -t momo_mobile_preview
 它直接复用 `shared/src/commonMain` 中的 `MomoApp()`、ViewModel、Ktor/SSE
 逻辑，只在 `desktopPreview/src/desktopMain` 提供 JVM 平台 actual 实现。
 
+### Tier 1：设备外观预览
+
+Desktop Preview 使用固定的 430×900dp 设备画布，并模拟：
+
+- 47dp 圆角设备外框和 4dp 黑色边框；
+- 47dp 顶部安全区、200×30dp 刘海和每分钟刷新的状态栏；
+- 使用 Compose `Path` 绘制的 Wi-Fi、电池图标；
+- 34dp 底部安全区和 134×5dp Home indicator。
+
+运行尺寸契约测试与编译检查：
+
+```bash
+cd mobius/extension/momo-mobile/desktopPreview
+JAVA_HOME="$APP_DIR/.tmp/tools/jdk-deb/usr/lib/jvm/java-17-openjdk-amd64" \
+  "$APP_DIR/.tmp/tools/gradle/gradle-8.8/bin/gradle" \
+  --no-daemon desktopTest compileKotlinDesktop
+```
+
+### Tier 2：GitHub Actions 真模拟器截图
+
+仓库级 workflow 位于：
+
+```text
+.github/workflows/momo-mobile-screenshot-verify.yml
+```
+
+GitHub 只加载仓库根目录下的 workflows，因此不能把可执行 YAML 放在 extension
+内部。该 workflow 可通过 `workflow_dispatch` 手动运行，也会在 PR 修改以下目录时运行：
+
+- `mobius/extension/momo-mobile/shared/**`
+- `mobius/extension/momo-mobile/androidApp/**`
+- `mobius/extension/momo-mobile/iosApp/**`
+
+Android job 使用 Pixel 6 / API 34 无窗口模拟器，iOS job 使用 iPhone 15 Pro
+Simulator。两者都会安装并启动应用、等待界面稳定、生成 PNG，并通过
+`actions/upload-artifact@v4` 上传。
+
+iOS 模拟器构建使用 `iosApp/project.yml` 通过 XcodeGen 生成临时
+`iosApp.xcodeproj`。模拟器构建关闭代码签名，因此不需要 Apple Developer Team ID
+或签名 secret；发布到真机或 App Store 时仍需另行配置 Team、证书和 provisioning
+profile。
+
+#### 首次建立基线
+
+仓库不使用 Desktop Preview 或占位图片冒充真实平台基线。第一次运行时，如果
+`screenshots/baseline/android.png` 或 `ios.png` 不存在，workflow 会把本次截图上传为
+baseline candidate artifact：
+
+```text
+android-baseline-candidate-<run-id>
+ios-baseline-candidate-<run-id>
+```
+
+下载并人工确认两张图片后，将它们分别提交到：
+
+```text
+mobius/extension/momo-mobile/screenshots/baseline/android.png
+mobius/extension/momo-mobile/screenshots/baseline/ios.png
+```
+
+后续运行会用 ImageMagick `compare -metric AE` 统计不同像素。不同像素比例超过
+5% 时，对应 job 失败；无论比较结果如何，当次截图都会作为 artifact 上传，便于审查。
+
 ## 设计对齐
 
 参考设计稿：
