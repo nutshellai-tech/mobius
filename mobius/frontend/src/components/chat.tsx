@@ -1888,7 +1888,7 @@ export function ChatArea() {
     ? '编辑消息后按 Enter 重新发送...'
     : isNewConversation
       ? '今天有什么计划？'
-      : '给智能体发消息...'
+      : '发送指令...'
   const loadHistoryRef = useRef<() => void>(() => {})
   const postSessionMessage = useCallback(async ({
     content,

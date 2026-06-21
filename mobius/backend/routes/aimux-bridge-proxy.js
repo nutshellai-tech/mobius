@@ -36,6 +36,23 @@ const HOP_BY_HOP_HEADERS = new Set([
   'te', 'trailer', 'transfer-encoding', 'upgrade', 'host', 'content-length',
 ]);
 
+function redactPath(rawPath) {
+  return String(rawPath || '').replace(/([?&]token=)[^&]+/g, '$1<redacted>');
+}
+
+function shouldLogPath(rawPath) {
+  const p = String(rawPath || '');
+  return p.startsWith('/client/register') ||
+    p.startsWith('/client/events') ||
+    p.startsWith('/client/result');
+}
+
+function logBridgeProxy(req, message, extra = '') {
+  if (!shouldLogPath(req.url)) return;
+  const suffix = extra ? ` ${extra}` : '';
+  console.log(`[aimux-bridge-proxy] ${message}: ${req.method} ${redactPath(req.url)}${suffix}`);
+}
+
 function readBridgeTarget() {
   let raw;
   try {
@@ -98,6 +115,7 @@ function proxyRequest(req, res) {
   headers['x-forwarded-proto'] = req.protocol || 'http';
 
   if (isSSE) {
+    logBridgeProxy(req, 'sse open');
     // GET /client/events: 流式透传, 无 body
     const upstreamReq = http.request({
       hostname: target.hostname,
@@ -106,17 +124,28 @@ function proxyRequest(req, res) {
       path: upstreamPath,
       headers,
     }, (upstreamRes) => {
-      res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
+      logBridgeProxy(req, 'sse upstream', `status=${upstreamRes.statusCode}`);
+      const responseHeaders = {
+        ...upstreamRes.headers,
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no',
+      };
+      res.writeHead(upstreamRes.statusCode, responseHeaders);
       upstreamRes.pipe(res);
+      upstreamRes.on('end', () => logBridgeProxy(req, 'sse upstream end'));
     });
     upstreamReq.on('error', (err) => {
+      logBridgeProxy(req, 'sse upstream error', err.message);
       if (res.headersSent) { res.end(); return; }
       res.status(502).json({
         error: { kind: 'remote_disconnected', message: `aimux bridge broker is unreachable: ${err.message}`, code: 2 },
       });
     });
     upstreamReq.setTimeout(0);
-    req.on('close', () => upstreamReq.destroy());
+    req.on('close', () => {
+      logBridgeProxy(req, 'sse client close');
+      upstreamReq.destroy();
+    });
     // SSE 无 body, 直接 end
     upstreamReq.end();
     return;
@@ -127,12 +156,14 @@ function proxyRequest(req, res) {
   let totalLen = 0;
   req.on('data', (chunk) => { bodyChunks.push(chunk); totalLen += chunk.length; });
   req.on('error', (err) => {
+    logBridgeProxy(req, 'request read error', err.message);
     if (res.headersSent) return;
     res.status(400).json({ error: { kind: 'bad_request', message: `request read error: ${err.message}`, code: 1 } });
   });
   req.on('end', () => {
     const body = Buffer.concat(bodyChunks, totalLen);
     headers['content-length'] = String(body.length);
+    logBridgeProxy(req, 'proxy request', `bytes=${body.length}`);
 
     const upstreamReq = http.request({
       hostname: target.hostname,
@@ -141,10 +172,12 @@ function proxyRequest(req, res) {
       path: upstreamPath,
       headers,
     }, (upstreamRes) => {
+      logBridgeProxy(req, 'upstream response', `status=${upstreamRes.statusCode}`);
       res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
       upstreamRes.pipe(res);
     });
     upstreamReq.on('error', (err) => {
+      logBridgeProxy(req, 'upstream error', err.message);
       if (res.headersSent) { res.end(); return; }
       res.status(502).json({
         error: { kind: 'remote_disconnected', message: `aimux bridge broker is unreachable: ${err.message}`, code: 2 },

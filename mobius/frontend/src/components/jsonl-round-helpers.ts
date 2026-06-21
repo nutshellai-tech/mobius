@@ -1,0 +1,84 @@
+/**
+ * jsonl-round-helpers.ts — 对话轮次分组的纯逻辑辅助.
+ *
+ * 这里只放无 React 依赖的纯函数, 方便 jsonl-view.tsx 与 Node 测试共享同一份实现,
+ * 避免 "测试一份, 渲染另一份" 的脱节. 组件层只负责把这些数据组装成 RoundGroup.
+ */
+
+// 与 Research Blackboard 相关的消息标记: 投递给 agent 的提醒 prompt 与写回会话的
+// system 提醒消息都以此开头 (见后端 research-blackboard.js buildNotifyPrompt / insertSystem).
+export const BLACKBOARD_MARKER = '[Research Blackboard 更新提醒]'
+
+// 收集 entry 里所有可能"承载用户可见文本"的字段, 用于判断是否为 Blackboard 提醒.
+// 覆盖三种 entry 形态:
+//   1. event_msg.payload.message / event_msg.payload.content (字符串)
+//   2. type:user 的 message.content (字符串或数组, 数组只取 text/input_text 块)
+//   3. response_item.message[role=user].content (同上)
+function collectEntryUserTexts(entry: any, out: string[]): void {
+  if (!entry || typeof entry !== 'object') return
+
+  if (entry.type === 'event_msg' && entry.payload && typeof entry.payload === 'object') {
+    if (typeof entry.payload.message === 'string') out.push(entry.payload.message)
+    if (typeof entry.payload.content === 'string') out.push(entry.payload.content)
+  }
+
+  if (entry.type === 'user' && entry.message && typeof entry.message === 'object') {
+    const c = entry.message.content
+    if (typeof c === 'string') out.push(c)
+    else if (Array.isArray(c)) {
+      for (const b of c) {
+        if (!b || typeof b !== 'object') continue
+        if (typeof b.text === 'string') out.push(b.text)
+        else if (typeof b.input_text === 'string') out.push(b.input_text)
+      }
+    }
+  }
+
+  if (
+    entry.type === 'response_item'
+    && entry.payload && typeof entry.payload === 'object'
+    && entry.payload.type === 'message'
+    && entry.payload.role === 'user'
+  ) {
+    const c = entry.payload.content
+    if (typeof c === 'string') out.push(c)
+    else if (Array.isArray(c)) {
+      for (const b of c) {
+        if (!b || typeof b !== 'object') continue
+        if (typeof b.text === 'string') out.push(b.text)
+        else if (typeof b.input_text === 'string') out.push(b.input_text)
+      }
+    }
+  }
+}
+
+// 该 entry 是否为 Research Blackboard 更新提醒.
+// Blackboard 提醒后端会以 event_msg.user_message / type:user / response_item.message[role=user]
+// 三种形态投递, 但语义上是"系统注入"而非"人类提问", 在对话轮次分组里不应开新轮.
+export function isBlackboardReminder(entry: any): boolean {
+  const texts: string[] = []
+  collectEntryUserTexts(entry, texts)
+  return texts.some((t) => typeof t === 'string' && t.includes(BLACKBOARD_MARKER))
+}
+
+// 判断是否为真正的用户问题 (而非 tool_result 回调或 Blackboard 系统提醒).
+// Claude API 把 tool result 也包在 type==="user" 的 message 里 — 只有含 text 块的才算新一轮;
+// 同理, Research Blackboard 提醒虽然套了 user_message / type:user 的壳, 也不算新一轮.
+export function isNewRound(e: any): boolean {
+  if (isBlackboardReminder(e)) return false
+  if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') return true
+  if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
+    const c = e?.payload?.content
+    if (typeof c === 'string') return c.trim().length > 0
+    if (Array.isArray(c)) return c.some((b: any) => b?.type === 'text' || b?.type === 'input_text')
+    return false
+  }
+  if (e?.type === 'user') {
+    const c = e?.message?.content
+    if (typeof c === 'string') return c.trim().length > 0
+    // 数组格式: 只有包含 text 块才算人类问题; 纯 tool_result 数组是工具回调, 不开新轮
+    if (Array.isArray(c)) return c.some((b: any) => b?.type === 'text')
+    return false
+  }
+  return false
+}

@@ -110,9 +110,11 @@ const CONTEXT_COMPACTED_THEME = { ...PRODUCT_PY_THEME, label: 'ctx·compact' }
 const ASSISTANT_RESPONSE_GOLD_KEYWORDS = ['根因', 'product.py']
 const ASSISTANT_RESPONSE_KEYWORD_THEME = { ...PRODUCT_PY_THEME, label: 'assistant·keyword' }
 
-// 与 Research Blackboard 相关的消息标记: 投递给 agent 的提醒 prompt 与写回会话的
-// system 提醒消息都以此开头 (见后端 research-blackboard.js buildNotifyPrompt / insertSystem).
-const BLACKBOARD_MARKER = '[Research Blackboard 更新提醒]'
+// 对话轮次分组的纯逻辑 (BLACKBOARD_MARKER / isBlackboardReminder / isNewRound) 抽到了
+// ./jsonl-round-helpers.ts, 这样 Node 单元测试可以无 React 直接 import 同一份实现.
+// 组件层只在这里再封装使用, 其它渲染路径不重复实现.
+import { BLACKBOARD_MARKER, isNewRound } from './jsonl-round-helpers'
+
 // 醒目主题: blackboard 相关消息用 fuchsia, 边框/底色比常规 type 重很多, 在长列表里一眼可见.
 const BLACKBOARD_THEME = { dot: 'bg-fuchsia-400', border: 'border-fuchsia-500/30', bg: 'bg-fuchsia-500/[0.05]', text: 'text-fuchsia-200', label: 'blackboard' }
 
@@ -1584,25 +1586,11 @@ interface Round {
   items: RoundItem[]
 }
 
-// 判断是否为真正的用户问题 (而非 tool_result 回调).
+// 判断是否为真正的用户问题 (而非 tool_result 回调 / Blackboard 系统提醒).
+// 实现已抽到 ./jsonl-round-helpers.ts, 这里直接复用导出的 isNewRound, 让 Node 测试与
+// 渲染层共享同一份实现. Blackboard 提醒 (event_msg.user_message / type:user /
+// response_item.message[role=user]) 在 helper 里已排除, 不会触发新轮.
 // Claude API 把 tool result 也包在 type==="user" 的 message 里 — 只有含 text 块的才算新一轮.
-function isNewRound(e: AnyEntry): boolean {
-  if (e?.type === 'event_msg' && e?.payload?.type === 'user_message') return true
-  if (e?.type === 'response_item' && e?.payload?.type === 'message' && e?.payload?.role === 'user') {
-    const c = e?.payload?.content
-    if (typeof c === 'string') return c.trim().length > 0
-    if (Array.isArray(c)) return c.some((b: any) => b?.type === 'text' || b?.type === 'input_text')
-    return false
-  }
-  if (e?.type === 'user') {
-    const c = e?.message?.content
-    if (typeof c === 'string') return c.trim().length > 0
-    // 数组格式: 只有包含 text 块才算人类问题; 纯 tool_result 数组是工具回调, 不开新轮
-    if (Array.isArray(c)) return c.some((b: any) => b?.type === 'text')
-    return false
-  }
-  return false
-}
 
 // 提取一个"开新轮"候选条目里实际呈现给用户的归一化文本, 仅用于 buildRounds 内部去重比较.
 // 三种格式对应同一次输入: mobius type:user / codex response_item.message[role=user] / codex event_msg.user_message.
