@@ -27,6 +27,7 @@ const { readSessionInputs } = require('../services/session-inputs');
 const sessionFeatures = require('../services/session-features');
 const { runSessionMessage } = require('../services/session-message-runner');
 const { writeSessionTransferDocument } = require('../services/session-transfer');
+const { predictNextQuestionsForSession } = require('../services/session-next-question-predictor');
 const { appendBlackboardRecord } = require('../services/research-blackboard');
 const { db } = require('../../db');
 const {
@@ -654,6 +655,26 @@ function sessionJsonlPath(session, sessionId) {
     ? backend._resolveJsonlPath(sessionId)
     : null;
 }
+
+router.post('/:id/predicted-next-questions', auth, async (req, res) => {
+  const sessionId = req.params.id;
+  const session = findSessionOperable(sessionId, req.user);
+  if (!session) return res.status(404).json({ error: '未找到' });
+  auditSessionAccess(req.user, 'predict_next_questions', session);
+
+  const jsonlPath = sessionJsonlPath(session, sessionId);
+  try {
+    const result = await predictNextQuestionsForSession({ session, jsonlPath });
+    return res.json({
+      session_id: sessionId,
+      questions: result.questions,
+      meta: result.meta,
+    });
+  } catch (e) {
+    const status = Number(e?.status) || 500;
+    return res.status(status).json({ error: e?.message || String(e) });
+  }
+});
 
 function featureWorkspaceForSession(user, sessionId) {
   const workspace = resolveSessionWorkspace(user, sessionId);

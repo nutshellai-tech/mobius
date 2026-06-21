@@ -45,6 +45,7 @@ const LIGHT_MODEL_API_TYPES = Object.freeze([
   'claude-message',
 ])
 const LIGHT_MODEL_API_DEFAULT_TYPE = 'openai-chat-completion'
+const LIGHT_MODEL_API_DEFAULT_MODEL = 'glm-4.6'
 
 const DEFAULTS = Object.freeze({
   modelPromptLimits: {
@@ -79,6 +80,7 @@ const DEFAULTS = Object.freeze({
     type: LIGHT_MODEL_API_DEFAULT_TYPE,
     baseUrl: '',
     apiKey: '',
+    model: LIGHT_MODEL_API_DEFAULT_MODEL,
   },
 })
 
@@ -345,12 +347,21 @@ function normalizeLightModelApiKeyValue(value) {
   return trimmed
 }
 
+function normalizeLightModelApiModel(value) {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return LIGHT_MODEL_API_DEFAULT_MODEL
+  if (trimmed.length > 200) throw new Error('model 长度不能超过 200 个字符')
+  if (trimmed.includes('\0')) throw new Error('model 包含非法字符')
+  return trimmed
+}
+
 function normalizeLightModelApiForRead(value) {
   const obj = value && typeof value === 'object' ? value : {}
   return {
     type: normalizeLightModelApiType(obj.type),
     baseUrl: normalizeLightModelApiBaseUrl(obj.baseUrl ?? obj.base_url),
     apiKey: normalizeLightModelApiKeyValue(obj.apiKey ?? obj.api_key),
+    model: normalizeLightModelApiModel(obj.model),
   }
 }
 
@@ -360,6 +371,7 @@ function maskLightModelApi(value) {
     type: normalized.type,
     baseUrl: normalized.baseUrl,
     apiKey: maskSecret(normalized.apiKey),
+    model: normalized.model,
   }
 }
 
@@ -542,6 +554,7 @@ function setLightModelApi(payload) {
     apiKey: obj.apiKey !== undefined || obj.api_key !== undefined
       ? normalizeLightModelApiKeyValue(obj.apiKey ?? obj.api_key)
       : current.apiKey,
+    model: obj.model !== undefined ? normalizeLightModelApiModel(obj.model) : current.model,
   }
   next.lightModelApi = merged
   writeSettings(next)

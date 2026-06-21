@@ -219,9 +219,9 @@ function entrySections(entry, index) {
   return sections;
 }
 
-function writeSessionTransferDocument({ bindPath, sourceSession, targetSessionId, jsonlPath }) {
-  if (!bindPath || !sourceSession?.session_id) {
-    throw new Error('创建 Session 转接文档缺少 bindPath 或 sourceSession');
+function buildSessionTransferMarkdown({ sourceSession, targetSessionId, jsonlPath }) {
+  if (!sourceSession?.session_id) {
+    throw new Error('创建 Session 转接文档缺少 sourceSession');
   }
   if (!jsonlPath) throw new Error('旧 Session 没有可读取的 JSONL 路径');
 
@@ -234,9 +234,6 @@ function writeSessionTransferDocument({ bindPath, sourceSession, targetSessionId
     }
   }
 
-  const dir = path.join(path.resolve(bindPath), '.imac', 'session_transfer');
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, `${sourceSession.session_id}.md`);
   const header = [
     `# Session 转接文档: ${sourceSession.name || sourceSession.session_id}`,
     '',
@@ -265,12 +262,28 @@ function writeSessionTransferDocument({ bindPath, sourceSession, targetSessionId
     bodyParts.push('\n\n## 空记录\n\n旧 Session 暂未提取到可转接的精简/代码卡片。');
   }
 
-  fs.writeFileSync(filePath, `${header}${bodyParts.join('')}\n`, 'utf8');
   return {
-    filePath,
+    markdown: `${header}${bodyParts.join('')}\n`,
     sectionCount: sections.length,
     entryCount: entries.length,
     truncated: totalChars > MAX_TOTAL_CHARS,
+  };
+}
+
+function writeSessionTransferDocument({ bindPath, sourceSession, targetSessionId, jsonlPath }) {
+  if (!bindPath || !sourceSession?.session_id) {
+    throw new Error('创建 Session 转接文档缺少 bindPath 或 sourceSession');
+  }
+  const result = buildSessionTransferMarkdown({ sourceSession, targetSessionId, jsonlPath });
+  const dir = path.join(path.resolve(bindPath), '.imac', 'session_transfer');
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${sourceSession.session_id}.md`);
+  fs.writeFileSync(filePath, result.markdown, 'utf8');
+  return {
+    filePath,
+    sectionCount: result.sectionCount,
+    entryCount: result.entryCount,
+    truncated: result.truncated,
   };
 }
 
@@ -288,6 +301,7 @@ function transferAppendPrompt(filePath, content) {
 }
 
 module.exports = {
+  buildSessionTransferMarkdown,
   writeSessionTransferDocument,
   transferAppendPrompt,
 };

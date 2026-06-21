@@ -1984,12 +1984,14 @@ type LightModelApiMasked = {
   type: LightModelApiType
   baseUrl: string
   apiKey: { isSet: boolean; preview: string }
+  model: string
 }
 
 type LightModelApiRevealed = {
   type: LightModelApiType
   baseUrl: string
   apiKey: string
+  model: string
 }
 
 const LIGHT_MODEL_API_TYPE_OPTIONS: Array<{ value: LightModelApiType; label: string; hint: string }> = [
@@ -2011,12 +2013,12 @@ const LIGHT_MODEL_API_TYPE_OPTIONS: Array<{ value: LightModelApiType; label: str
 function AdminLightModelApiCard() {
   const [type, setType] = useState<LightModelApiType>('openai-chat-completion')
   const [baseUrl, setBaseUrl] = useState('')
+  const [model, setModel] = useState('glm-4.6')
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [apiKeyMasked, setApiKeyMasked] = useState<{ isSet: boolean; preview: string }>({ isSet: false, preview: '' })
   const [revealedKey, setRevealedKey] = useState('')
   const [revealUntil, setRevealUntil] = useState(0)
 
-  const [testModel, setTestModel] = useState('glm-4.6')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -2030,6 +2032,7 @@ function AdminLightModelApiCard() {
       const next = await api('/api/admin/settings/light-model-api') as LightModelApiMasked
       setType(next.type)
       setBaseUrl(next.baseUrl)
+      setModel(next.model || 'glm-4.6')
       setApiKeyMasked(next.apiKey)
       setApiKeyInput('')
       setRevealedKey('')
@@ -2063,6 +2066,7 @@ function AdminLightModelApiCard() {
       const next = await api('/api/admin/settings/light-model-api/reveal') as LightModelApiRevealed
       setType(next.type)
       setBaseUrl(next.baseUrl)
+      setModel(next.model || 'glm-4.6')
       setRevealedKey(next.apiKey || '')
       setApiKeyMasked(next.apiKey
         ? { isSet: true, preview: `••••${next.apiKey.slice(-4)}` }
@@ -2077,7 +2081,7 @@ function AdminLightModelApiCard() {
     setSaving(true)
     setError('')
     try {
-      const body: Record<string, string> = { type, baseUrl }
+      const body: Record<string, string> = { type, baseUrl, model }
       if (apiKeyInput) body.apiKey = apiKeyInput
       const next = await api('/api/admin/settings/light-model-api', {
         method: 'PUT',
@@ -2085,6 +2089,7 @@ function AdminLightModelApiCard() {
       }) as LightModelApiMasked
       setType(next.type)
       setBaseUrl(next.baseUrl)
+      setModel(next.model || 'glm-4.6')
       setApiKeyMasked(next.apiKey)
       setApiKeyInput('')
       setSavedFlash(true)
@@ -2103,7 +2108,7 @@ function AdminLightModelApiCard() {
     try {
       const result = await api('/api/admin/settings/light-model-api/test', {
         method: 'POST',
-        body: JSON.stringify({ model: testModel }),
+        body: JSON.stringify({ model }),
       }) as { ok: boolean; summary?: string; reason?: string; error?: string }
       setTestResult({
         ok: !!result.ok,
@@ -2185,6 +2190,20 @@ function AdminLightModelApiCard() {
         </label>
 
         <label className="block md:col-span-2">
+          <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>model</span>
+          <input
+            type="text"
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            placeholder="glm-4.6"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-8 w-full rounded-md px-2.5 text-[12px]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+        </label>
+
+        <label className="block md:col-span-2">
           <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>api_key</span>
           <div className="relative">
             <input
@@ -2224,17 +2243,6 @@ function AdminLightModelApiCard() {
 
         <div className="mx-1 h-5 w-px bg-[var(--border-color)]" />
 
-        <input
-          type="text"
-          value={testModel}
-          onChange={e => setTestModel(e.target.value)}
-          placeholder="测试用模型名"
-          title="测试时使用的模型名 (不会保存)"
-          autoComplete="off"
-          spellCheck={false}
-          className="h-8 w-44 rounded-md px-2.5 text-[12px]"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
-        />
         <button
           type="button"
           onClick={test}
