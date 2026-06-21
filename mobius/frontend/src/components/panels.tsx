@@ -1978,6 +1978,275 @@ function AdminDoubaoVoiceCard() {
   )
 }
 
+type LightModelApiType = 'openai-chat-completion' | 'openai-response' | 'claude-message'
+
+type LightModelApiMasked = {
+  type: LightModelApiType
+  baseUrl: string
+  apiKey: { isSet: boolean; preview: string }
+}
+
+type LightModelApiRevealed = {
+  type: LightModelApiType
+  baseUrl: string
+  apiKey: string
+}
+
+const LIGHT_MODEL_API_TYPE_OPTIONS: Array<{ value: LightModelApiType; label: string; hint: string }> = [
+  { value: 'openai-chat-completion', label: 'OpenAI · Chat Completion', hint: 'POST {base_url}/chat/completions · Bearer' },
+  { value: 'openai-response', label: 'OpenAI · Responses', hint: 'POST {base_url}/responses · Bearer' },
+  { value: 'claude-message', label: 'Claude · Messages', hint: 'POST {base_url}/messages · x-api-key' },
+]
+
+function AdminLightModelApiCard() {
+  const [type, setType] = useState<LightModelApiType>('openai-chat-completion')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [apiKeyMasked, setApiKeyMasked] = useState<{ isSet: boolean; preview: string }>({ isSet: false, preview: '' })
+  const [revealedKey, setRevealedKey] = useState('')
+  const [revealUntil, setRevealUntil] = useState(0)
+
+  const [testModel, setTestModel] = useState('glm-4.6')
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const next = await api('/api/admin/settings/light-model-api') as LightModelApiMasked
+      setType(next.type)
+      setBaseUrl(next.baseUrl)
+      setApiKeyMasked(next.apiKey)
+      setApiKeyInput('')
+      setRevealedKey('')
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  useEffect(() => {
+    if (!revealUntil) return
+    const remaining = revealUntil - Date.now()
+    if (remaining <= 0) {
+      setRevealedKey('')
+      setRevealUntil(0)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setRevealedKey('')
+      setRevealUntil(0)
+    }, remaining)
+    return () => window.clearTimeout(timer)
+  }, [revealUntil])
+
+  const reveal = async () => {
+    try {
+      const next = await api('/api/admin/settings/light-model-api/reveal') as LightModelApiRevealed
+      setType(next.type)
+      setBaseUrl(next.baseUrl)
+      setRevealedKey(next.apiKey || '')
+      setApiKeyMasked(next.apiKey
+        ? { isSet: true, preview: `••••${next.apiKey.slice(-4)}` }
+        : { isSet: false, preview: '' })
+      setRevealUntil(Date.now() + 30_000)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    }
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const body: Record<string, string> = { type, baseUrl }
+      if (apiKeyInput) body.apiKey = apiKeyInput
+      const next = await api('/api/admin/settings/light-model-api', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }) as LightModelApiMasked
+      setType(next.type)
+      setBaseUrl(next.baseUrl)
+      setApiKeyMasked(next.apiKey)
+      setApiKeyInput('')
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const test = async () => {
+    setTesting(true)
+    setError('')
+    setTestResult(null)
+    try {
+      const result = await api('/api/admin/settings/light-model-api/test', {
+        method: 'POST',
+        body: JSON.stringify({ model: testModel }),
+      }) as { ok: boolean; summary?: string; reason?: string; error?: string }
+      setTestResult({
+        ok: !!result.ok,
+        message: result.ok
+          ? `✓ ${result.summary || '通过'}`
+          : (result.error || result.reason || '测试失败'),
+      })
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e?.message || String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const apiKeyDisplayValue = revealedKey || apiKeyInput || ''
+  const apiKeyPlaceholder = apiKeyMasked.isSet
+    ? `已保存 (${apiKeyMasked.preview}) · 留空表示不修改`
+    : '填入新的 api_key'
+
+  return (
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            特殊轻模型调用 API
+          </h3>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            仅保存配置; 点击「测试连接」用 add 工具验证 (计算 7+35)
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {revealedKey && (
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              明文显示中（{Math.max(0, Math.ceil((revealUntil - Date.now()) / 1000))}s）
+            </span>
+          )}
+          <button type="button" onClick={load} disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="block md:col-span-2">
+          <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>类型</span>
+          <select
+            value={type}
+            onChange={e => setType(e.target.value as LightModelApiType)}
+            className="h-8 w-full rounded-md px-2 text-[12px]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          >
+            {LIGHT_MODEL_API_TYPE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label} — {opt.hint}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block md:col-span-2">
+          <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>base_url</span>
+          <input
+            type="text"
+            value={baseUrl}
+            onChange={e => setBaseUrl(e.target.value)}
+            placeholder="https://open.bigmodel.cn/api/paas/v4"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-8 w-full rounded-md px-2.5 text-[12px]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+        </label>
+
+        <label className="block md:col-span-2">
+          <span className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>api_key</span>
+          <div className="relative">
+            <input
+              type={revealedKey || apiKeyInput ? 'text' : 'password'}
+              value={apiKeyDisplayValue}
+              onChange={e => { setApiKeyInput(e.target.value); setRevealedKey('') }}
+              placeholder={apiKeyPlaceholder}
+              autoComplete="off"
+              spellCheck={false}
+              className="h-8 w-full rounded-md px-2.5 pr-9 text-[12px]"
+              style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+            />
+            {!revealedKey && (
+              <button
+                type="button"
+                title="查看明文 (30s)"
+                onClick={reveal}
+                className="absolute right-1 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </label>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-color)] pt-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || loading}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {savedFlash ? '已保存' : '保存'}
+        </button>
+
+        <div className="mx-1 h-5 w-px bg-[var(--border-color)]" />
+
+        <input
+          type="text"
+          value={testModel}
+          onChange={e => setTestModel(e.target.value)}
+          placeholder="测试用模型名"
+          title="测试时使用的模型名 (不会保存)"
+          autoComplete="off"
+          spellCheck={false}
+          className="h-8 w-44 rounded-md px-2.5 text-[12px]"
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+        />
+        <button
+          type="button"
+          onClick={test}
+          disabled={testing || saving}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          测试连接
+        </button>
+        {testResult && (
+          <span
+            className="text-[11px] break-all"
+            style={{ color: testResult.ok ? '#10b981' : '#f87171' }}
+          >
+            {testResult.ok ? '✓ ' : '✗ '}{testResult.message}
+          </span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 type ClaudeCodeModelConfig = {
   key: string
   session_model: string
@@ -4027,6 +4296,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             <div className="flex flex-col gap-3">
               <AdminAssistantCallbacksPanel />
               <AdminDoubaoVoiceCard />
+              <AdminLightModelApiCard />
             </div>
           )}
 

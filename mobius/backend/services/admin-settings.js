@@ -29,6 +29,13 @@ const DOUBAO_TTS_DEFAULT_VOICE_TYPE = 'zh_female_vv_uranus_bigtts'
 
 const DOUBAO_SECRET_FIELDS = Object.freeze(['appId', 'accessToken', 'secretKey'])
 
+const LIGHT_MODEL_API_TYPES = Object.freeze([
+  'openai-chat-completion',
+  'openai-response',
+  'claude-message',
+])
+const LIGHT_MODEL_API_DEFAULT_TYPE = 'openai-chat-completion'
+
 const DEFAULTS = Object.freeze({
   modelPromptLimits: {
     windowHours: MODEL_PROMPT_LIMIT_WINDOW_HOURS,
@@ -57,6 +64,11 @@ const DEFAULTS = Object.freeze({
       endpoint: DOUBAO_TTS_DEFAULT_ENDPOINT,
       voiceType: DOUBAO_TTS_DEFAULT_VOICE_TYPE,
     },
+  },
+  lightModelApi: {
+    type: LIGHT_MODEL_API_DEFAULT_TYPE,
+    baseUrl: '',
+    apiKey: '',
   },
 })
 
@@ -298,6 +310,49 @@ function maskDoubaoVoice(value) {
   }
 }
 
+function normalizeLightModelApiType(value) {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return LIGHT_MODEL_API_DEFAULT_TYPE
+  if (LIGHT_MODEL_API_TYPES.includes(trimmed)) return trimmed
+  throw new Error(`type 必须是 ${LIGHT_MODEL_API_TYPES.join(' / ')} 中的一个`)
+}
+
+function normalizeLightModelApiBaseUrl(value) {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return ''
+  if (trimmed.length > 1024) throw new Error('base_url 长度不能超过 1024 个字符')
+  if (!/^https?:\/\/[^\s"'`]+/i.test(trimmed)) {
+    throw new Error('base_url 必须以 http:// 或 https:// 开头')
+  }
+  if (trimmed.includes('\0')) throw new Error('base_url 包含非法字符')
+  return trimmed
+}
+
+function normalizeLightModelApiKeyValue(value) {
+  const trimmed = String(value ?? '').trim()
+  if (trimmed.length > 512) throw new Error('api_key 长度不能超过 512 个字符')
+  if (trimmed.includes('\0')) throw new Error('api_key 包含非法字符')
+  return trimmed
+}
+
+function normalizeLightModelApiForRead(value) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    type: normalizeLightModelApiType(obj.type),
+    baseUrl: normalizeLightModelApiBaseUrl(obj.baseUrl ?? obj.base_url),
+    apiKey: normalizeLightModelApiKeyValue(obj.apiKey ?? obj.api_key),
+  }
+}
+
+function maskLightModelApi(value) {
+  const normalized = normalizeLightModelApiForRead(value)
+  return {
+    type: normalized.type,
+    baseUrl: normalized.baseUrl,
+    apiKey: maskSecret(normalized.apiKey),
+  }
+}
+
 function writeSettings(next) {
   const dir = path.dirname(SETTINGS_FILE)
   fs.mkdirSync(dir, { recursive: true })
@@ -323,6 +378,9 @@ function loadSettings() {
     }
     if (parsed && typeof parsed === 'object' && parsed.doubaoVoice) {
       merged.doubaoVoice = normalizeDoubaoVoiceForRead(parsed.doubaoVoice)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.lightModelApi) {
+      merged.lightModelApi = normalizeLightModelApiForRead(parsed.lightModelApi)
     }
     return merged
   } catch (e) {
@@ -453,10 +511,38 @@ function setDoubaoVoiceTts(payload) {
   return maskDoubaoVoiceSub(next.doubaoVoice.tts)
 }
 
+function getLightModelApi() {
+  return loadSettings().lightModelApi
+}
+
+function getLightModelApiMasked() {
+  return maskLightModelApi(loadSettings().lightModelApi)
+}
+
+function setLightModelApi(payload) {
+  const obj = payload && typeof payload === 'object' ? payload : {}
+  const next = loadSettings()
+  const current = normalizeLightModelApiForRead(next.lightModelApi)
+  const merged = {
+    type: obj.type !== undefined ? normalizeLightModelApiType(obj.type) : current.type,
+    baseUrl: obj.baseUrl !== undefined || obj.base_url !== undefined
+      ? normalizeLightModelApiBaseUrl(obj.baseUrl ?? obj.base_url)
+      : current.baseUrl,
+    apiKey: obj.apiKey !== undefined || obj.api_key !== undefined
+      ? normalizeLightModelApiKeyValue(obj.apiKey ?? obj.api_key)
+      : current.apiKey,
+  }
+  next.lightModelApi = merged
+  writeSettings(next)
+  return maskLightModelApi(next.lightModelApi)
+}
+
 module.exports = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
   DEFAULT_MODEL_TMUX_WINDOW_LIMIT,
+  LIGHT_MODEL_API_TYPES,
+  LIGHT_MODEL_API_DEFAULT_TYPE,
   loadSettings,
   getModelPromptLimits,
   getModelPromptLimit,
@@ -473,4 +559,7 @@ module.exports = {
   getDoubaoVoiceMasked,
   setDoubaoVoiceAsr,
   setDoubaoVoiceTts,
+  getLightModelApi,
+  getLightModelApiMasked,
+  setLightModelApi,
 }

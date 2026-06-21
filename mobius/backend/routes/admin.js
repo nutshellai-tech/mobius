@@ -914,6 +914,66 @@ router.post('/settings/doubao-voice/test', adminAuth, async (req, res) => {
   }
 });
 
+// ── 特殊轻模型调用 API: 管理中心 → 管理员小莫配置 (只存配置, 不接入业务) ──
+
+router.get('/settings/light-model-api', adminAuth, (req, res) => {
+  try {
+    res.json(adminSettings.getLightModelApiMasked());
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
+});
+
+router.get('/settings/light-model-api/reveal', adminAuth, (req, res) => {
+  try {
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'reveal',
+      resourceType: 'light-model-api',
+      resourceId: 'all',
+    });
+    res.json(adminSettings.getLightModelApi());
+  } catch (e) {
+    res.status(500).json({ error: e.message || String(e) });
+  }
+});
+
+router.put('/settings/light-model-api', adminAuth, (req, res) => {
+  try {
+    const masked = adminSettings.setLightModelApi(req.body || {});
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'update',
+      resourceType: 'light-model-api',
+      resourceId: 'all',
+    });
+    res.json(masked);
+  } catch (e) {
+    res.status(400).json({ error: e.message || String(e) });
+  }
+});
+
+router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
+  try {
+    const model = String(req.body?.model || '').trim();
+    if (!model) {
+      return res.status(400).json({ ok: false, error: '测试时需要填一个模型名 (例如 glm-4.6)' });
+    }
+    const cfg = adminSettings.getLightModelApi();
+    const { testLightModelApi } = require('../services/light-model-api-test');
+    const result = await testLightModelApi({ ...cfg, model });
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'test',
+      resourceType: 'light-model-api',
+      resourceId: 'all',
+    });
+    return res.json({ ok: !!result.ok, summary: result.summary, reason: result.reason });
+  } catch (e) {
+    return res.json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 // ── Claude Code 模型接入 (raw settings JSON, 不做 secret 管理) ──
 router.get('/model-access/claude-code', adminAuth, (req, res) => {
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));
