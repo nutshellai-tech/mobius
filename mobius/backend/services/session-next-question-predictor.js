@@ -14,7 +14,7 @@ const { buildSessionTransferMarkdown } = require('./session-transfer');
 
 const TOOL_NAME = 'show_user_predicted_next_question';
 const EXPERIMENT_UNAVAILABLE = '实验功能，暂不可用';
-const MAX_HISTORY_PROMPT_CHARS = 120000;
+const MAX_HISTORY_PROMPT_CHARS = 50000;
 const MAX_QUESTION_COUNT = 6;
 const MAX_QUESTION_CHARS = 600;
 const REQUEST_TIMEOUT_MS = 60000;
@@ -31,12 +31,9 @@ const TOOL_PARAMETERS = {
         type: 'string',
         description: '一条可直接发送给当前 Agent 的中文用户指令',
       },
-      minItems: 1,
-      maxItems: MAX_QUESTION_COUNT,
     },
   },
   required: ['questions'],
-  additionalProperties: false,
 };
 
 const TOOL_OPENAI_CHAT = {
@@ -207,7 +204,7 @@ async function callOpenAiChatCompletion(cfg, prompt) {
         { role: 'user', content: prompt },
       ],
       tools: [TOOL_OPENAI_CHAT],
-      tool_choice: { type: 'function', function: { name: TOOL_NAME } },
+      tool_choice: 'auto',
       temperature: 0.2,
     }),
   });
@@ -233,7 +230,7 @@ async function callOpenAiResponse(cfg, prompt) {
         { role: 'user', content: [{ type: 'input_text', text: prompt }] },
       ],
       tools: [TOOL_OPENAI_RESPONSE],
-      tool_choice: { type: 'function', name: TOOL_NAME },
+      tool_choice: 'auto',
       temperature: 0.2,
     }),
   });
