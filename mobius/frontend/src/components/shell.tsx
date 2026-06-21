@@ -6,7 +6,7 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, CircleQuestionMark, Moon, Palette, Sliders, Sun, WavesHorizontal } from 'lucide-react'
+import { Check, ChevronDown, CircleQuestionMark, Moon, Palette, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 
@@ -259,6 +259,99 @@ function VersionIndicator() {
 }
 
 // =====================================================================
+// 面包屑下拉切换器 — 顶部导航栏的项目 / Issue / Research 快速切换
+// 复用主题/用户菜单同款面板样式 (var(--menu-bg) + 点击外部关闭).
+// 列表项用 <Link>, 支持中键新窗打开; 点击后由调用方关闭菜单.
+// =====================================================================
+type SwitcherItem = {
+  id: string
+  label: string
+  meta?: string
+  status?: string
+  active?: boolean
+  to: string
+}
+
+function NavSwitcherPanel({
+  items,
+  loading,
+  search,
+  onSearchChange,
+  onPick,
+  emptyText,
+}: {
+  items: SwitcherItem[]
+  loading: boolean
+  search: string
+  onSearchChange: (v: string) => void
+  onPick: () => void
+  emptyText: string
+}) {
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? items.filter(it => it.label.toLowerCase().includes(q) || (it.meta || '').toLowerCase().includes(q))
+    : items
+  return (
+    <div
+      className="absolute left-0 top-9 z-50 flex max-h-[60vh] w-[300px] flex-col rounded-lg p-1.5 shadow-xl"
+      style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="relative mb-1.5">
+        <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+        <input
+          autoFocus
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder="搜索..."
+          className="h-7 w-full rounded-md pl-7 pr-2 text-[12px] focus:outline-none"
+          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+        />
+      </div>
+      <div className="overflow-y-auto">
+        {loading ? (
+          <div className="px-2 py-3 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>加载中...</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-2 py-3 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>{emptyText}</div>
+        ) : (
+          filtered.map(item => (
+            <Link
+              key={item.id}
+              to={item.to}
+              onClick={onPick}
+              title={item.label}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--bg-hover)]"
+              style={{ background: item.active ? 'var(--bg-active)' : undefined }}
+            >
+              <span
+                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                style={{ background: item.status === 'completed' ? '#4ade80' : 'var(--accent-primary)' }}
+                title={item.status === 'completed' ? '已完成' : '进行中'}
+              />
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block truncate text-[12px] font-medium leading-5"
+                  style={{
+                    color: item.status === 'completed' ? 'var(--text-muted)' : 'var(--text-primary)',
+                    textDecoration: item.status === 'completed' ? 'line-through' : undefined,
+                  }}
+                >
+                  {item.label}
+                </span>
+                {item.meta && (
+                  <span className="block truncate text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{item.meta}</span>
+                )}
+              </span>
+              {item.active && <Check className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />}
+            </Link>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+// =====================================================================
 // 顶部导航 — 所有页面共享
 // 包含：Mobius logo、面包屑（user/project/issue）、搜索、主题切换、用户菜单
 // 管理员通过弹层（覆盖右侧主区域）
@@ -274,6 +367,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     currentProject,
     currentIssue,
     currentResearch,
+    projects,
+    setProjects,
+    issuesMap,
+    setIssuesMap,
+    researchesMap,
+    setResearchesMap,
     logout,
   } = useStore()
   const params = useParams()
@@ -288,6 +387,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   // 每次打开菜单 / 关闭调色盘 / 主题切换时刷新, 避免在下拉里看到陈旧数据.
   const [customThemes, setCustomThemes] = useState<CustomTheme[]>([])
   const [activeCustomId, setActiveCustomId] = useState<string | null>(null)
+  // 面包屑下拉切换: 同时只能打开一个 (project / issue / research).
+  // 列表数据来自 store (projects / issuesMap / researchesMap), 缺失时打开瞬间按需拉取.
+  const [openSwitcher, setOpenSwitcher] = useState<'project' | 'issue' | 'research' | null>(null)
+  const [switcherSearch, setSwitcherSearch] = useState('')
+  const [projectSwitcherLoading, setProjectSwitcherLoading] = useState(false)
+  const [issueSwitcherLoading, setIssueSwitcherLoading] = useState(false)
+  const [researchSwitcherLoading, setResearchSwitcherLoading] = useState(false)
+  const closeSwitcher = () => { setOpenSwitcher(null); setSwitcherSearch('') }
 
   const refreshCustomThemes = () => {
     const map = loadCustomThemes()
@@ -332,12 +439,95 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const issueTitle = currentIssue?.title || issueParam
   const researchTitle = currentResearch?.title || researchParam
 
+  // 下拉切换器: 打开时点击外部关闭 (与主题/用户菜单一致).
+  useEffect(() => {
+    if (!openSwitcher) return
+    document.addEventListener('click', closeSwitcher)
+    return () => document.removeEventListener('click', closeSwitcher)
+  }, [openSwitcher])
+
+  // 打开项目切换器时, 若 store 还没有项目列表则按需拉取.
+  useEffect(() => {
+    if (openSwitcher !== 'project' || projects.length) return
+    let alive = true
+    setProjectSwitcherLoading(true)
+    api('/api/projects')
+      .then((arr: any) => { if (alive) setProjects(arr) })
+      .catch(() => {})
+      .finally(() => { if (alive) setProjectSwitcherLoading(false) })
+    return () => { alive = false }
+  }, [openSwitcher, projects.length, setProjects])
+
+  // 打开 Issue 切换器时, 若当前项目 issue 列表未缓存则拉取. (空数组也是有效缓存, 不会重复拉.)
+  useEffect(() => {
+    if (openSwitcher !== 'issue' || !projectParam) return
+    if (issuesMap[projectParam]) return
+    let alive = true
+    setIssueSwitcherLoading(true)
+    api(`/api/projects/${projectParam}/issues`)
+      .then((arr: any) => { if (alive) setIssuesMap(projectParam, arr) })
+      .catch(() => {})
+      .finally(() => { if (alive) setIssueSwitcherLoading(false) })
+    return () => { alive = false }
+  }, [openSwitcher, projectParam, issuesMap, setIssuesMap])
+
+  // 打开 Research 切换器时, 若当前项目 research 列表未缓存则拉取.
+  useEffect(() => {
+    if (openSwitcher !== 'research' || !projectParam) return
+    if (researchesMap[projectParam]) return
+    let alive = true
+    setResearchSwitcherLoading(true)
+    api(`/api/projects/${projectParam}/researches`)
+      .then((arr: any) => { if (alive) setResearchesMap(projectParam, arr) })
+      .catch(() => {})
+      .finally(() => { if (alive) setResearchSwitcherLoading(false) })
+    return () => { alive = false }
+  }, [openSwitcher, projectParam, researchesMap, setResearchesMap])
+
+  const projectItems: SwitcherItem[] = (projects as any[])
+    .filter(p => p && p.id)
+    .map(p => ({
+      id: p.id,
+      label: p.name || p.id,
+      meta: p.kind === 'extension' ? '拓展项目' : (p.is_self_develop ? '自迭代' : (p.created_by ? `@${p.created_by}` : undefined)),
+      status: 'active',
+      active: p.id === projectParam,
+      to: `/u/${p.created_by || userParam}/p/${p.id}`,
+    }))
+
+  const issueItems: SwitcherItem[] = ((issuesMap[projectParam] || []) as any[])
+    .filter(i => i && i.id)
+    .map(i => ({
+      id: i.id,
+      label: i.title || i.id,
+      meta: i.session_count ? `${i.session_count} 会话` : undefined,
+      status: i.status,
+      active: i.id === issueParam,
+      to: `/u/${userParam}/p/${projectParam}/i/${i.id}`,
+    }))
+
+  const researchItems: SwitcherItem[] = ((researchesMap[projectParam] || []) as any[])
+    .filter(r => r && r.id)
+    .map(r => ({
+      id: r.id,
+      label: r.title || r.id,
+      meta: r.session_count ? `${r.session_count} 会话` : undefined,
+      status: r.status,
+      active: r.id === researchParam,
+      to: `/u/${userParam}/p/${projectParam}/r/${r.id}`,
+    }))
+
+  const toggleSwitcher = (which: 'project' | 'issue' | 'research') => {
+    setSwitcherSearch('')
+    setOpenSwitcher(cur => (cur === which ? null : which))
+  }
+
   return (
     <>
-      <div className="h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
+      <div className="mobius-topnav h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
         {/* Logo + 面包屑 */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
             <MobiusLogo size={28} />
             <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>Mobius</span>
@@ -350,33 +540,99 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           {projectParam && (
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <Link to={`/u/${userParam}/p/${projectParam}`}
-                className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"
-                style={{ color: 'var(--text-secondary)', maxWidth: 200 }}>
-                {projectName}
-              </Link>
+              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+                <Link to={`/u/${userParam}/p/${projectParam}`}
+                  className="text-[13px] hover:text-blue-400 truncate"
+                  style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
+                  title={projectName}>
+                  {projectName}
+                </Link>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleSwitcher('project') }}
+                  title="切换项目"
+                  aria-label="切换项目"
+                  aria-haspopup="menu"
+                  aria-expanded={openSwitcher === 'project'}
+                  className="ml-0.5 inline-flex h-6 w-5 items-center justify-center rounded transition-colors hover:bg-[var(--bg-hover)]"
+                  style={{ color: 'var(--text-muted)' }}>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openSwitcher === 'project' ? 'rotate-180' : ''}`} />
+                </button>
+                {openSwitcher === 'project' && (
+                  <NavSwitcherPanel
+                    items={projectItems}
+                    loading={projectSwitcherLoading}
+                    search={switcherSearch}
+                    onSearchChange={setSwitcherSearch}
+                    onPick={closeSwitcher}
+                    emptyText="暂无可切换的项目"
+                  />
+                )}
+              </div>
             </>
           )}
           {issueParam && (
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <span className="text-[13px] truncate" style={{ color: 'var(--text-primary)', maxWidth: 280 }}>
-                {issueTitle}
-              </span>
+              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleSwitcher('issue') }}
+                  title="切换 Issue"
+                  aria-label="切换 Issue"
+                  aria-haspopup="menu"
+                  aria-expanded={openSwitcher === 'issue'}
+                  className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <span className="truncate" style={{ maxWidth: 270 }} title={issueTitle}>{issueTitle}</span>
+                  <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${openSwitcher === 'issue' ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                </button>
+                {openSwitcher === 'issue' && (
+                  <NavSwitcherPanel
+                    items={issueItems}
+                    loading={issueSwitcherLoading}
+                    search={switcherSearch}
+                    onSearchChange={setSwitcherSearch}
+                    onPick={closeSwitcher}
+                    emptyText="该项目暂无 Issue"
+                  />
+                )}
+              </div>
             </>
           )}
           {researchParam && (
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <span className="text-[13px] truncate" style={{ color: 'var(--text-primary)', maxWidth: 280 }}>
-                {researchTitle}
-              </span>
+              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleSwitcher('research') }}
+                  title="切换 Research"
+                  aria-label="切换 Research"
+                  aria-haspopup="menu"
+                  aria-expanded={openSwitcher === 'research'}
+                  className="flex min-w-0 items-center gap-0.5 text-[13px] hover:text-blue-400"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <span className="truncate" style={{ maxWidth: 270 }} title={researchTitle}>{researchTitle}</span>
+                  <ChevronDown className={`h-3 w-3 flex-shrink-0 transition-transform ${openSwitcher === 'research' ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                </button>
+                {openSwitcher === 'research' && (
+                  <NavSwitcherPanel
+                    items={researchItems}
+                    loading={researchSwitcherLoading}
+                    search={switcherSearch}
+                    onSearchChange={setSwitcherSearch}
+                    onPick={closeSwitcher}
+                    emptyText="该项目暂无 Research"
+                  />
+                )}
+              </div>
             </>
           )}
         </div>
 
         {/* 右侧操作 */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="mobius-topnav-actions flex items-center gap-2 flex-shrink-0">
           {rightExtra}
           <button
             type="button"

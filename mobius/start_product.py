@@ -250,7 +250,7 @@ def ensure_aimux_bridge_runtime_env() -> None:
     """Populate AIMUX_BRIDGE_* defaults so PM2 ecosystem + Node backend pick them up."""
     core_data = os.environ.get("CORE_DATA_PATH") or str(REPO_ROOT / "protected_data")
     os.environ.setdefault("AIMUX_BRIDGE_HOST", "127.0.0.1")
-    os.environ.setdefault("AIMUX_BRIDGE_PORT", "45615")
+    os.environ.setdefault("AIMUX_BRIDGE_PORT", "33315")
     # AIMUX_BRIDGE_RUNTIME 不显式设: 让 aimux CLI/broker 走自身默认 fallback (~/.aimux/bridge/runtime.json).
     # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.6 上游行为一致.
     # 若调用方显式设了 AIMUX_BRIDGE_RUNTIME (如老部署 / 容器化场景), ecosystem.config.js envKeys 仍会透传.
@@ -445,7 +445,7 @@ def hard_reset_current_tree(raw_hash: str) -> None:
 def print_status() -> None:
     port = os.environ["MOBIUS_PORT"]
     protected_data = os.environ.get("CORE_DATA_PATH") or str(REPO_ROOT / "protected_data")
-    bridge_port = os.environ.get("AIMUX_BRIDGE_PORT", "45615")
+    bridge_port = os.environ.get("AIMUX_BRIDGE_PORT", "33315")
     bridge_runtime = os.environ.get("AIMUX_BRIDGE_RUNTIME", "(default ~/.aimux/bridge/runtime.json)")
 
     print()

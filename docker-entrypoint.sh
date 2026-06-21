@@ -17,7 +17,7 @@ set -euo pipefail
 # AIMUX_BRIDGE_RUNTIME 不显式设: 让 aimux CLI/broker 走自身默认 fallback (~/.aimux/bridge/runtime.json).
 # 这样 agent 调 aimux CLI 时无需 export env, 跟 aimux 0.1.3 上游行为一致.
 : "${AIMUX_BRIDGE_HOST:=127.0.0.1}"
-: "${AIMUX_BRIDGE_PORT:=45615}"
+: "${AIMUX_BRIDGE_PORT:=33315}"
 export AIMUX_BRIDGE_HOST AIMUX_BRIDGE_PORT
 
 export APP_DIR MOBIUS_DATA_PATH MODEL_ACCESS_PATH CORE_DATA_PATH WORKSPACE_ROOT

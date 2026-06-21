@@ -4985,3 +4985,97 @@ body.mobius-resizing * {
 body.mobius-resizing .mobius-resizable-handle {
   pointer-events: none !important;
 }
+
+/* =====================================================================
+   移动端兼容性媒体查询 (Mobile compatibility)
+   ---------------------------------------------------------------------
+   设计原则: 桌面端 (宽度 > 768px) 完全不命中以下任何规则, 零影响.
+   断点:
+     ≤768px  平板 / 大屏手机 — 侧栏纵向堆叠、顶栏可换行、全宽
+     ≤480px  小屏手机 — 模态框顶部对齐 + 可纵向滚动, 防止被截断
+   关键手段:
+     - .flex:has(> .mobius-resizable)  含可拖拽侧栏的布局行 → 窄屏改纵向
+     - .mobius-resizable--mobile        侧栏全宽 + 限高可滚动 (配合 resizable-panel.tsx)
+     - .mobius-topnav*                  顶栏安全区内边距、面包屑横滚、操作区换行
+     - env(safe-area-inset-*)           刘海屏 / 底部 Home 条避让
+     - .h-screen → 100dvh               用动态视口高度, 避免 iOS 工具栏遮挡
+   ===================================================================== */
+
+@media (max-width: 768px) {
+  html, body {
+    /* 杜绝任何子元素撑出视口而产生的横向滚动条 */
+    overflow-x: hidden;
+    /* 禁止 iOS 横屏旋转时自动放大文字 */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 移动端用动态视口高度, 避免 100vh 把内容藏进地址栏下方.
+     100vh 作为不支持 dvh 浏览器的回退. */
+  .h-screen {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* 含可拖拽侧栏的布局行: 窄屏下从「侧栏 | 主区」改为纵向堆叠,
+     主区拿到完整宽度. :has() 在 2024 年起所有主流浏览器均支持. */
+  .flex:has(> .mobius-resizable) {
+    flex-direction: column;
+  }
+
+  /* 侧栏堆叠态: 全宽、把右侧分隔线改为底部分隔、限高并可内部滚动,
+     保证主内容区始终保留可见高度而不是被长侧栏吃掉整屏. */
+  .mobius-resizable--mobile {
+    max-height: 46vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-right-width: 0 !important;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  /* 顶栏: 允许换行以同时容纳面包屑与操作按钮, 并避让刘海/屏幕圆角. */
+  .mobius-topnav {
+    height: auto;
+    min-height: 3.5rem;
+    flex-wrap: wrap;
+    row-gap: .4rem;
+    padding-top: max(.5rem, env(safe-area-inset-top));
+    padding-bottom: .5rem;
+    padding-left: max(.75rem, env(safe-area-inset-left));
+    padding-right: max(.75rem, env(safe-area-inset-right));
+  }
+  /* 面包屑区: 窄屏横向滚动而非挤压操作按钮, 隐藏滚动条保持整洁. */
+  .mobius-topnav-crumb {
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+  .mobius-topnav-crumb::-webkit-scrollbar {
+    display: none;
+  }
+  /* 操作按钮区: 允许换行, 优先贴右排列. */
+  .mobius-topnav-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  /* 全屏居中的模态遮罩: 小屏下改为顶部对齐 + 整页可滚动,
+     避免内容高于视口时被截断、关闭按钮点不到. 选择器同时要求
+     items-center + justify-center, 纯背景遮罩 (没有这两个类) 不会命中. */
+  [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] {
+    align-items: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  /* 弹层卡片不再被固定 max-height 卡死, 滚动交给遮罩层统一处理. */
+  [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] > [class~="relative"] {
+    max-height: none;
+  }
+}
