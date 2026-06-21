@@ -3334,7 +3334,7 @@ export function AimuxGuideModal({ onClose }: { onClose: () => void }) {
   const userJwt = typeof window !== 'undefined' ? (localStorage.getItem('cc-token') || '<未登录>') : '<JWT>'
   const identifierHint = 'my-windows-box'
 
-  const installCmd = 'pipx install aimux==0.1.3'
+  const installCmd = 'pipx install aimux==0.1.5'
   const connectCmd = `aimux reverse connect ${baseUrl} --identifier ${identifierHint} --token ${userJwt}`
 
   const refreshRemotes = useCallback(() => {
