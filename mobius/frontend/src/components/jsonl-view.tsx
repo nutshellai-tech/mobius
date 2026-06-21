@@ -97,6 +97,10 @@ const EDIT_TOOL_THEME = { dot: 'bg-indigo-400', border: 'border-indigo-500/40', 
 // 用 yellow 与 system/turn 的 amber 拉开, 避免和已有暖色调混淆.
 const PRODUCT_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/40', bg: 'bg-yellow-500/[0.07]', text: 'text-yellow-300', label: 'product.py' }
 
+// 特例: assistant 里带 name:"Bash" 的 tool_use 卡片 (Claude Code shell 调用).
+// 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、product.py yellow 都拉开, 长列表里可识别.
+const BASH_TOOL_THEME = { dot: 'bg-cyan-400', border: 'border-cyan-500/40', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: 'bash' }
+
 // 特例: event_msg.payload.type === 'context_compacted' 的卡片 — 一次上下文压缩事件,
 // 在长列表里需要一眼可扫, 复用 yellow (gold) 与 product.py 同色但 label 区分.
 const CONTEXT_COMPACTED_THEME = { ...PRODUCT_PY_THEME, label: 'ctx·compact' }
@@ -278,15 +282,36 @@ function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
 
 // 该 entry 是否为 "assistant 发起的 Bash tool_use 且 input.command 包含 'product.py'"
 // (即触发了产品构建的 shell 调用).
+// 走 isBashToolUseName 让大小写兼容与 BashCall 卡片渲染对齐, 避免 'bash' 时主题/识别脱节.
 function isProductPyToolUse(entry: AnyEntry): boolean {
   if (entry?.type !== 'assistant') return false
   const c = entry?.message?.content
   if (!Array.isArray(c)) return false
   return c.some((b: any) => {
-    if (b?.type !== 'tool_use' || b?.name !== 'Bash') return false
+    if (b?.type !== 'tool_use' || !isBashToolUseName(b?.name)) return false
     const cmd = b?.input?.command
     return typeof cmd === 'string' && cmd.includes('product.py')
   })
+}
+
+// Claude Code Bash tool_use 卡片的纯逻辑 (BashCall 类型, extract*, summary) 抽到了
+// ./jsonl-bash-helpers.ts, 这样 Node 单元测试可以无 React 直接 import 同一份实现.
+// 组件层只在这里再封装一个 entry 级谓词, 其他地方一律用 helpers 的导出.
+import {
+  extractBashCalls as extractBashCallsFromHelpers,
+  extractBashCallFromBlock,
+  bashCallOneLineSummary,
+  isBashToolUseName,
+} from './jsonl-bash-helpers'
+import type { BashCall } from './jsonl-bash-helpers'
+
+// 从 assistant.message.content 抽出全部 Bash tool_use 调用 (保序, 含同一条 entry 多个 Bash).
+function extractBashCalls(entry: AnyEntry): BashCall[] {
+  return extractBashCallsFromHelpers(entry)
+}
+
+function isBashToolUse(entry: AnyEntry): boolean {
+  return extractBashCalls(entry).length > 0
 }
 
 function isContextCompactedEvent(entry: AnyEntry): boolean {
@@ -513,7 +538,8 @@ function entryDisplayImages(entry: AnyEntry): string[] {
     const c = entry?.message?.content
     if (Array.isArray(c)) {
       for (const b of c) {
-        const cmd = b?.type === 'tool_use' && b?.name === 'Bash' ? b?.input?.command : null
+        // 大小写兼容 (与 BashCall 渲染路径一致), 让 'bash' 工具名也能派生图像卡片.
+        const cmd = b?.type === 'tool_use' && isBashToolUseName(b?.name) ? b?.input?.command : null
         collectDisplayImagesFromCommand(cmd, out)
       }
     }
@@ -855,6 +881,101 @@ function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall }) {
 }
 
 /**
+ * Claude Code Bash tool_use 命令卡片.
+ * - 同一条 assistant entry 可能含多个 Bash 调用 → 渲染为多张并列卡片, 共享 cyan 主题.
+ * - 每条单独的 Bash 卡片三段式: 顶部 header (description + cwd + 行/字符数 + 复制按钮)
+ *   + 命令体 (终端色 pre + bash 高亮, 长/多行命令可滚).
+ * - 命令文本严格按原样展示 (引号 / && / | / 重定向 / 换行全部保留), 不执行不重写.
+ */
+function JsonEntryBashCommands({ calls }: { calls: BashCall[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {calls.map((call, idx) => (
+        <BashCallCard key={(call.id || `bash-${idx}`) + idx} call={call} index={calls.length > 1 ? idx + 1 : null} />
+      ))}
+    </div>
+  )
+}
+
+function BashCallCard({ call, index }: { call: BashCall; index: number | null }) {
+  const [copied, setCopied] = useState<boolean>(false)
+  const lines = useMemo(() => splitDiffValue(call.command), [call.command])
+  // 多行脚本首屏只露前 N 行, 余下 details 折叠, 与 Write 预览行为一致.
+  const previewLines = lines.slice(0, WRITE_PREVIEW_LINE_LIMIT)
+  const restLines = lines.slice(WRITE_PREVIEW_LINE_LIMIT)
+  const markdownSource = useMemo(() => codeFence(call.command, 'bash'), [call.command])
+  const hasDescription = !!call.description
+  const hasCwd = !!call.cwd
+
+  return (
+    <div className="overflow-hidden rounded bg-[var(--prose-bg)] ring-1 ring-[var(--border-color)]/70">
+      <div className="flex min-w-0 items-start gap-2 border-b border-[var(--border-color)] px-2.5 py-1.5 text-[10px]">
+        <div className="min-w-0 flex-1">
+          {index != null && (
+            <div className="font-mono text-[10px] text-[var(--text-muted)]">#{index}</div>
+          )}
+          {hasDescription && (
+            <div className="truncate font-mono text-[12px] font-semibold text-[var(--text-secondary)]" title={call.description}>
+              {call.description}
+            </div>
+          )}
+          {hasCwd && (
+            <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={call.cwd}>
+              cwd: {call.cwd}
+            </div>
+          )}
+        </div>
+        <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+          {lines.length} lines
+        </span>
+        <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+          {call.command.length} chars
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            navigator.clipboard.writeText(call.command).then(() => {
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1000)
+            })
+          }}
+          className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
+          title="复制完整命令到剪贴板"
+        >
+          {copied ? '已复制 ✓' : '复制'}
+        </button>
+      </div>
+      <div className="max-h-[34rem] overflow-auto">
+        {/* 多行命令首屏截断预览 (纯文本带行号), 折叠区里仍给完整高亮版; 单行/短命令直接全量高亮. */}
+        {restLines.length > 0 ? (
+          <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+            <CodePreviewRows lines={previewLines} />
+            <details className="border-t border-[var(--border-color)]/60">
+              <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+                展开剩余 {restLines.length} 行 (含高亮)
+              </summary>
+              <div className="jsonl-compact-md !text-[11px]">
+                <Suspense fallback={<CompactPlainTextFallback text={call.command} />}>
+                  <CompactMarkdown text={markdownSource} />
+                </Suspense>
+              </div>
+            </details>
+          </div>
+        ) : (
+          <div className="jsonl-compact-md !text-[11px]">
+            <Suspense fallback={<CompactPlainTextFallback text={call.command} />}>
+              <CompactMarkdown text={markdownSource} />
+            </Suspense>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
 function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }: { entry: AnyEntry; lineNo?: number; defaultExpanded?: boolean; showMeta?: boolean }) {
@@ -862,10 +983,14 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
   const headerSummary = useMemo(() => buildHeaderSummary(entry), [entry])
   const codeEdit = useMemo(() => extractCodeEdit(entry), [entry])
   const writeCall = useMemo(() => extractWriteToolCall(entry), [entry])
-  const canCode = !!codeEdit || !!writeCall
+  const bashCalls = useMemo(() => extractBashCalls(entry), [entry])
+  // canCode 覆盖三种代码视图: Edit diff / Write 文件预览 / Bash 命令卡片.
+  // 字段模式仍是入口的兜底, 让用户随时切回看原始 JSON.
+  const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "product.py" (gold) > event_msg.context_compacted (gold) > 顶层 type.
+  // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "product.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // product.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
     : isAssistantResponseGoldKeyword(entry)
@@ -874,6 +999,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
     ? EDIT_TOOL_THEME
     : isProductPyToolUse(entry)
     ? PRODUCT_PY_THEME
+    : bashCalls.length > 0
+    ? BASH_TOOL_THEME
     : isContextCompactedEvent(entry)
     ? CONTEXT_COMPACTED_THEME
     : (TYPE_THEME[type] || DEFAULT_THEME)
@@ -937,7 +1064,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
             }}
             className="text-[10px] px-2 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors flex-shrink-0"
             title={canCode
-              ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : '切换到代码模式 (显示 old_string → new_string 的编辑差异)')
+              ? (mode === 'code' ? '切换到字段模式 (按 key 展开 JSON)' : writeCall ? '切换到代码模式 (显示 Write 文件预览)' : codeEdit ? '切换到代码模式 (显示 old_string → new_string 的编辑差异)' : '切换到代码模式 (显示 Bash 命令)')
               : (mode === 'compact' ? '切换到字段模式 (按 key 展开 JSON)' : '切换到精简模式 (显示完整摘要文本)')}>
             {canCode
               ? (mode === 'code' ? '字段模式' : '代码模式')
@@ -951,6 +1078,8 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
             <JsonEntryCodeDiff edit={codeEdit} />
           ) : mode === 'code' && writeCall ? (
             <JsonEntryWritePreview writeCall={writeCall} />
+          ) : mode === 'code' && bashCalls.length > 0 ? (
+            <JsonEntryBashCommands calls={bashCalls} />
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
@@ -1178,6 +1307,7 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
   }
   if (t === 'assistant' && Array.isArray(msg?.content)) {
     const parts: string[] = []
+    const bashPartIndices: number[] = []
     for (const item of msg.content) {
       if (item.type === 'text') parts.push(String(item.text || ''))
       else if (item.type === 'tool_use') {
@@ -1188,10 +1318,35 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
             continue
           }
         }
+        // Bash tool_use 单独摘要: 显示 "Bash · <description|$cmd>" 而非整段 JSON,
+        // 多条 Bash 显示数量. 字段模式里仍保留原始 input JSON.
+        if (isBashToolUseName(item.name)) {
+          const entryCwd = typeof entry?.cwd === 'string' ? entry.cwd.trim() : ''
+          const call = extractBashCallFromBlock(item, entryCwd)
+          if (call) {
+            const oneLine = bashCallOneLineSummary(call)
+            bashPartIndices.push(parts.length)
+            parts.push(oneLine ? `Bash · ${oneLine}` : 'Bash')
+            continue
+          }
+        }
         const inputStr = item.input ? JSON.stringify(item.input) : ''
         parts.push(`${item.name}${inputStr ? ` ${inputStr}` : ''}`)
       }
       else if (item.type === 'thinking') parts.push(String(item.thinking || ''))
+    }
+    // 同一条 entry 含多个 Bash tool_use 时, 把每条单条摘要折成一条合并摘要
+    // "Bash · N calls · <第一条预览>"; 其他 text/thinking 块保留. 单条 Bash 走原摘要.
+    if (bashPartIndices.length > 1) {
+      const bashCalls = extractBashCalls(entry)
+      const first = bashCalls.length > 0 ? bashCallOneLineSummary(bashCalls[0]) : ''
+      const bashSummary = first
+        ? `Bash · ${bashPartIndices.length} calls · ${first}`
+        : `Bash · ${bashPartIndices.length} calls`
+      const dropSet = new Set(bashPartIndices)
+      const filtered = parts.filter((_, idx) => !dropSet.has(idx))
+      filtered.push(bashSummary)
+      return clip(filtered.join('\n\n'), HEADER_SHORT_LIMIT)
     }
     return clip(parts.join('\n\n'), HEADER_SHORT_LIMIT)
   }
