@@ -51,6 +51,8 @@ const ARCHIVE_FILE = path.join(MOBIUS_DATA_PATH, 'codex-hub-archive.json')
 const DEFAULT_MODEL = 'gpt-5.5'
 const CODEX_CHANNEL_RE = /^[A-Za-z]+$/
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+// Codex TUI 错误扫描只看尾部 N 行: 状态接口会反复触发 getRecentError, 全量抓 scrollback 太重.
+const CODEX_ERROR_SCAN_TAIL_LINES = 50
 
 const READY_POLL_MS = 250
 const READY_TIMEOUT_MS = 25000
@@ -568,8 +570,8 @@ class TmuxCodexBackend extends AgentBackend {
   //     历史 session 拿不到. 调用方需要时应另开后台 capture 循环落盘.
   getRecentError(sessionId) {
     if (!this.isAlive(sessionId)) return null
-    // -p stdout; -e 保留 ANSI; -S - 从 scrollback 头开始抓全量; -J 拼接折行避免错误被切行.
-    const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-e', '-S', '-', '-J'])
+    // -p stdout; -e 保留 ANSI; -S -N 只抓尾部 N 行 (避免全量 scrollback 扫描); -J 拼接折行避免错误被切行.
+    const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-e', '-S', `-${CODEX_ERROR_SCAN_TAIL_LINES}`, '-J'])
     if (cap.status !== 0) return null
     const RED_RE = /\x1b\[(?:[0-9;]*;)?(?:31|38;5;1|38;2;255;[0-9]+;[0-9]+)m/
     const ANSI_RE = /\x1b\[[0-9;]*m/g
