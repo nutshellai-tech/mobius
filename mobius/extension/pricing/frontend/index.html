@@ -438,6 +438,12 @@
       font-weight: 800;
     }
 
+    .price .standard-price {
+      color: var(--quiet);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
     .features {
       display: grid;
       gap: 13px;
@@ -613,9 +619,9 @@
     .enterprise-strip {
       position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr);
-      gap: 24px;
-      align-items: center;
+      grid-template-columns: 1fr;
+      gap: 28px;
+      align-items: start;
       overflow: hidden;
       padding: 42px;
       border: 1px solid rgba(103,232,249,.34);
@@ -652,7 +658,7 @@
 
     .enterprise-strip p {
       position: relative;
-      max-width: 760px;
+      max-width: 860px;
       margin: 12px 0 0;
       color: var(--muted);
     }
@@ -676,21 +682,16 @@
     .enterprise-contact {
       position: relative;
       display: grid;
-      gap: 12px;
-      justify-items: start;
+      grid-template-columns: minmax(280px, .86fr) minmax(0, 1.14fr);
+      gap: 18px;
+      align-items: stretch;
       padding: 24px;
       border: 1px solid rgba(103,232,249,.24);
       border-radius: 18px;
       background: rgba(6,10,24,.50);
       box-shadow: 0 18px 38px rgba(0,0,0,.24);
       color: var(--text);
-      transition: border-color .2s ease, transform .2s ease, background .2s ease;
-    }
-
-    .enterprise-contact:hover {
-      border-color: rgba(103,232,249,.52);
-      background: rgba(9,16,36,.66);
-      transform: translateY(-2px);
+      transition: border-color .2s ease, background .2s ease;
     }
 
     .enterprise-contact:focus-within {
@@ -698,9 +699,23 @@
       outline-offset: 4px;
     }
 
-    .enterprise-contact span {
+    .enterprise-kicker {
       color: var(--quiet);
       font-size: 13px;
+      font-weight: 800;
+    }
+
+    .email-panel {
+      display: grid;
+      align-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px;
+      border: 1px solid rgba(103,232,249,.18);
+      border-radius: 16px;
+      background:
+        linear-gradient(135deg, rgba(103,232,249,.12), rgba(167,139,250,.08)),
+        rgba(255,255,255,.055);
     }
 
     .enterprise-title {
@@ -722,11 +737,61 @@
       font-size: 15px;
       font-weight: 900;
       text-decoration: none;
+      width: fit-content;
     }
 
     .enterprise-title:hover,
     .enterprise-email:hover {
       filter: brightness(1.08);
+    }
+
+    .contact-methods {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      width: 100%;
+    }
+
+    .contact-method {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        "qr title"
+        "qr desc";
+      column-gap: 12px;
+      row-gap: 6px;
+      align-items: center;
+      min-height: 132px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 16px;
+      background: rgba(255,255,255,.055);
+    }
+
+    .contact-method b {
+      grid-area: title;
+      font-size: 14px;
+    }
+
+    .contact-method small {
+      grid-area: desc;
+      color: var(--quiet);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .qr-image {
+      grid-area: qr;
+      width: 96px;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .qr-image {
+      display: block;
+      padding: 7px;
+      object-fit: contain;
     }
 
     .faq-grid {
@@ -796,6 +861,8 @@
       .plans,
       .server-grid,
       .enterprise-strip,
+      .enterprise-contact,
+      .contact-methods,
       .addons,
       .faq-grid {
         grid-template-columns: 1fr;
@@ -844,6 +911,14 @@
       .specs {
         grid-template-columns: 1fr;
       }
+
+      .qr-image {
+        width: 96px;
+      }
+
+      .contact-method {
+        grid-template-columns: 88px minmax(0, 1fr);
+      }
     }
   </style>
 </head>
@@ -872,7 +947,7 @@
       <div class="container hero-content">
         <span class="eyebrow">Mobius · Agentic OS</span>
         <h1>会生长的生产力系统<span class="gradient-text">也需要清晰套餐</span></h1>
-        <p>个人可以先开始，团队可以按需扩展。莫比乌斯提供从个人体验到企业定制的完整套餐，模型能力开放，使用额度由月积分控制。</p>
+        <p>个人可以先开始，团队可以按需扩展。莫比乌斯提供从个人体验到企业定制的完整套餐，模型能力逐级开放，使用额度由月积分控制。</p>
         <div class="hero-actions">
           <div class="billing" aria-label="计费周期">
             <button class="active" type="button" data-cycle="monthly" onclick="setBillingCycle('monthly')">月付</button>
@@ -886,7 +961,7 @@
       <div class="container">
         <div class="section-head">
           <h2>选择适合使用阶段的套餐</h2>
-          <p>不同版本按月积分、团队协作、服务器资源和企业级能力区分。</p>
+          <p>当前为早期客户限时优惠价。不同版本按月积分、并发任务数、团队协作和服务器资源区分。</p>
         </div>
 
         <div class="plans">
@@ -898,11 +973,13 @@
               <span class="promo-label" data-price-label data-monthly-label="首月体验价" data-annual-label="年付优惠">首月体验价</span>
               <strong data-monthly="¥199" data-annual="¥2,988">¥199</strong>
               <span data-period data-monthly-period="/首月" data-annual-period="/年，约 8.3 折">/首月</span>
-              <span class="price-note" data-price-note data-monthly-note="之后恢复 ¥299/月" data-annual-note="原价 ¥3,588/年，立省 ¥600">之后恢复 ¥299/月</span>
+              <span class="price-note" data-price-note data-monthly-note="标准价 ¥299/月，首月立省 ¥100" data-annual-note="标准价 ¥3,588/年，立省 ¥600">标准价 ¥299/月，首月立省 ¥100</span>
             </div>
             <a class="primary-btn" href="#compare">查看权益</a>
             <ul class="features">
               <li>1,000 月积分<small>受个人月积分限制</small></li>
+              <li>1-5 个并发任务</li>
+              <li>模型范围<small>DeepSeek、Qwen、GLM、MiniMax</small></li>
               <li>共享云运行环境</li>
               <li>适合个人开发者、产品试用和早期验证</li>
             </ul>
@@ -913,14 +990,16 @@
             <h3>Team Pro</h3>
             <p class="plan-desc">适合团队低门槛试点，包含团队云运行环境。</p>
             <div class="price">
-              <span class="promo-label" data-price-label data-monthly-label="月付灵活开通" data-annual-label="年付优惠">月付灵活开通</span>
+              <span class="promo-label" data-price-label data-monthly-label="限时优惠价" data-annual-label="年付优惠">限时优惠价</span>
               <strong data-monthly="¥1,999" data-annual="¥21,888">¥1,999</strong>
               <span data-period data-monthly-period="/月起，含团队云运行环境" data-annual-period="/年起，约 9.1 折">/月起，含团队云运行环境</span>
-              <span class="price-note" data-price-note data-monthly-note="可按月启用，适合团队试点" data-annual-note="原价 ¥23,988/年，立省 ¥2,100">可按月启用，适合团队试点</span>
+              <span class="price-note" data-price-note data-monthly-note="标准价 ¥2,999/月起，立省 ¥1,000/月" data-annual-note="标准价 ¥35,988/年，立省 ¥14,100">标准价 ¥2,999/月起，立省 ¥1,000/月</span>
             </div>
             <a class="primary-btn" href="#compare">查看权益</a>
             <ul class="features">
               <li>5,000 团队月积分<small>团队共享月积分</small></li>
+              <li>5-10 个并发任务</li>
+              <li>模型范围<small>Personal 模型 + GPT-5.4</small></li>
               <li>团队云运行环境</li>
               <li>适合小团队试点和从 Personal 升级</li>
             </ul>
@@ -931,14 +1010,16 @@
             <h3>Team Max</h3>
             <p class="plan-desc">适合更高强度团队使用，更高积分和更强协作空间。</p>
             <div class="price">
-              <span class="promo-label" data-price-label data-monthly-label="推荐套餐" data-annual-label="年付优惠">推荐套餐</span>
+              <span class="promo-label" data-price-label data-monthly-label="限时优惠 · 推荐" data-annual-label="年付优惠">限时优惠 · 推荐</span>
               <strong data-monthly="¥5,998" data-annual="¥63,888">¥5,998</strong>
               <span data-period data-monthly-period="/月起，含标准云服务器" data-annual-period="/年起，约 8.9 折">/月起，含标准云服务器</span>
-              <span class="price-note" data-price-note data-monthly-note="含标准云服务器，适合正式团队使用" data-annual-note="原价 ¥71,976/年，立省 ¥8,088">含标准云服务器，适合正式团队使用</span>
+              <span class="price-note" data-price-note data-monthly-note="标准价 ¥7,999/月起，立省 ¥2,001/月" data-annual-note="标准价 ¥95,988/年，立省 ¥32,100">标准价 ¥7,999/月起，立省 ¥2,001/月</span>
             </div>
             <a class="primary-btn" href="#compare">查看权益</a>
             <ul class="features">
               <li>20,000 团队月积分<small>团队共享月积分</small></li>
+              <li>10-20 个并发任务</li>
+              <li>模型范围<small>Team Pro 模型 + GPT-5.5</small></li>
               <li>标准云服务器，可按需升级资源</li>
               <li>适合多项目并行、多 Agent 任务和复杂代码库</li>
             </ul>
@@ -949,14 +1030,16 @@
             <h3>Team Ultra</h3>
             <p class="plan-desc">适合高强度团队和复杂项目交付。</p>
             <div class="price">
-              <span class="promo-label" data-price-label data-monthly-label="高强度使用" data-annual-label="年付优惠">高强度使用</span>
+              <span class="promo-label" data-price-label data-monthly-label="限时优惠价" data-annual-label="年付优惠">限时优惠价</span>
               <strong data-monthly="¥10,998" data-annual="¥113,888">¥10,998</strong>
               <span data-period data-monthly-period="/月起，含标准云服务器" data-annual-period="/年起，约 8.6 折">/月起，含标准云服务器</span>
-              <span class="price-note" data-price-note data-monthly-note="含标准云服务器，适合复杂项目交付" data-annual-note="原价 ¥131,976/年，立省 ¥18,088">含标准云服务器，适合复杂项目交付</span>
+              <span class="price-note" data-price-note data-monthly-note="标准价 ¥14,999/月起，立省 ¥4,001/月" data-annual-note="标准价 ¥179,988/年，立省 ¥66,100">标准价 ¥14,999/月起，立省 ¥4,001/月</span>
             </div>
             <a class="primary-btn" href="#compare">查看权益</a>
             <ul class="features">
               <li>50,000 团队月积分<small>团队共享月积分</small></li>
+              <li>20+ 个并发任务</li>
+              <li>模型范围<small>Team Max 模型 + Claude 系列</small></li>
               <li>标准云服务器，可按需升级资源</li>
               <li>适合多项目并行、多 Agent 任务和复杂代码库</li>
             </ul>
@@ -981,9 +1064,18 @@
             </div>
           </div>
           <div class="enterprise-contact">
-            <span>企业方案咨询</span>
-            <a class="enterprise-title" href="mailto:business@nutshellai.cn" onclick="openBusinessEmail(event)">预约企业方案沟通</a>
-            <a class="enterprise-email" href="mailto:business@nutshellai.cn" onclick="openBusinessEmail(event)">business@nutshellai.cn</a>
+            <div class="email-panel">
+              <span class="enterprise-kicker">商务邮箱</span>
+              <a class="enterprise-title" href="mailto:business@nutshellai.cn" onclick="openBusinessEmail(event)">预约企业方案沟通</a>
+              <a class="enterprise-email" href="mailto:business@nutshellai.cn" onclick="openBusinessEmail(event)">business@nutshellai.cn</a>
+            </div>
+            <div class="contact-methods" aria-label="微信公众号">
+              <div class="contact-method">
+                <b>微信公众号</b>
+                <img class="qr-image" src="assets/wechat-official-account.jpg" alt="NutshellAI 微信公众号二维码">
+                <small>扫码关注，了解产品更新、案例和活动信息。</small>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1027,9 +1119,9 @@
               <tr>
                 <td>价格</td>
                 <td>¥299/月<small>首月体验价 ¥199</small></td>
-                <td>¥1,999/月起</td>
-                <td>¥5,998/月起</td>
-                <td>¥10,998/月起</td>
+                <td>限时 ¥1,999/月起<small>标准价 ¥2,999/月起</small></td>
+                <td>限时 ¥5,998/月起<small>标准价 ¥7,999/月起</small></td>
+                <td>限时 ¥10,998/月起<small>标准价 ¥14,999/月起</small></td>
               </tr>
               <tr>
                 <td>适用对象</td>
@@ -1046,6 +1138,13 @@
                 <td>50,000</td>
               </tr>
               <tr>
+                <td>并发任务数</td>
+                <td>1-5 个</td>
+                <td>5-10 个</td>
+                <td>10-20 个</td>
+                <td>20+ 个</td>
+              </tr>
+              <tr>
                 <td>适用强度</td>
                 <td>个人体验和轻量任务</td>
                 <td>团队轻量协作</td>
@@ -1053,15 +1152,15 @@
                 <td>复杂项目交付</td>
               </tr>
               <tr>
-                <td>模型策略</td>
-                <td>开放完整模型池<small>受个人月积分限制</small></td>
-                <td>开放完整模型池<small>团队共享月积分</small></td>
-                <td>开放完整模型池<small>更高团队共享月积分</small></td>
-                <td>开放完整模型池<small>高强度团队共享月积分</small></td>
+                <td>模型范围</td>
+                <td>DeepSeek、Qwen、GLM、MiniMax<small>适合中文、通用办公和轻量代码任务</small></td>
+                <td>Personal 模型 + GPT-5.4<small>适合团队日常开发和协作任务</small></td>
+                <td>Team Pro 模型 + GPT-5.5<small>适合复杂代码库、方案设计和项目冲刺</small></td>
+                <td>Team Max 模型 + Claude 系列<small>适合高强度推理、长上下文和复杂交付</small></td>
               </tr>
               <tr>
-                <td>模型池示例</td>
-                <td colspan="4">GPT 系列、Claude 系列、Gemini 系列、DeepSeek、Qwen、GLM、MiniMax、Qwen-VL 等<small>具体可用模型、地区与能力以开通配置为准</small></td>
+                <td>模型说明</td>
+                <td colspan="4">模型池会随平台能力持续更新；具体可用模型、地区与能力以开通配置为准。</td>
               </tr>
               <tr>
                 <td>运行环境</td>
@@ -1129,7 +1228,11 @@
           </details>
           <details open>
             <summary>是否限制模型？</summary>
-            <p>模型范围可参考套餐权益对比。Personal 受个人月积分限制，Team Pro、Team Max 和 Team Ultra 使用团队共享月积分。</p>
+            <p>不同套餐开放不同模型范围。Personal 以 DeepSeek、Qwen、GLM、MiniMax 为主；团队版会逐级开放 GPT-5.4、GPT-5.5 和 Claude 系列能力。</p>
+          </details>
+          <details>
+            <summary>当前价格是长期价格吗？</summary>
+            <p>当前为早期客户限时优惠价，后续可能根据模型能力、服务器资源和企业服务内容调整。最终价格以商务确认或合同为准。</p>
           </details>
           <details>
             <summary>服务器可以升级吗？</summary>

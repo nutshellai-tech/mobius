@@ -2308,6 +2308,7 @@ export function AssistantChat() {
       channel.onmessage = event => {
         const payload = event.data as Partial<SharedVoicePlaybackEvent> | null
         if (!payload || payload.type !== 'started' || payload.ownerId === assistantTabIdRef.current) return
+        if (typeof payload.ownerId !== 'string' || !payload.ownerId) return
         if (typeof payload.messageId !== 'string' || !payload.messageId) return
         stopIfAnotherTabOwnsPlayback({
           ownerId: payload.ownerId,
@@ -3062,13 +3063,13 @@ export function AssistantChat() {
     try {
       let snapshot: AssistantSnapshot
       if (baselineSnapshot?.session?.session_id && assistantSnapshotRole(baselineSnapshot) === 'clone') {
-        if (promptAttachments.length > 0) throw new Error('分身小莫暂不支持直接发送图片，请切回主体小莫发送图片。')
         await api(`/api/sessions/${encodeURIComponent(baselineSnapshot.session.session_id)}/messages`, {
           method: 'POST',
           body: JSON.stringify({
             content: outboundContent,
             input_text: text,
             request_id: requestId,
+            attachments: promptAttachments,
           }),
         })
         snapshot = await api(`/api/assistant/sessions/${encodeURIComponent(baselineSnapshot.session.session_id)}`) as AssistantSnapshot

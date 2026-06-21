@@ -29,6 +29,10 @@ const { safeRemoveRunningFlag, safeWriteFailedFlag, readJobFlagState } = require
 const { APP_DIR, CORE_DATA_PATH } = require('../config');
 const { AsrError, transcribeBrowserAudio } = require('../services/doubao-asr');
 const { DEFAULT_VOICE, TtsError, getTtsVoices, synthesizeSpeech } = require('../services/doubao-tts');
+const {
+  normalizeSessionAttachments,
+  sessionContentWithAttachments,
+} = require('../services/session-attachments');
 const { db } = require('../../db');
 
 const router = express.Router();
@@ -57,8 +61,6 @@ const LEGACY_DEFAULT_ASSISTANT_PRESET_DESCRIPTION = [
 ].join('\n');
 const DEFAULT_ASSISTANT_PRESET_DESCRIPTION = '你是小莫，莫比乌斯AI的项目助理。先读取skills/mobius-assistant/SKILL.md获取你的服务指南，再执行任务';
 const DEFAULT_ASSISTANT_PERSONALITY = 'balanced';
-const ASSISTANT_ATTACHMENT_MAX_COUNT = 6;
-const ASSISTANT_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
 const ASSISTANT_PERSONALITY_OPTIONS = [
   {
     key: 'balanced',
@@ -534,68 +536,12 @@ function assistantPrompt(question, sessionId, clientContext = null, personality 
   ].join('\n');
 }
 
-function isPathInside(parent, child) {
-  if (!parent || !child) return false;
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
 function normalizeAssistantAttachments(raw, user, project) {
-  const arr = Array.isArray(raw) ? raw : [];
-  const allowedRoots = [
-    project?.bind_path,
-    user?.work_dir,
-    path.join(APP_DIR, '.imac', 'upload'),
-  ].filter(Boolean).map((item) => path.resolve(item));
-  const out = [];
-  const seen = new Set();
-
-  for (const item of arr) {
-    if (out.length >= ASSISTANT_ATTACHMENT_MAX_COUNT) break;
-    if (!item || typeof item !== 'object') continue;
-    const rawPath = typeof item.path === 'string' ? item.path.trim() : '';
-    if (!rawPath || !path.isAbsolute(rawPath)) continue;
-    const absPath = path.resolve(rawPath);
-    if (seen.has(absPath)) continue;
-    if (!allowedRoots.some((root) => isPathInside(root, absPath))) continue;
-    const ext = path.extname(absPath).toLowerCase();
-    const requestedType = item.type === 'image' ? 'image' : 'file';
-    const type = ASSISTANT_IMAGE_EXTENSIONS.has(ext) ? 'image' : requestedType;
-    try {
-      const stat = fs.statSync(absPath);
-      if (!stat.isFile()) continue;
-      out.push({
-        type,
-        path: absPath,
-        name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : path.basename(absPath),
-        size: stat.size,
-        mime_type: typeof item.mime_type === 'string' ? item.mime_type : undefined,
-      });
-      seen.add(absPath);
-    } catch {
-      continue;
-    }
-  }
-  return out;
-}
-
-function assistantAttachmentPromptBlock(attachments) {
-  const files = Array.isArray(attachments) ? attachments.filter((item) => item?.path) : [];
-  if (files.length === 0) return '';
-  return [
-    '用户随本轮消息上传了以下附件。你可以直接读取这些本机绝对路径来理解内容；图片需要向用户展示时可使用 `display_images <图片路径>`。',
-    ...files.map((file, index) => {
-      const label = file.name ? ` (${file.name})` : '';
-      const kind = file.type === 'image' ? '图片' : '文件';
-      return `${index + 1}. [${kind}] ${file.path}${label}`;
-    }),
-  ].join('\n');
+  return normalizeSessionAttachments(raw, user, [project?.bind_path]);
 }
 
 function assistantQuestionWithAttachments(question, attachments) {
-  const block = assistantAttachmentPromptBlock(attachments);
-  if (!block) return question;
-  return [block, String(question || '').trim()].filter(Boolean).join('\n\n');
+  return sessionContentWithAttachments(question, attachments);
 }
 
 function contentBlocksText(content) {

@@ -10,6 +10,10 @@ const { formatBackendSendFailure } = require('./session-errors');
 const { transferAppendPrompt } = require('./session-transfer');
 const { canOperateSession } = require('./access-control');
 const {
+  normalizeSessionAttachments,
+  sessionContentWithAttachments,
+} = require('./session-attachments');
+const {
   safeRemoveRunningFlag,
   safeWriteFailedFlag,
 } = require('../utils/session-flags');
@@ -55,6 +59,7 @@ async function runSessionMessage({
   inputText = '',
   hasInputText = false,
   requestId = null,
+  attachments = [],
   source = 'service.session.messages',
   logger = console,
 } = {}) {
@@ -63,7 +68,6 @@ async function runSessionMessage({
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
 
-  if (!normalizedContent.trim()) throw httpError('content 不能为空', 400);
   if (!user?.id) throw httpError('用户不可用', 401);
 
   const sess = findSessionOperable(normalizedSessionId, user);
@@ -77,12 +81,23 @@ async function runSessionMessage({
   }
   const workDir = workspace.workDir;
   const flagRoot = workspace.projectRoot || workspace.workDir;
+  const normalizedAttachments = normalizeSessionAttachments(
+    attachments,
+    user,
+    [workspace.projectRoot, workspace.workDir],
+  );
+  if (!normalizedContent.trim() && normalizedAttachments.length === 0) {
+    throw httpError('content 不能为空', 400);
+  }
+  const displayContent = normalizedContent.trim()
+    ? normalizedContent
+    : sessionContentWithAttachments('', normalizedAttachments);
 
   const launch = modelRegistry.launchOptionsForSession(sess);
   const backend = agents.get(launch.backend);
 
   const turnNum = (Messages.maxTurnFor(normalizedSessionId) || 0) + 1;
-  Messages.insertUser(normalizedSessionId, normalizedContent, turnNum);
+  Messages.insertUser(normalizedSessionId, displayContent, turnNum);
   Sessions.touchActive(normalizedSessionId);
   if (hasInputText) {
     try {
@@ -90,7 +105,7 @@ async function runSessionMessage({
         projectRoot: flagRoot,
         sessionId: normalizedSessionId,
         inputText: normalizedInputText,
-        content: normalizedContent,
+        content: displayContent,
         requestId: normalizedRequestId,
         turnNumber: turnNum,
       });
@@ -101,16 +116,17 @@ async function runSessionMessage({
 
   const mobiusJsonl = {
     source,
-    kind: mobiusPromptKind(normalizedContent),
-    content: normalizedContent,
+    kind: mobiusPromptKind(displayContent),
+    content: displayContent,
     inputText: hasInputText ? normalizedInputText : null,
     requestId: normalizedRequestId,
     turnNumber: turnNum,
     userId: user?.id || null,
+    attachments: normalizedAttachments,
     timestamp: new Date().toISOString(),
   };
 
-  let finalContent = normalizedContent;
+  let finalContent = sessionContentWithAttachments(normalizedContent, normalizedAttachments);
   if (Messages.countUserMessagesFor(normalizedSessionId) <= 1) {
     const ctx = buildSessionContext(user, normalizedSessionId);
     if (workDir && ctx.sources?.skills?.length > 0) {
@@ -127,7 +143,7 @@ async function runSessionMessage({
       } catch (e) {
         logger?.warn?.(`[sessions/messages] writeContextSnapshot: ${e.message}`);
       }
-      finalContent = wrapUserMessage(ctx.body, normalizedContent, ctx.language);
+      finalContent = wrapUserMessage(ctx.body, finalContent, ctx.language);
     }
     const transferPath = readPendingTransferPath(normalizedSessionId);
     if (transferPath) {

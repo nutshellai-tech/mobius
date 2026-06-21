@@ -1,41 +1,6 @@
 import { extCall } from '/extension/_sdk/ext.js';
 import './style.css';
 
-const PRESETS = [
-  {
-    key: 'vla',
-    name: 'VLA',
-    title: 'Vision-Language-Action',
-    query: 'cat:cs.RO AND ("vision-language-action" OR VLA OR "robot foundation model")',
-    interval: 360,
-    tone: 'rose',
-  },
-  {
-    key: 'world',
-    name: '世界生成',
-    title: 'World Models & Generative Simulation',
-    query: 'cat:cs.LG AND ("world model" OR "generative simulation" OR "video generation")',
-    interval: 360,
-    tone: 'blue',
-  },
-  {
-    key: 'online-rl',
-    name: '在线RL',
-    title: 'Online Reinforcement Learning',
-    query: 'cat:cs.LG AND ("online reinforcement learning" OR "continual reinforcement learning" OR "adaptive RL")',
-    interval: 240,
-    tone: 'amber',
-  },
-  {
-    key: 'agent',
-    name: 'Agent',
-    title: 'Agentic Systems',
-    query: 'cat:cs.AI AND ("LLM agent" OR "autonomous agent" OR "tool use")',
-    interval: 240,
-    tone: 'teal',
-  },
-];
-
 const FILTERS = [
   { key: 'all', label: '全部' },
   { key: 'today', label: '今日新增' },
@@ -44,6 +9,7 @@ const FILTERS = [
 
 const state = {
   topics: [],
+  presets: [],
   currentTopicId: null,
   selectedPaperId: null,
   papers: [],
@@ -54,7 +20,21 @@ const state = {
   loadingTopics: true,
   loadingPapers: false,
   refreshing: false,
+  editingTopicId: null,
 };
+
+// 把 server 返回的 preset_key 映射到本地色板, 给预置主题一个轻色调味 (保持视觉延续)
+const PRESET_TONE = {
+  'vla': 'rose',
+  'world': 'blue',
+  'online-rl': 'amber',
+  'agent': 'teal',
+};
+
+function presetToneFor(topic) {
+  if (!topic) return '';
+  return PRESET_TONE[topic.preset_key] || '';
+}
 
 const app = document.getElementById('app');
 
@@ -261,19 +241,6 @@ function render() {
 
       <main class="research-layout">
         <aside class="sidebar" aria-label="订阅主题">
-          <section class="panel preset-block" aria-labelledby="preset-title">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Presets</p>
-                <h2 id="preset-title">研究模块</h2>
-              </div>
-              <span class="mini-count">${PRESETS.length}</span>
-            </div>
-            <div class="preset-grid">
-              ${PRESETS.map(renderPreset).join('')}
-            </div>
-          </section>
-
           <section class="panel compose-block" aria-labelledby="compose-title">
             <button id="form-toggle" class="fold-button" type="button" aria-expanded="${state.formOpen ? 'true' : 'false'}">
               <span id="compose-title">添加研究主题</span>
@@ -292,6 +259,7 @@ function render() {
                 <span>抓取间隔（分钟）</span>
                 <input id="f-interval" name="interval" type="number" min="5" max="10080" value="60">
               </label>
+              ${renderPresetLibrary()}
               <button id="f-submit" class="primary-button" type="submit">添加主题</button>
             </form>
           </section>
@@ -360,12 +328,23 @@ function renderTopMetric(label, detail, kind) {
   `;
 }
 
-function renderPreset(preset) {
+function renderPresetLibrary() {
+  // 列出"用户已删的"预置, 让用户可以从预置模板再添加回来
+  const topicsWithKey = new Set(state.topics.filter((t) => t.preset_key).map((t) => t.preset_key));
+  const available = state.presets.filter((p) => !topicsWithKey.has(p.key));
+  if (!state.presets.length || !available.length) {
+    return '<p class="preset-library-empty">没有可用的预置模板，全部已添加。</p>';
+  }
   return `
-    <button class="preset-card ${attr(preset.tone)}" type="button" data-preset="${attr(preset.key)}">
-      <span class="preset-name">${escapeHtml(preset.name)}</span>
-      <span class="preset-title">${escapeHtml(preset.title)}</span>
-    </button>
+    <div class="preset-library">
+      <span class="preset-library-label">或从预置添加</span>
+      <div class="preset-library-row">
+        <select id="f-preset-key" name="preset_key" class="preset-select">
+          ${available.map((p) => `<option value="${attr(p.key)}">${escapeHtml(p.name)} · ${escapeHtml(p.title)}</option>`).join('')}
+        </select>
+        <button type="button" id="f-preset-fill" class="ghost-button" aria-label="把选中预置填入表单">填入</button>
+      </div>
+    </div>
   `;
 }
 
@@ -384,19 +363,49 @@ function renderTopics() {
   return state.topics.map((topic) => {
     const status = topicStatus(topic);
     const active = state.currentTopicId === topic.id ? 'active' : '';
+    const isEditing = state.editingTopicId === topic.id;
+    if (isEditing) {
+      return `
+        <article class="topic-item editing ${active}" data-topic="${attr(topic.id)}">
+          <form class="topic-edit-form" data-edit-form="${attr(topic.id)}">
+            <label>
+              <span>主题名称</span>
+              <input name="name" maxlength="100" value="${attr(topic.name)}" required>
+            </label>
+            <label>
+              <span>arXiv 查询</span>
+              <textarea name="query" maxlength="500" rows="3" required>${escapeHtml(topic.query)}</textarea>
+            </label>
+            <label>
+              <span>间隔（分钟）</span>
+              <input name="interval_minutes" type="number" min="5" max="10080" value="${attr(topic.interval_minutes || 60)}">
+            </label>
+            <div class="topic-edit-actions">
+              <button type="button" class="secondary-button" data-cancel-edit="${attr(topic.id)}">取消</button>
+              <button type="submit" class="primary-button">保存</button>
+            </div>
+          </form>
+        </article>
+      `;
+    }
     return `
-      <article class="topic-item ${active}" data-topic="${attr(topic.id)}">
+      <article class="topic-item ${active} ${topic.is_preset ? 'is-preset ' + attr(presetToneFor(topic)) : ''}" data-topic="${attr(topic.id)}">
         <button class="topic-main" type="button" data-select-topic="${attr(topic.id)}">
           <span class="status-dot ${attr(status.className)}"></span>
           <span class="topic-copy">
-            <span class="topic-name">${escapeHtml(topic.name)}</span>
+            <span class="topic-name">${escapeHtml(topic.name)}${topic.is_preset ? '<span class="preset-tag" title="内置预置, 可编辑/删除">预置</span>' : ''}</span>
             <code>${escapeHtml(topic.query)}</code>
             <span class="topic-meta">${escapeHtml(status.label)} · ${escapeHtml(status.detail)}</span>
           </span>
         </button>
-        <button class="delete-button" type="button" data-delete-topic="${attr(topic.id)}" aria-label="删除 ${attr(topic.name)}" title="删除">
-          ${trashIcon()}
-        </button>
+        <div class="topic-actions">
+          <button class="edit-button" type="button" data-edit-topic="${attr(topic.id)}" aria-label="编辑 ${attr(topic.name)}" title="编辑">
+            ${pencilIcon()}
+          </button>
+          <button class="delete-button" type="button" data-delete-topic="${attr(topic.id)}" aria-label="删除 ${attr(topic.name)}" title="删除">
+            ${trashIcon()}
+          </button>
+        </div>
       </article>
     `;
   }).join('');
@@ -583,11 +592,30 @@ function bindEvents() {
     event.preventDefault();
     addTopic();
   });
-  document.querySelectorAll('[data-preset]').forEach((button) => {
-    button.addEventListener('click', () => fillPreset(button.dataset.preset));
+  document.getElementById('f-preset-fill')?.addEventListener('click', () => {
+    const sel = document.getElementById('f-preset-key');
+    if (sel) fillPreset(sel.value);
   });
   document.querySelectorAll('[data-select-topic]').forEach((button) => {
     button.addEventListener('click', () => selectTopic(button.dataset.selectTopic));
+  });
+  document.querySelectorAll('[data-edit-topic]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.editingTopicId = button.dataset.editTopic;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-cancel-edit]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.editingTopicId = null;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-edit-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveTopicEdit(form.dataset.editForm, form);
+    });
   });
   document.querySelectorAll('[data-delete-topic]').forEach((button) => {
     button.addEventListener('click', () => deleteTopic(button.dataset.deleteTopic));
@@ -619,15 +647,50 @@ function toggleTheme() {
 }
 
 function fillPreset(key) {
-  const preset = PRESETS.find((item) => item.key === key);
+  const preset = state.presets.find((item) => item.key === key);
   if (!preset) return;
   state.formOpen = true;
-  state.status = { text: `已填入 ${preset.name} 研究模块`, kind: 'ok' };
+  state.status = { text: `已填入 ${preset.name} 研究模块, 确认或修改后点击"添加主题"`, kind: 'ok' };
   render();
   document.getElementById('f-name').value = preset.name;
   document.getElementById('f-query').value = preset.query;
-  document.getElementById('f-interval').value = preset.interval;
+  document.getElementById('f-interval').value = preset.interval_minutes || preset.interval || 60;
   document.getElementById('f-name').focus();
+  document.getElementById('f-name').select();
+  document.getElementById('topic-form')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function saveTopicEdit(id, form) {
+  const fd = new FormData(form);
+  const name = String(fd.get('name') || '').trim();
+  const query = String(fd.get('query') || '').trim();
+  const interval_minutes = Number(fd.get('interval_minutes')) || 60;
+  if (!name || !query) {
+    setStatus('名称和查询都不能为空', 'err');
+    return;
+  }
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    const data = await extCall({
+      action: 'update_topic',
+      topic_id: id,
+      name,
+      query,
+      interval_minutes,
+    });
+    if (!data.ok) throw new Error(data.error || 'unknown');
+    state.editingTopicId = null;
+    setStatus(`已更新 ${data.topic?.name || name}`, 'ok');
+    await loadTopics();
+    // 如果当前正看着这个主题, 切到新 query 重新拉论文
+    if (state.currentTopicId === id) {
+      await selectTopic(id);
+    }
+  } catch (error) {
+    setStatus(`更新失败: ${error.message}`, 'err');
+    if (submit) submit.disabled = false;
+  }
 }
 
 function toggleSaved(arxivId) {
@@ -645,9 +708,17 @@ async function loadTopics() {
   state.loadingTopics = true;
   render();
   try {
-    const data = await extCall({ action: 'list_topics' });
-    if (!data.ok) throw new Error(data.error || 'unknown');
-    state.topics = Array.isArray(data.topics) ? data.topics : [];
+    const [topicsData, presetsData] = await Promise.all([
+      extCall({ action: 'list_topics' }),
+      extCall({ action: 'list_presets' }),
+    ]);
+    if (!topicsData.ok) throw new Error(topicsData.error || 'unknown');
+    state.topics = Array.isArray(topicsData.topics) ? topicsData.topics : [];
+    if (presetsData.ok) {
+      state.presets = Array.isArray(presetsData.presets) ? presetsData.presets : [];
+    } else {
+      state.presets = [];
+    }
     if (state.currentTopicId && !state.topics.some((topic) => topic.id === state.currentTopicId)) {
       state.currentTopicId = null;
       state.selectedPaperId = null;
@@ -688,6 +759,7 @@ async function addTopic() {
   const name = document.getElementById('f-name').value.trim();
   const query = document.getElementById('f-query').value.trim();
   const interval = Number(document.getElementById('f-interval').value) || 60;
+  const presetKey = document.getElementById('f-preset-key')?.value || '';
   if (!name || !query) {
     setStatus('名称和查询都不能为空', 'err');
     return;
@@ -695,12 +767,14 @@ async function addTopic() {
   const submit = document.getElementById('f-submit');
   submit.disabled = true;
   try {
-    const data = await extCall({
+    const payload = {
       action: 'add_topic',
       name,
       query,
       interval_minutes: interval,
-    });
+    };
+    if (presetKey) payload.preset_key = presetKey;
+    const data = await extCall(payload);
     if (!data.ok) throw new Error(data.error || 'unknown');
     state.formOpen = false;
     setStatus(`已添加主题: ${data.topic?.name || name}`, 'ok');
@@ -766,6 +840,10 @@ function refreshIcon() {
 
 function trashIcon() {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"></path></svg>';
+}
+
+function pencilIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.06 4.94 19.06 9.94M4 20l4.5-1 11-11a2.12 2.12 0 0 0-3-3l-11 11L4 20Z"></path></svg>';
 }
 
 function starIcon(saved) {

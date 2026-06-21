@@ -1077,7 +1077,7 @@ router.get('/:id/selection-snapshot', auth, (req, res) => {
 //   5) backend.noPauseCurrentAndQueueQueryAtSession 推到 TUI
 //   6) 同步 backend 内部 agent session id 回 DB
 // 不做流式响应 — 请求成功即表示后端已接收; 后续 jsonl 由 /api/sessions/:id/events SSE 推送.
-// Body: { content: string, input_text?: string, request_id?: string }
+// Body: { content: string, input_text?: string, request_id?: string, attachments?: Array }
 router.post('/:id/messages', auth, async (req, res) => {
   const sessionId = req.params.id;
   const content = typeof req.body?.content === 'string' ? req.body.content : '';
@@ -1093,6 +1093,7 @@ router.post('/:id/messages', auth, async (req, res) => {
       inputText,
       hasInputText,
       requestId,
+      attachments: req.body?.attachments,
       source: 'http.session.messages',
       logger: console,
     });

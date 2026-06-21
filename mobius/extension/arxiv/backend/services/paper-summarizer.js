@@ -1,16 +1,22 @@
 /**
- * paper-summarizer.js — 把 arxiv 摘要生成中文摘要 (≤ 200 字).
+ * paper-summarizer.js — 把 arxiv 摘要翻译成中文短摘要 (≤ 200 字).
  *
- * MVP 优先: 默认直接使用 arxiv 自带 abstract, 不强依赖 LLM.
- * 如果有 ARXIV_SUMMARIZER_ENDPOINT (POST JSON {title, abstract} -> {summary})
- *   且成功, 用它的返回; 否则 fall back 到 abstract (截断到 200 字).
- * 永不抛错.
+ * 优先级:
+ *   1) 用户自定义 ARXIV_SUMMARIZER_ENDPOINT (POST {title, abstract} -> {summary})
+ *   2) 平台 LLM 网关 (ASSISTANT_API_BASE / ASSISTANT_API_KEY, 默认 qwen3.6-plus @ 192.168.4.254:29928)
+ *   3) 直接把 abstract 截断到 200 字 (英文兜底, 非中文, 仅作为最坏情况)
+ *
+ * 永不抛错; 任何一步失败都安全降级.
  */
 
 const http = require('http');
 const https = require('https');
 
-function postJson(url, body, { timeoutMs = 12000 } = {}) {
+const DEFAULT_LLM_BASE = 'http://192.168.4.254:29928/v1';
+const DEFAULT_LLM_MODEL = 'qwen3.6-plus';
+const SUMMARIZER_TIMEOUT_MS = 16_000;
+
+function postJsonRaw(url, body, { timeoutMs = SUMMARIZER_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'https:' ? https : http;
@@ -31,11 +37,11 @@ function postJson(url, body, { timeoutMs = 12000 } = {}) {
   });
 }
 
-async function callEndpoint({ title, abstract }) {
+async function callUserEndpoint({ title, abstract }) {
   const url = process.env.ARXIV_SUMMARIZER_ENDPOINT;
   if (!url) return null;
   try {
-    const { status, body } = await postJson(url, { title, abstract });
+    const { status, body } = await postJsonRaw(url, { title, abstract });
     if (status !== 200) return null;
     const parsed = JSON.parse(body);
     const s = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
@@ -46,16 +52,66 @@ async function callEndpoint({ title, abstract }) {
   }
 }
 
+function resolveLlm() {
+  const apiBase = process.env.ARXIV_LLM_API_BASE
+    || process.env.ASSISTANT_API_BASE
+    || DEFAULT_LLM_BASE;
+  const apiKey = process.env.ARXIV_LLM_API_KEY
+    || process.env.ASSISTANT_API_KEY
+    || '';
+  const model = process.env.ARXIV_LLM_MODEL
+    || process.env.ASSISTANT_LLM_MODEL
+    || DEFAULT_LLM_MODEL;
+  return { apiBase: apiBase.replace(/\/+$/, ''), apiKey, model };
+}
+
+const SYSTEM_PROMPT = [
+  '你是一名严谨的学术编辑, 负责把英文学术论文摘要改写成中文短摘要.',
+  '要求:',
+  '1) 输出纯中文, 长度 80-180 字.',
+  '2) 保留核心贡献、方法、关键结果; 模型/方法名等专有名词可保留英文 (如 GPT-4, VLA, LoRA).',
+  '3) 避免空洞表述 ("本文提出了一种新方法"), 直接说方法是什么、解决什么问题.',
+  '4) 不得包含 markdown, bullet 列表或代码块.',
+  '5) 只输出摘要正文, 不要重复标题, 不要加 "摘要:" 前缀.',
+].join('\n');
+
+async function callPlatformLlm({ title, abstract }) {
+  const { apiBase, apiKey, model } = resolveLlm();
+  if (!apiKey) return null;
+  const userPrompt = `标题: ${title || '(无标题)'}\n\n摘要:\n${abstract || '(无摘要)'}`;
+  try {
+    const { status, body } = await postJsonRaw(`${apiBase}/chat/completions`, {
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.2,
+      stream: false,
+    }, SUMMARIZER_TIMEOUT_MS);
+    if (status !== 200) return null;
+    const parsed = JSON.parse(body);
+    const content = parsed.choices?.[0]?.message?.content;
+    const s = typeof content === 'string' ? content.trim() : '';
+    if (!s) return null;
+    return s.slice(0, 200);
+  } catch {
+    return null;
+  }
+}
+
 function fallback({ abstract }) {
   if (!abstract) return '';
-  // MVP: 直接把 abstract 截断到 200 字 (按字符算)
   const s = abstract.replace(/\s+/g, ' ').trim();
   return s.length > 200 ? s.slice(0, 197) + '...' : s;
 }
 
 async function summarize({ title, abstract }) {
-  const fromEndpoint = await callEndpoint({ title, abstract });
-  if (fromEndpoint) return fromEndpoint;
+  if (!abstract && !title) return '';
+  const fromUser = await callUserEndpoint({ title, abstract });
+  if (fromUser) return fromUser;
+  const fromPlatform = await callPlatformLlm({ title, abstract });
+  if (fromPlatform) return fromPlatform;
   return fallback({ abstract });
 }
 
