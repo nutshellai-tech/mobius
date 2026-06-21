@@ -27,6 +27,15 @@ const labels = {
     done: '已完成',
     archived: '已归档',
   },
+  productCategories: {
+    'office-agent': '办公智能体',
+    'coding-agent': '编码智能体',
+    'general-agent': '通用智能体',
+    'workflow-agent': '工作流智能体',
+    'personal-agent': '个人助理',
+    'research-agent': '研究智能体',
+    other: '其他',
+  },
 };
 
 const state = {
@@ -35,10 +44,13 @@ const state = {
   stats: null,
   directives: [],
   scanRuns: [],
+  products: [],
+  productScanRuns: [],
   constants: {
     default_scan_query: 'all:"Gödel Agent" OR all:"self-improving agents" OR all:"recursive self-improvement"',
     statuses: Object.keys(labels.statuses),
     source_types: Object.keys(labels.sourceTypes),
+    product_categories: Object.keys(labels.productCategories),
   },
   selectedId: '',
   tab: 'library',
@@ -91,6 +103,8 @@ async function loadAll(extra = {}) {
     state.stats = data.stats || null;
     state.directives = data.directives || [];
     state.scanRuns = data.scan_runs || [];
+    state.products = data.product_research || [];
+    state.productScanRuns = data.product_scan_runs || [];
     state.constants = { ...state.constants, ...(data.constants || {}) };
     if (!state.selectedId || !state.ideas.some((item) => item.id === state.selectedId)) {
       state.selectedId = state.ideas[0]?.id || '';
@@ -133,6 +147,7 @@ function render() {
   renderDetail();
   renderRoadmap();
   renderScanRuns();
+  renderProducts();
   renderDirectives();
   setTab(state.tab);
 }
@@ -146,7 +161,7 @@ function renderMetrics() {
     ['已研判', (byStatus.triaged || 0) + (byStatus.planned || 0) + (byStatus.applied || 0), '可进入路线图'],
     ['扫描候选', byStatus.candidate || 0, '待提炼'],
     ['开发指示', stats.directive_open || 0, '开放'],
-    ['框架/方法', (bySource.framework || 0) + (bySource.method || 0), '可复用'],
+    ['相似产品', stats.product_total || 0, `${stats.product_triaged || 0} 已研判`],
   ];
   $('metrics').innerHTML = items.map(([label, value, suffix]) => `
     <div class="metric">
@@ -326,6 +341,69 @@ function renderScanRuns() {
   `).join('');
 }
 
+function renderProducts() {
+  const products = state.products || [];
+  if (!products.length) {
+    $('productList').innerHTML = '<div class="quiet-empty">暂无相似产品调研</div>';
+  } else {
+    $('productList').innerHTML = products.map((item) => `
+      <article class="product-card" data-status="${escapeHtml(item.status)}">
+        <div class="product-card-head">
+          <div>
+            <span>${escapeHtml(labels.productCategories[item.category] || item.category || '其他')} · ${escapeHtml(labels.statuses[item.status] || item.status || '候选')} · 相关度 ${escapeHtml(item.relevance)}/5</span>
+            <h2>${escapeHtml(item.name)}</h2>
+          </div>
+          <a class="ghost-button" href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">来源</a>
+        </div>
+        <p class="product-positioning">${nl2br(item.positioning || item.fetched_description || '待补充定位')}</p>
+        <div class="product-sections">
+          <section>
+            <h3>能力观察</h3>
+            <p>${nl2br(item.observed_capabilities || '待补充')}</p>
+          </section>
+          <section>
+            <h3>关键启发</h3>
+            <p>${nl2br(item.key_inspiration || '待提炼')}</p>
+          </section>
+          <section>
+            <h3>用于莫比乌斯</h3>
+            <p>${nl2br(item.mobius_use || '待补充')}</p>
+          </section>
+          <section>
+            <h3>风险/不该学的点</h3>
+            <p>${nl2br(item.risks || '待补充')}</p>
+          </section>
+        </div>
+        <div class="tag-row">
+          ${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}
+        </div>
+        <div class="status-actions">
+          ${['candidate', 'triaged', 'planned', 'applied', 'archived'].map((status) => `
+            <button type="button" data-product-status="${status}" data-id="${escapeHtml(item.id)}" ${item.status === status ? 'disabled' : ''}>${escapeHtml(labels.statuses[status])}</button>
+          `).join('')}
+          <button class="danger-link" type="button" data-delete-product="${escapeHtml(item.id)}">删除</button>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  const runs = state.productScanRuns || [];
+  if (!runs.length) {
+    $('productScanRuns').innerHTML = '<div class="quiet-empty">暂无产品抓取记录</div>';
+  } else {
+    $('productScanRuns').innerHTML = runs.map((run) => `
+      <div class="run-row" data-status="${escapeHtml(run.status)}">
+        <div>
+          <strong>${escapeHtml(run.status === 'ok' ? '完成' : '失败')}</strong>
+          <span>${escapeHtml(run.created_at)}</span>
+        </div>
+        <p>${escapeHtml(run.source_url)}</p>
+        <em>${run.error ? escapeHtml(run.error) : '已入库'}</em>
+      </div>
+    `).join('');
+  }
+}
+
 function renderDirectives() {
   const list = state.directives || [];
   if (!list.length) {
@@ -482,6 +560,74 @@ async function runScan(event) {
   }
 }
 
+async function refreshProducts() {
+  try {
+    const result = await call({ action: 'list_products' });
+    state.products = result.products || [];
+    state.productScanRuns = result.product_scan_runs || state.productScanRuns;
+    state.stats = result.stats || state.stats;
+    render();
+    showToast('产品调研已刷新');
+  } catch (e) {
+    showToast(e.message || '刷新失败', 'bad');
+  }
+}
+
+async function runProductScan(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true;
+  button.textContent = '抓取中...';
+  try {
+    const result = await call({
+      action: 'scan_product_url',
+      source_url: $('productUrl').value,
+      name: $('productName').value,
+      category: $('productCategory').value,
+      relevance: Number($('productRelevance').value || 3),
+    });
+    state.products = result.products || state.products;
+    state.productScanRuns = result.product_scan_runs || state.productScanRuns;
+    state.stats = result.stats || state.stats;
+    $('productUrl').value = '';
+    $('productName').value = '';
+    render();
+    showToast(`已入库: ${result.product_scan.product.name}`);
+  } catch (e) {
+    showToast(e.message || '抓取失败', 'bad');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<span>⌕</span> 抓取并入库';
+  }
+}
+
+async function updateProductStatus(id, status) {
+  try {
+    const result = await call({ action: 'update_product', id, status });
+    state.products = result.products || state.products;
+    state.stats = result.stats || state.stats;
+    render();
+    showToast(`产品状态已更新为 ${labels.statuses[status] || status}`);
+  } catch (e) {
+    showToast(e.message || '更新失败', 'bad');
+  }
+}
+
+async function deleteProduct(id) {
+  const product = state.products.find((item) => item.id === id);
+  if (!product) return;
+  if (!confirm(`删除「${product.name}」？`)) return;
+  try {
+    const result = await call({ action: 'delete_product', id });
+    state.products = result.products || state.products;
+    state.stats = result.stats || state.stats;
+    render();
+    showToast('已删除产品调研');
+  } catch (e) {
+    showToast(e.message || '删除失败', 'bad');
+  }
+}
+
 async function saveDirective(event) {
   event.preventDefault();
   try {
@@ -533,6 +679,8 @@ function bindEvents() {
   $('newIdeaBtn').addEventListener('click', () => openIdeaModal());
   $('ideaForm').addEventListener('submit', saveIdea);
   $('scanForm').addEventListener('submit', runScan);
+  $('productScanForm').addEventListener('submit', runProductScan);
+  $('refreshProductsBtn').addEventListener('click', refreshProducts);
   $('directiveForm').addEventListener('submit', saveDirective);
 
   document.querySelectorAll('[data-close-modal]').forEach((node) => {
@@ -604,6 +752,16 @@ function bindEvents() {
     }
     const deleteButton = event.target.closest('[data-delete-directive]');
     if (deleteButton) deleteDirective(deleteButton.dataset.deleteDirective);
+  });
+
+  $('productList').addEventListener('click', (event) => {
+    const statusButton = event.target.closest('[data-product-status]');
+    if (statusButton) {
+      updateProductStatus(statusButton.dataset.id, statusButton.dataset.productStatus);
+      return;
+    }
+    const deleteButton = event.target.closest('[data-delete-product]');
+    if (deleteButton) deleteProduct(deleteButton.dataset.deleteProduct);
   });
 
   document.addEventListener('keydown', (event) => {

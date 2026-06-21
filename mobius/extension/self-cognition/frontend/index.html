@@ -26,6 +26,7 @@
       <button class="tab is-active" type="button" data-tab="library">研究库</button>
       <button class="tab" type="button" data-tab="roadmap">借鉴路径</button>
       <button class="tab" type="button" data-tab="scanner">网络扫描</button>
+      <button class="tab wide-tab" type="button" data-tab="products">相似产品的可借鉴调研</button>
       <button class="tab" type="button" data-tab="directives">开发者指示</button>
     </nav>
 
@@ -87,6 +88,51 @@
             <div class="tool-panel">
               <h2>扫描记录</h2>
               <div id="scanRuns" class="run-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-products">
+          <div class="product-layout">
+            <form id="productScanForm" class="tool-panel">
+              <h2>相似产品的可借鉴调研</h2>
+              <p>这里收录论文之外的市场产品、开源项目和相似工作台。先把竞品能力转成“对莫比乌斯有什么用”, 后续再讨论 AI 追问和真实落实权限。</p>
+              <label>
+                <span>产品页面 URL</span>
+                <input id="productUrl" type="url" placeholder="https://example.com/product" required>
+              </label>
+              <label>
+                <span>产品名称（可选）</span>
+                <input id="productName" type="text" maxlength="180" placeholder="自动抓取标题, 也可手动覆盖">
+              </label>
+              <div class="filter-grid">
+                <label>
+                  <span>类别</span>
+                  <select id="productCategory">
+                    <option value="office-agent">办公智能体</option>
+                    <option value="coding-agent">编码智能体</option>
+                    <option value="general-agent">通用智能体</option>
+                    <option value="workflow-agent">工作流智能体</option>
+                    <option value="personal-agent">个人助理</option>
+                    <option value="research-agent">研究智能体</option>
+                    <option value="other">其他</option>
+                  </select>
+                </label>
+                <label>
+                  <span>相关度</span>
+                  <input id="productRelevance" type="number" min="1" max="5" value="3">
+                </label>
+              </div>
+              <button class="primary-button" type="submit"><span>⌕</span> 抓取并入库</button>
+            </form>
+            <div class="tool-panel">
+              <div class="panel-head">
+                <h2>产品卡片</h2>
+                <button id="refreshProductsBtn" class="ghost-button" type="button">刷新</button>
+              </div>
+              <div id="productList" class="product-list"></div>
+              <h3 class="subhead">抓取记录</h3>
+              <div id="productScanRuns" class="run-list"></div>
             </div>
           </div>
         </section>

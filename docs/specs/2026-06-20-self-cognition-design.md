@@ -2,7 +2,7 @@
 
 **日期**: 2026-06-20
 **作者**: 扈天翼 + Mobius 协作
-**状态**: Implemented v0.1（2026-06-21 已落地插件）
+**状态**: Implemented v0.2（2026-06-21 已落地插件；已增加相似产品调研）
 
 ---
 
@@ -16,7 +16,7 @@
 2. **`key_inspiration` 字段**（本设计的核心差异点）— 不只存论文摘要，更要存"这条内容能教莫比乌斯什么"
 3. **自动抓取接口 MVP**（Darwin Gödel Machine）— 已提供 `scan_arxiv` 动作, 先把候选论文入库为待评估启发
 
-本扩展就是承载这三件事的"启发库"。本期目标是**把"人工录入 + 存储 + 展示 + arXiv 候选扫描"做透**，反向作用到莫比乌斯本体是后续阶段。
+本扩展就是承载这三件事的"启发库"。本期目标是**把"人工录入 + 存储 + 展示 + arXiv 候选扫描 + 相似产品调研"做透**，反向作用到莫比乌斯本体是后续阶段。
 
 ---
 
@@ -28,13 +28,15 @@
 - 能按 `tags` / `status` / `source_type` 筛选与检索
 - 表结构为自动抓取预留字段，并实现 arXiv 扫描 MVP
 - 兼容开发人员指示, 支持记录优先级和状态
+- 加入"相似产品的可借鉴调研"栏目, 收录竞品/开源项目/市场产品, 支持 URL 抓取候选项
 - UI 风格采用苹果设计语言（参考 `apple-product-page` skill）
 
 ### 非目标（本期不做，明确留口）
 - 不做 cron / 定时抓取
-- 不做 web search 调用
+- 不做通用 web search / 自动定时广域爬取；本期只做 arXiv API 扫描与用户给定 URL 的产品页 metadata 抓取
 - 不做"自动生成 issue 推动莫比乌斯自迭代"的反向闭环
 - 不做多用户协作 / 评论 / 评分系统
+- 不在本期实现 AI 追问的执行权限和测试服写入权限; 这两项需要架构层讨论后再落地
 
 ---
 
@@ -128,6 +130,43 @@ CREATE TABLE scan_runs (
 );
 ```
 
+v0.2 增加:
+
+```sql
+CREATE TABLE product_research (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other',
+  status TEXT NOT NULL DEFAULT 'candidate',
+  relevance INTEGER NOT NULL DEFAULT 3,
+  tags TEXT NOT NULL DEFAULT '[]',
+  positioning TEXT NOT NULL DEFAULT '',
+  observed_capabilities TEXT NOT NULL DEFAULT '',
+  key_inspiration TEXT NOT NULL DEFAULT '',
+  mobius_use TEXT NOT NULL DEFAULT '',
+  risks TEXT NOT NULL DEFAULT '',
+  source_quality TEXT NOT NULL DEFAULT 'official',
+  fetched_title TEXT NOT NULL DEFAULT '',
+  fetched_description TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  seed_version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE product_scan_runs (
+  id TEXT PRIMARY KEY,
+  source_url TEXT NOT NULL,
+  product_id TEXT,
+  status TEXT NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
+
 ### 4.2 字段决策与理由
 
 | 字段 | 决策 | 理由 |
@@ -158,6 +197,8 @@ handler 按如下 action 分发：
 | `scan_arxiv` | `query`, `max_results?` | `{ ok, scan, ideas, stats, scan_runs }` | arXiv 候选扫描 MVP, 新条目标为 `candidate` |
 | `create_directive` / `update_directive` / `delete_directive` / `list_directives` | 指示字段 | `{ ok, directives }` | 开发者指示 |
 | `export_json` | — | `{ ok, data }` | 导出当前研究库快照 |
+| `list_products` / `create_product` / `update_product` / `delete_product` | 产品调研字段 | `{ ok, products }` | 相似产品调研 |
+| `scan_product_url` | `source_url`, `name?`, `category?`, `relevance?` | `{ ok, product_scan, products }` | 抓取产品页面 title/description 并入库候选 |
 
 ### 5.1 输入校验
 
@@ -183,7 +224,7 @@ handler 按如下 action 分发：
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  莫比乌斯的自我认知和迭代                                  │
-│  [研究库] [借鉴路径] [网络扫描] [开发者指示]  [+ 新增]     │
+│  [研究库] [借鉴路径] [网络扫描] [相似产品调研] [开发者指示] │
 ├─────────────────────┬────────────────────────────────────┤
 │                     │  详情区                              │
 │  列表                │                                     │
@@ -255,6 +296,9 @@ handler 按如下 action 分发：
 - [x] 前端列表 → 详情 → 编辑闭环具备完整 UI
 - [x] 视觉验收：克制、留白、字体、动效
 - [x] 用真实记录（哥德尔智能体调研）作为 seed 数据
+- [x] 内置论文 seed 已升级为更长的给人看的启发说明
+- [x] 相似产品调研 seed 已加入 WorkBuddy / Devin / Workspace Agents / Manus / OpenClaw / Zapier Agents / Lindy / Genspark
+- [x] 产品 URL 抓取不会覆盖已有人工深度调研, 只补 fetched metadata
 
 ---
 
@@ -265,23 +309,50 @@ handler 按如下 action 分发：
 | 前端零编译模式兼容性 | 仅支持现代浏览器（Chrome 89+ / Safari 15+），与 pacman/arxiv 一致 |
 | `key_inspiration` 用户填得敷衍 | UI 用占位提示+视觉强调；后续可由 agent 自动生成 |
 | `scan_arxiv` 过度抓取 | 限制单次 1-20 条, 默认 8 条, 不设定时任务 |
-| DB schema 演化 | 本期无 migration 需求；后续加字段用 `CREATE TABLE IF NOT EXISTS` + ALTER 兜底 |
+| 相似产品调研只抓页面 meta | 明确标记为候选, 需要人工或后续 AI 追问补全能力与风险 |
+| DB schema 演化 | v0.2 已用 `CREATE TABLE IF NOT EXISTS` + `ensureColumn` 处理新增表和 `seed_version`; 后续加字段继续用 ALTER 兜底 |
 | handler 超时（30s） | 当前 action 都是本地 SQLite 操作，远低于 30s |
 
 ---
 
-## 10. 后续阶段（非本期）
+## 10. 待讨论架构议题（本期不直接执行）
+
+### 10.1 AI 追问与权限
+
+用户提出的核心问题是信任: 不可能读完全部论文和竞品材料, 但需要能追问 AI 的结论是否可靠。建议分四级权限讨论:
+
+1. `read_only`: 只能读取本插件条目、来源链接、已有 project knowledge, 回答"依据是什么"。
+2. `proposal`: 可以生成落地方案、测试计划、风险和回滚方案, 但不能改代码。
+3. `staging_execute`: 可以在测试服/临时分支执行候选改动和测试, 不能影响主线。
+4. `mainline_execute`: 可以按现有自迭代规则提交并重启 Mobius, 需要用户显式批准。
+
+### 10.2 测试服/真实落实
+
+建议把"真实落实"拆成 pipeline, 而不是一个按钮:
+
+1. 从研究/产品条目生成 proposal。
+2. 用户确认 proposal 的权限和范围。
+3. 创建测试环境或隔离分支, 执行最小补丁。
+4. 运行测试和启动检查。
+5. 生成审计报告。
+6. 用户批准后再合并到主线并执行 `python3 start.py`。
+
+当前项目明确要求不使用 git worktree, 因此测试服方案需要优先讨论"临时分支 + 端口隔离 + 数据隔离"或"容器副本", 不能走 worktree。
+
+---
+
+## 11. 后续阶段（非本期）
 
 明确记录，避免设计漂移：
 
-- **Phase 2 — 自动抓取增强**：复用 `arxiv` 扩展的 scheduler 模式，按"莫比乌斯相关主题"订阅论文/博客
+- **Phase 2 — 自动抓取增强**：复用 `arxiv` 扩展的 scheduler 模式，按"莫比乌斯相关主题"订阅论文/博客和相似产品
 - **Phase 3 — 经验抽象**：抓取后用 LLM 自动生成 `key_inspiration`（Polaris 风格）
 - **Phase 4 — 反向闭环**：`status=triaged` 的条目定期生成候选 issue 推到自迭代项目，`applied` 状态由 issue 完成后回写
 - **Phase 5 — lineage 评估**（Huxley）：记录"哪条启发最终被莫比乌斯落地，效果如何"
 
 ---
 
-## 11. 开放问题（用户 review 时可一并答复）
+## 12. 开放问题（用户 review 时可一并答复）
 
 1. 字段集是否要增减？（默认接受当前提案）
 2. `auto_fetch` 占位是否要直接在 UI 上显示"敬请期待"按钮，还是完全隐藏？（默认：隐藏）
