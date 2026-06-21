@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>莫比乌斯的自我认知和迭代</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="kicker">Mobius Self-Cognition Lab</div>
+        <h1>莫比乌斯的自我认知和迭代</h1>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="refreshBtn" type="button" title="刷新">↻</button>
+        <button class="primary-button" id="newIdeaBtn" type="button"><span>＋</span> 新增启发</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="工作区">
+      <button class="tab is-active" type="button" data-tab="library">研究库</button>
+      <button class="tab" type="button" data-tab="roadmap">借鉴路径</button>
+      <button class="tab" type="button" data-tab="scanner">网络扫描</button>
+      <button class="tab" type="button" data-tab="directives">开发者指示</button>
+    </nav>
+
+    <section class="metrics" id="metrics"></section>
+
+    <main class="workspace">
+      <aside class="sidebar" id="librarySidebar">
+        <div class="filter-box">
+          <label>
+            <span>搜索</span>
+            <input id="searchInput" type="search" placeholder="论文、启发、标签">
+          </label>
+          <div class="filter-grid">
+            <label>
+              <span>状态</span>
+              <select id="statusFilter"></select>
+            </label>
+            <label>
+              <span>类型</span>
+              <select id="typeFilter"></select>
+            </label>
+          </div>
+          <label>
+            <span>标签</span>
+            <select id="tagFilter"></select>
+          </label>
+        </div>
+        <div class="list-heading">
+          <span id="listCount">0 条</span>
+          <button id="clearFiltersBtn" type="button">清除筛选</button>
+        </div>
+        <div class="idea-list" id="ideaList"></div>
+      </aside>
+
+      <section class="content-pane">
+        <section class="tab-panel is-active" id="panel-library">
+          <div id="ideaDetail" class="detail-empty">正在加载研究库...</div>
+        </section>
+
+        <section class="tab-panel" id="panel-roadmap">
+          <div class="roadmap-grid" id="roadmap"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-scanner">
+          <div class="scanner-layout">
+            <form id="scanForm" class="tool-panel">
+              <h2>arXiv 扫描</h2>
+              <p>按关键词拉取候选论文, 自动保存为“candidate”。保存后仍需要人工或 agent 提炼成可落地启发。</p>
+              <label>
+                <span>查询语句</span>
+                <textarea id="scanQuery" rows="4"></textarea>
+              </label>
+              <label>
+                <span>最大条数</span>
+                <input id="scanMax" type="number" min="1" max="20" value="8">
+              </label>
+              <button class="primary-button" type="submit"><span>⌕</span> 扫描并入库</button>
+            </form>
+            <div class="tool-panel">
+              <h2>扫描记录</h2>
+              <div id="scanRuns" class="run-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-directives">
+          <div class="directive-layout">
+            <form id="directiveForm" class="tool-panel">
+              <h2>新增开发者指示</h2>
+              <label>
+                <span>标题</span>
+                <input id="directiveTitle" type="text" maxlength="180" placeholder="例如: 优先实现自迭代 lineage 视图">
+              </label>
+              <label>
+                <span>内容</span>
+                <textarea id="directiveBody" rows="6" placeholder="写清楚约束、验收标准、禁止事项或下一步要观察的指标"></textarea>
+              </label>
+              <div class="filter-grid">
+                <label>
+                  <span>优先级</span>
+                  <select id="directivePriority">
+                    <option value="high">高</option>
+                    <option value="medium" selected>中</option>
+                    <option value="low">低</option>
+                  </select>
+                </label>
+                <label>
+                  <span>状态</span>
+                  <select id="directiveStatus">
+                    <option value="open">待处理</option>
+                    <option value="planned">已计划</option>
+                    <option value="done">已完成</option>
+                    <option value="archived">已归档</option>
+                  </select>
+                </label>
+              </div>
+              <button class="primary-button" type="submit"><span>＋</span> 保存指示</button>
+            </form>
+            <div id="directiveList" class="directive-list"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal" id="ideaModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <form class="modal-sheet" id="ideaForm">
+      <div class="modal-head">
+        <h2 id="modalTitle">新增启发</h2>
+        <button class="icon-button" type="button" data-close-modal title="关闭">×</button>
+      </div>
+      <input type="hidden" id="ideaId">
+      <div class="form-grid">
+        <label class="span-2">
+          <span>标题</span>
+          <input id="ideaTitle" type="text" maxlength="260" required>
+        </label>
+        <label class="span-2">
+          <span>来源 URL</span>
+          <input id="ideaUrl" type="url" required>
+        </label>
+        <label>
+          <span>类型</span>
+          <select id="ideaType">
+            <option value="paper">论文</option>
+            <option value="framework">框架</option>
+            <option value="method">方法</option>
+            <option value="note">笔记</option>
+            <option value="scan">扫描候选</option>
+          </select>
+        </label>
+        <label>
+          <span>状态</span>
+          <select id="ideaStatus">
+            <option value="new">新条目</option>
+            <option value="candidate">候选</option>
+            <option value="triaged">已研判</option>
+            <option value="planned">已计划</option>
+            <option value="applied">已落地</option>
+            <option value="archived">已归档</option>
+          </select>
+        </label>
+        <label>
+          <span>相关度 1-5</span>
+          <input id="ideaRelevance" type="number" min="1" max="5" value="3">
+        </label>
+        <label>
+          <span>发布日期</span>
+          <input id="ideaPublishedAt" type="text" placeholder="2026-03-24">
+        </label>
+        <label class="span-2">
+          <span>作者</span>
+          <input id="ideaAuthors" type="text">
+        </label>
+        <label class="span-2">
+          <span>标签</span>
+          <input id="ideaTags" type="text" placeholder="逗号分隔">
+        </label>
+        <label class="span-2">
+          <span>关键启发</span>
+          <textarea id="ideaKey" rows="5" required></textarea>
+        </label>
+        <label class="span-2">
+          <span>可用于莫比乌斯</span>
+          <textarea id="ideaUse" rows="4"></textarea>
+        </label>
+        <label class="span-2">
+          <span>摘要</span>
+          <textarea id="ideaAbstract" rows="4"></textarea>
+        </label>
+        <label class="span-2">
+          <span>限制与风险</span>
+          <textarea id="ideaLimitations" rows="3"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost-button" type="button" data-close-modal>取消</button>
+        <button class="primary-button" type="submit"><span>✓</span> 保存</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>

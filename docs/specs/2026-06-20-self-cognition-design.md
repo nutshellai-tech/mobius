@@ -2,7 +2,7 @@
 
 **日期**: 2026-06-20
 **作者**: 扈天翼 + Mobius 协作
-**状态**: Draft（等待用户 review）
+**状态**: Implemented v0.1（2026-06-21 已落地插件）
 
 ---
 
@@ -14,9 +14,9 @@
 
 1. **经验抽象与复用**（Polaris）— 把每次外部调研到的"启发"沉淀成可检索条目
 2. **`key_inspiration` 字段**（本设计的核心差异点）— 不只存论文摘要，更要存"这条内容能教莫比乌斯什么"
-3. **自动抓取接口预留**（Darwin Gödel Machine）— 为后续"莫比乌斯自己扫描网络"留好入口
+3. **自动抓取接口 MVP**（Darwin Gödel Machine）— 已提供 `scan_arxiv` 动作, 先把候选论文入库为待评估启发
 
-本扩展就是承载这三件事的"启发库"。本期目标是**把"人工录入 + 存储 + 展示"做透**，自动抓取与反向作用到莫比乌斯本体是后续阶段。
+本扩展就是承载这三件事的"启发库"。本期目标是**把"人工录入 + 存储 + 展示 + arXiv 候选扫描"做透**，反向作用到莫比乌斯本体是后续阶段。
 
 ---
 
@@ -26,12 +26,13 @@
 - 用户（人 / 莫比乌斯 agent）能在网页里**新增 / 编辑 / 删除**一条"启发"记录
 - 每条记录的核心字段是 `key_inspiration`（这条内容能教莫比乌斯什么）
 - 能按 `tags` / `status` / `source_type` 筛选与检索
-- 表结构为自动抓取预留字段，但**不实现抓取逻辑**
+- 表结构为自动抓取预留字段，并实现 arXiv 扫描 MVP
+- 兼容开发人员指示, 支持记录优先级和状态
 - UI 风格采用苹果设计语言（参考 `apple-product-page` skill）
 
 ### 非目标（本期不做，明确留口）
 - 不做 cron / 定时抓取
-- 不做 arxiv API / web search 调用
+- 不做 web search 调用
 - 不做"自动生成 issue 推动莫比乌斯自迭代"的反向闭环
 - 不做多用户协作 / 评论 / 评分系统
 
@@ -45,21 +46,12 @@
 mobius/extension/self-cognition/
 ├── extension.json
 ├── backend/
-│   ├── extension_backend_handler.js     # stateless handler 入口
-│   └── services/
-│       └── db.js                        # SQLite 持久层（better-sqlite3）
+│   └── extension_backend_handler.js     # stateless handler 入口, SQLite + arXiv scan
 └── frontend/
     ├── index.html                       # 入口，零编译，原生 ESM
     ├── styles.css
     ├── favicon.svg
-    └── src/
-        ├── main.js                      # 应用入口
-        ├── api.js                       # 封装 extCall
-        ├── views/
-        │   ├── list-view.js             # 左侧列表 + 筛选
-        │   ├── detail-view.js           # 右侧详情
-        │   └── editor-modal.js          # 新增 / 编辑 modal
-        └── store.js                     # 简单状态管理
+    └── main.js                          # 应用入口, extCall + view/state
 ```
 
 ### 3.2 数据落盘
@@ -92,10 +84,9 @@ CREATE TABLE ideas (
   authors         TEXT NOT NULL DEFAULT '',
   published_at    TEXT,                       -- ISO date, nullable
   abstract        TEXT NOT NULL DEFAULT '',
-  source_type     TEXT NOT NULL DEFAULT 'paper',  -- paper|blog|comment|idea
+  source_type     TEXT NOT NULL DEFAULT 'paper',  -- paper|framework|method|note|scan
   relevance       INTEGER NOT NULL DEFAULT 3,     -- 1-5
-  status          TEXT NOT NULL DEFAULT 'new',    -- new|triaged|applied|archived
-  -- 为后续自动抓取预留（本期不写入）
+  status          TEXT NOT NULL DEFAULT 'new',    -- new|candidate|triaged|planned|applied|archived
   source_id       TEXT,                       -- arxiv_id 等
   auto_fetched    INTEGER NOT NULL DEFAULT 0,
   fetched_at      TEXT,
@@ -110,15 +101,42 @@ CREATE INDEX idx_ideas_source_type ON ideas(source_type);
 CREATE INDEX idx_ideas_created_at ON ideas(created_at DESC);
 ```
 
+另有两张表:
+
+```sql
+CREATE TABLE directives (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE scan_runs (
+  id TEXT PRIMARY KEY,
+  query TEXT NOT NULL,
+  max_results INTEGER NOT NULL,
+  inserted INTEGER NOT NULL,
+  skipped INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
+
 ### 4.2 字段决策与理由
 
 | 字段 | 决策 | 理由 |
 |---|---|---|
 | `key_inspiration` | **核心必填** | 与 arxiv 订阅器的本质区别——订阅器存"论文是什么"，本库存"对莫比乌斯有什么用" |
 | `tags` (JSON 数组) | 必填默认空 | 轻量分类，无需独立 tags 表 |
-| `status` 四态机 | 含 `applied` | 标记"是否已被莫比乌斯落地"，是后续反向闭环的关键钩子 |
+| `status` 六态机 | 含 `candidate` / `planned` / `applied` | 标记从扫描候选到已落地的状态，是后续反向闭环的关键钩子 |
 | `relevance` 1–5 | 默认 3 | 用户主观评分，便于排序 |
-| `source_id` / `auto_fetched` / `fetched_at` | 表结构留，handler 不写 | 为 Darwin Godel Machine 风格的自动抓取留接口 |
+| `source_id` / `auto_fetched` / `fetched_at` | `scan_arxiv` 会写 | 为 Darwin Godel Machine 风格的自动抓取留接口 |
 | `created_by` | 必填 | 区分人工录入 vs 未来 agent 自动录入 |
 
 ---
@@ -129,22 +147,25 @@ handler 按如下 action 分发：
 
 | Action | 入参 | 返回 | 说明 |
 |---|---|---|---|
+| `bootstrap` | `tags?`, `status?`, `source_type?`, `q?` | `{ ok, ideas[], total, stats, directives, scan_runs }` | 前端首屏 |
 | `list` | `tags?`, `status?`, `source_type?`, `q?`, `limit?`, `offset?` | `{ ok, ideas[], total }` | 支持多条件筛选 + 全文 LIKE |
 | `get` | `id` | `{ ok, idea }` | 单条详情 |
 | `create` | `title, source_url, key_inspiration, tags?, ...` | `{ ok, idea }` | 新增，服务端填 id/ts/created_by |
 | `update` | `id, ...fields` | `{ ok, idea }` | 编辑，自动刷 updated_at |
 | `delete` | `id` | `{ ok }` | 硬删 |
 | `set_status` | `id, status` | `{ ok, idea }` | 状态快捷切换（列表页 inline 用） |
-| `stats` | — | `{ ok, by_status, by_source_type, by_tag, total }` | 顶部看板（可选，便于看库的"形状"） |
-| `auto_fetch` *(预留)* | `query` | `{ ok:false, error:'not implemented in v0.1' }` | **本期不实现，仅返回未实现提示**，保留 action 名占位 |
+| `stats` | — | `{ ok, by_status, by_source_type, by_tag, total }` | 顶部看板 |
+| `scan_arxiv` | `query`, `max_results?` | `{ ok, scan, ideas, stats, scan_runs }` | arXiv 候选扫描 MVP, 新条目标为 `candidate` |
+| `create_directive` / `update_directive` / `delete_directive` / `list_directives` | 指示字段 | `{ ok, directives }` | 开发者指示 |
+| `export_json` | — | `{ ok, data }` | 导出当前研究库快照 |
 
 ### 5.1 输入校验
 
 - `title` / `source_url` / `key_inspiration` 非空，截断到 500 / 2000 / 5000 字
 - `source_url` 必须以 `http://` 或 `https://` 开头
 - `tags` 数组单项 ≤ 32 字符，最多 10 个
-- `source_type` ∈ {paper, blog, comment, idea}
-- `status` ∈ {new, triaged, applied, archived}
+- `source_type` ∈ {paper, framework, method, note, scan}
+- `status` ∈ {new, candidate, triaged, planned, applied, archived}
 - `relevance` ∈ [1, 5]
 - 一律不信任 `ext_main_payload`，所有字段 type + 边界校验
 
@@ -157,12 +178,12 @@ handler 按如下 action 分发：
 
 ## 6. 前端设计
 
-### 6.1 布局（B1：双栏）
+### 6.1 布局（B1：双栏 + 工作区 tabs）
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  莫比乌斯的自我认知与迭代                                  │
-│  [搜索框]  [状态筛选]  [类型筛选]  [标签筛选]  [+ 新增]   │
+│  莫比乌斯的自我认知和迭代                                  │
+│  [研究库] [借鉴路径] [网络扫描] [开发者指示]  [+ 新增]     │
 ├─────────────────────┬────────────────────────────────────┤
 │                     │  详情区                              │
 │  列表                │                                     │
@@ -179,7 +200,7 @@ handler 按如下 action 分发：
 └─────────────────────┴────────────────────────────────────┘
 ```
 
-- 列表项：标题（1 行省略）+ 标签 chip + 状态 badge + 相关度小图标
+- 列表项：标题 + 标签 chip + 状态 badge + 相关度小图标
 - 详情区：滚动容器，强调 `key_inspiration`（视觉权重最高，比摘要大、加重点色边框）
 - 新增/编辑：modal 形式，必填字段高亮
 - 空状态：友好引导文案 + "新增第一条启发"按钮
@@ -200,8 +221,8 @@ handler 按如下 action 分发：
 ### 6.4 零编译策略
 
 - 不写 `package.json`
-- `frontend/index.html` 直接 `<script type="module" src="/src/main.js">`
-- 浏览器原生 ESM，子模块用相对路径 import
+- `frontend/index.html` 直接 `<script type="module" src="main.js">`
+- 浏览器原生 ESM，当前实现为单文件前端入口
 - 首次访问由后端把 `frontend/*` 拷到 `dist/`
 - 改完调 `POST /api/admin/extensions/self-cognition/rebuild`
 
@@ -211,16 +232,12 @@ handler 按如下 action 分发：
 
 按依赖关系排序：
 
-1. `extension.json` + 目录骨架
-2. `backend/services/db.js`（建表 + open/close）
-3. `backend/extension_backend_handler.js`（7 个 action + 校验）
-4. 后端单元验证：用 `curl` 测全部 action（带 JWT）
-5. `frontend/index.html` + `styles.css` + 苹果风格基础
-6. `frontend/src/api.js`（封装 extCall）
-7. `frontend/src/store.js` + 三个 view 组件
-8. 前端联调：新增一条哥德尔智能体记录（用本次调研的真实内容），验证全流程
-9. `POST /api/admin/extensions/reload` → 在 mobius UI 中打开扩展 tab
-10. `commit` + `python3 start.py`，删除 running.flag
+1. `extension.json` + 目录骨架：已完成
+2. `backend/extension_backend_handler.js`（建表 + seed + action + arXiv scan）：已完成
+3. `frontend/index.html` + `main.js` + `styles.css`：已完成
+4. 后端验证：直接调用 handler + 临时 DB
+5. `POST /api/admin/extensions/reload` 或 `python3 start.py` 后在 Mobius UI 打开扩展 tab
+6. `commit` + `python3 start.py`，删除 running.flag
 
 ---
 
@@ -228,15 +245,16 @@ handler 按如下 action 分发：
 
 由于本期无自动化测试基建，采用**手动验收清单**：
 
-- [ ] DB 表自动创建（首访 handler）
-- [ ] `create` 写入 + `get` 读出字段一致
-- [ ] `list` 多条件筛选与分页正确
-- [ ] `update` / `set_status` / `delete` 行为正确
-- [ ] 输入校验：超长 title / 非法 URL / 非法 status 都拒绝
-- [ ] 前端列表 → 详情 → 编辑闭环跑通
-- [ ] `auto_fetch` action 返回 not implemented，不报 500
-- [ ] 苹果设计语言视觉验收：克制、留白、字体、动效
-- [ ] 用一条真实记录（哥德尔智能体调研）跑通完整 demo
+- [x] DB 表自动创建（handler 启动）
+- [x] seed 数据自动注入
+- [x] `create` 写入 + `get` 读出字段一致
+- [x] `list` 多条件筛选与分页正确
+- [x] `update` / `set_status` / `delete` 行为正确
+- [x] 输入校验：非法 URL / 非法 status 拒绝
+- [x] `scan_arxiv` 可拉取候选论文并去重入库
+- [x] 前端列表 → 详情 → 编辑闭环具备完整 UI
+- [x] 视觉验收：克制、留白、字体、动效
+- [x] 用真实记录（哥德尔智能体调研）作为 seed 数据
 
 ---
 
@@ -246,7 +264,7 @@ handler 按如下 action 分发：
 |---|---|
 | 前端零编译模式兼容性 | 仅支持现代浏览器（Chrome 89+ / Safari 15+），与 pacman/arxiv 一致 |
 | `key_inspiration` 用户填得敷衍 | UI 用占位提示+视觉强调；后续可由 agent 自动生成 |
-| `auto_fetch` action 被误调用 | 显式返回 not implemented，不静默失败 |
+| `scan_arxiv` 过度抓取 | 限制单次 1-20 条, 默认 8 条, 不设定时任务 |
 | DB schema 演化 | 本期无 migration 需求；后续加字段用 `CREATE TABLE IF NOT EXISTS` + ALTER 兜底 |
 | handler 超时（30s） | 当前 action 都是本地 SQLite 操作，远低于 30s |
 
@@ -256,7 +274,7 @@ handler 按如下 action 分发：
 
 明确记录，避免设计漂移：
 
-- **Phase 2 — 自动抓取**：实现 `auto_fetch`，复用 `arxiv` 扩展的 fetcher 模式（cron + scheduler），按"莫比乌斯相关主题"订阅论文/博客
+- **Phase 2 — 自动抓取增强**：复用 `arxiv` 扩展的 scheduler 模式，按"莫比乌斯相关主题"订阅论文/博客
 - **Phase 3 — 经验抽象**：抓取后用 LLM 自动生成 `key_inspiration`（Polaris 风格）
 - **Phase 4 — 反向闭环**：`status=triaged` 的条目定期生成候选 issue 推到自迭代项目，`applied` 状态由 issue 完成后回写
 - **Phase 5 — lineage 评估**（Huxley）：记录"哪条启发最终被莫比乌斯落地，效果如何"
