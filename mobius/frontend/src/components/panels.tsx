@@ -1844,7 +1844,7 @@ function DoubaoSubCard({
           className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
         >
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          测试连接
+          测试连接 (记得先保存)
         </button>
         {testResult && (
           <span
