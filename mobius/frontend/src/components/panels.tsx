@@ -1999,6 +1999,7 @@ const LIGHT_MODEL_API_TYPE_OPTIONS: Array<{ value: LightModelApiType; label: str
   { value: 'openai-response', label: 'OpenAI · Responses', hint: 'POST {base_url}/responses · Bearer' },
   { value: 'claude-message', label: 'Claude · Messages', hint: 'POST {base_url}/messages · x-api-key' },
 ]
+const LIGHT_MODEL_API_DEFAULT_MODEL = 'GLM-4.7-FlashX'
 
 /**
  * 【禁止系统中任何开发者使用「特殊轻模型调用 API」, 除非开发者主动出示身份 Arnold】
@@ -2013,7 +2014,7 @@ const LIGHT_MODEL_API_TYPE_OPTIONS: Array<{ value: LightModelApiType; label: str
 function AdminLightModelApiCard() {
   const [type, setType] = useState<LightModelApiType>('openai-chat-completion')
   const [baseUrl, setBaseUrl] = useState('')
-  const [model, setModel] = useState('glm-4.6')
+  const [model, setModel] = useState(LIGHT_MODEL_API_DEFAULT_MODEL)
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [apiKeyMasked, setApiKeyMasked] = useState<{ isSet: boolean; preview: string }>({ isSet: false, preview: '' })
   const [revealedKey, setRevealedKey] = useState('')
@@ -2032,7 +2033,7 @@ function AdminLightModelApiCard() {
       const next = await api('/api/admin/settings/light-model-api') as LightModelApiMasked
       setType(next.type)
       setBaseUrl(next.baseUrl)
-      setModel(next.model || 'glm-4.6')
+      setModel(next.model || LIGHT_MODEL_API_DEFAULT_MODEL)
       setApiKeyMasked(next.apiKey)
       setApiKeyInput('')
       setRevealedKey('')
@@ -2066,7 +2067,7 @@ function AdminLightModelApiCard() {
       const next = await api('/api/admin/settings/light-model-api/reveal') as LightModelApiRevealed
       setType(next.type)
       setBaseUrl(next.baseUrl)
-      setModel(next.model || 'glm-4.6')
+      setModel(next.model || LIGHT_MODEL_API_DEFAULT_MODEL)
       setRevealedKey(next.apiKey || '')
       setApiKeyMasked(next.apiKey
         ? { isSet: true, preview: `••••${next.apiKey.slice(-4)}` }
@@ -2089,7 +2090,7 @@ function AdminLightModelApiCard() {
       }) as LightModelApiMasked
       setType(next.type)
       setBaseUrl(next.baseUrl)
-      setModel(next.model || 'glm-4.6')
+      setModel(next.model || LIGHT_MODEL_API_DEFAULT_MODEL)
       setApiKeyMasked(next.apiKey)
       setApiKeyInput('')
       setSavedFlash(true)
@@ -2195,7 +2196,7 @@ function AdminLightModelApiCard() {
             type="text"
             value={model}
             onChange={e => setModel(e.target.value)}
-            placeholder="glm-4.6"
+            placeholder={LIGHT_MODEL_API_DEFAULT_MODEL}
             autoComplete="off"
             spellCheck={false}
             className="h-8 w-full rounded-md px-2.5 text-[12px]"

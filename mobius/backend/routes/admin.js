@@ -964,7 +964,7 @@ router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
     const cfg = adminSettings.getLightModelApi();
     const model = String(req.body?.model || cfg.model || '').trim();
     if (!model) {
-      return res.status(400).json({ ok: false, error: '测试时需要填一个模型名 (例如 glm-4.6)' });
+      return res.status(400).json({ ok: false, error: '测试时需要填一个模型名 (例如 GLM-4.7-FlashX)' });
     }
     const { testLightModelApi } = require('../services/light-model-api-test');
     const result = await testLightModelApi({ ...cfg, model });

@@ -195,7 +195,7 @@ async function testLightModelApi({ type, baseUrl, apiKey, model }) {
   const m = String(model || '').trim()
   if (!url) throw new Error('base_url 未配置')
   if (!key) throw new Error('api_key 未配置')
-  if (!m) throw new Error('测试时需要填一个模型名 (例如 glm-4.6)')
+  if (!m) throw new Error('测试时需要填一个模型名 (例如 GLM-4.7-FlashX)')
   const handlers = {
     'openai-chat-completion': callOpenAiChatCompletion,
     'openai-response': callOpenAiResponse,

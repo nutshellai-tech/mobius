@@ -45,7 +45,7 @@ const LIGHT_MODEL_API_TYPES = Object.freeze([
   'claude-message',
 ])
 const LIGHT_MODEL_API_DEFAULT_TYPE = 'openai-chat-completion'
-const LIGHT_MODEL_API_DEFAULT_MODEL = 'glm-4.6'
+const LIGHT_MODEL_API_DEFAULT_MODEL = 'GLM-4.7-FlashX'
 
 const DEFAULTS = Object.freeze({
   modelPromptLimits: {
