@@ -1113,14 +1113,16 @@ export function ProjectSettingsPanel({
                 {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === editVisibility)?.description}
               </p>
               <div className="mt-2 space-y-1.5">
-                <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+                <label className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
                   <input type="checkbox" checked={editCanPostIssue} disabled={!canManageProject} onChange={e => setEditCanPostIssue(e.target.checked)}
-                    className="w-4 h-4 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                    className="sr-only" />
+                  <SettingsSwitch checked={editCanPostIssue} disabled={!canManageProject} />
                   读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
                 </label>
-                <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+                <label className={`flex items-center gap-3 text-[12px] select-none ${canManageProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} style={{ color: 'var(--text-secondary)' }}>
                   <input type="checkbox" checked={editCanRunSession} disabled={!canManageProject} onChange={e => setEditCanRunSession(e.target.checked)}
-                    className="w-4 h-4 accent-blue-500 cursor-pointer disabled:cursor-not-allowed" />
+                    className="sr-only" />
+                  <SettingsSwitch checked={editCanRunSession} disabled={!canManageProject} />
                   读者可启动执行会话 (同上, private 永远只允许 owner)
                 </label>
               </div>

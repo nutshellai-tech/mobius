@@ -950,14 +950,16 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
               {PROJECT_VISIBILITY_OPTIONS.find(option => option.value === visibility)?.description}
             </p>
             <div className="mt-2 space-y-1.5">
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+              <label className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
                 <input type="checkbox" checked={canPostIssue} onChange={e => { setCanPostIssue(e.target.checked); setErr('') }}
-                  className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                  className="sr-only" />
+                <ModalSwitch checked={canPostIssue} />
                 读者可创建任务单 (private 永远只允许 owner, 不受此开关影响)
               </label>
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
+              <label className="flex items-center gap-3 text-[12px] cursor-pointer select-none" style={{ color: 'var(--text-secondary)' }}>
                 <input type="checkbox" checked={canRunSession} onChange={e => { setCanRunSession(e.target.checked); setErr('') }}
-                  className="w-4 h-4 accent-blue-500 cursor-pointer" />
+                  className="sr-only" />
+                <ModalSwitch checked={canRunSession} />
                 读者可启动执行会话 (同上, private 永远只允许 owner)
               </label>
             </div>
