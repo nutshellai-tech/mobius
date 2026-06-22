@@ -9,6 +9,8 @@ import { BoxGeometry } from 'three/src/geometries/BoxGeometry.js'
 import { CircleGeometry } from 'three/src/geometries/CircleGeometry.js'
 import { PlaneGeometry } from 'three/src/geometries/PlaneGeometry.js'
 import { TorusGeometry } from 'three/src/geometries/TorusGeometry.js'
+import { SphereGeometry } from 'three/src/geometries/SphereGeometry.js'
+import { OctahedronGeometry } from 'three/src/geometries/OctahedronGeometry.js'
 import { LineBasicMaterial } from 'three/src/materials/LineBasicMaterial.js'
 import { MeshBasicMaterial } from 'three/src/materials/MeshBasicMaterial.js'
 import { MeshStandardMaterial } from 'three/src/materials/MeshStandardMaterial.js'
@@ -42,11 +44,27 @@ export type ResearchTeamSceneAgent = {
   status?: string
 }
 
+export type SceneKind = 'city' | 'lab' | 'space'
+export type AvatarKind = 'robot' | 'orb' | 'crystal'
+
+export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
+  { value: 'city', label: '城市天际线' },
+  { value: 'lab', label: '研究实验室' },
+  { value: 'space', label: '深空星港' },
+]
+export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
+  { value: 'robot', label: '方块机器人' },
+  { value: 'orb', label: '能量球体' },
+  { value: 'crystal', label: '晶体核心' },
+]
+
 type SceneProps = {
   agents: ResearchTeamSceneAgent[]
   selectedId: string | null
   onSelect: (id: string) => void
   theme: ThemeName
+  sceneKind?: SceneKind
+  avatarKind?: AvatarKind
 }
 
 type SceneTarget = {
@@ -137,6 +155,43 @@ function paletteForTheme(theme: SceneProps['theme']): Palette {
     labelMuted: '#94a3b8',
     labelSkill: '#93c5fd',
   }
+}
+
+// 场景切换: 在主题 palette 基础上叠加场景色调 (lab 绿调 / space 紫调 / city 默认).
+function applySceneKind(palette: Palette, sceneKind: SceneKind | undefined, theme: SceneProps['theme']): Palette {
+  if (sceneKind === 'space') {
+    return {
+      ...palette,
+      background: theme === 'light' ? 0xc7d2fe : 0x05030f,
+      fog: theme === 'light' ? 0xc7d2fe : 0x0b0524,
+      sky: 0x1e1b4b,
+      ground: theme === 'light' ? 0x312e81 : 0x0d0a26,
+      groundFar: 0x4c1d95,
+      stage: theme === 'light' ? 0x1e1b4b : 0x0a0820,
+      platform: 0xa78bfa,
+      runway: 0xc084fc,
+      runwaySoft: 0x818cf8,
+      building: 0x1e1b4b,
+      buildingTop: 0x818cf8,
+    }
+  }
+  if (sceneKind === 'lab') {
+    return {
+      ...palette,
+      background: theme === 'light' ? 0xecfdf5 : 0x04140d,
+      fog: theme === 'light' ? 0xecfdf5 : 0x082017,
+      sky: 0x064e3b,
+      ground: theme === 'light' ? 0xa7f3d0 : 0x0a1f15,
+      groundFar: 0x065f46,
+      stage: theme === 'light' ? 0xd1fae5 : 0x06170f,
+      platform: 0x34d399,
+      runway: 0x6ee7b7,
+      runwaySoft: 0x10b981,
+      building: 0x14532d,
+      buildingTop: 0x4ade80,
+    }
+  }
+  return palette
 }
 
 function truncateText(text: string, max: number) {
@@ -419,7 +474,7 @@ function makeFormationLines(positions: Vector3[], palette: Palette, theme: Scene
   return root
 }
 
-function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected: boolean, theme: SceneProps['theme']) {
+function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected: boolean, theme: SceneProps['theme'], avatarKind: AvatarKind = 'robot') {
   const bodyColor = agent.locked ? LOCKED_COLOR : color
   const glow = new Color(bodyColor)
   const bodyMat = new MeshStandardMaterial({
@@ -448,7 +503,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   })
 
   const group = new Group()
-  const pad = new Mesh(new CircleGeometry(0.74, 56), glowMat)
+  const pad = new Mesh(new CircleGeometry(selected ? 0.82 : 0.74, 56), glowMat)
   pad.rotation.x = -Math.PI / 2
   pad.scale.z = 0.48
   pad.position.y = 0.012
@@ -458,31 +513,40 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   ring.scale.z = 0.6
   ring.position.y = 0.055
 
-  const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat)
-  base.position.y = 0.15
-  const body = new Mesh(new BoxGeometry(0.64, 0.9, 0.56), bodyMat)
-  body.position.y = 0.7
-  const top = new Mesh(new BoxGeometry(0.44, 0.34, 0.44), topMat)
-  top.position.y = 1.32
-  const frontPanel = new Mesh(new BoxGeometry(0.44, 0.12, 0.045), panelMat)
-  frontPanel.position.set(0, 0.78, 0.305)
-  const topPanel = new Mesh(new BoxGeometry(0.28, 0.075, 0.04), panelMat.clone())
-  topPanel.position.set(0, 1.35, 0.245)
-  const selectedFrame = selected
-    ? new Mesh(new BoxGeometry(0.92, 1.34, 0.035), glowMat.clone())
-    : null
-  if (selectedFrame) selectedFrame.position.set(0, 0.78, -0.31)
+  const clickable: Object3D[] = []
 
-  group.add(pad, ring, base, body, top, frontPanel, topPanel)
-  if (selectedFrame) group.add(selectedFrame)
-  setAgentId(group, agent.id)
-  return {
-    group,
-    clickable: [base, body, top, frontPanel, topPanel],
+  if (avatarKind === 'orb') {
+    // 能量球体: 大球主体 + 小球顶 + 半透明外壳
+    const body = new Mesh(new SphereGeometry(0.62, 48, 48), bodyMat); body.position.y = 0.78
+    const top = new Mesh(new SphereGeometry(0.2, 32, 32), topMat); top.position.y = 1.42
+    const shell = new Mesh(new SphereGeometry(0.68, 48, 48), panelMat.clone()); shell.position.y = 0.78
+    group.add(pad, ring, body, top, shell)
+    clickable.push(body, top, shell)
+  } else if (avatarKind === 'crystal') {
+    // 晶体核心: 八面体主体 + 小晶体顶 + 半透明晶壳
+    const body = new Mesh(new OctahedronGeometry(0.66, 0), bodyMat); body.position.y = 0.82
+    const top = new Mesh(new OctahedronGeometry(0.26, 0), topMat); top.position.y = 1.5
+    const shell = new Mesh(new OctahedronGeometry(0.72, 0), panelMat.clone()); shell.position.y = 0.82
+    group.add(pad, ring, body, top, shell)
+    clickable.push(body, top, shell)
+  } else {
+    // robot (默认): 方块机器人
+    const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
+    const body = new Mesh(new BoxGeometry(0.64, 0.9, 0.56), bodyMat); body.position.y = 0.7
+    const top = new Mesh(new BoxGeometry(0.44, 0.34, 0.44), topMat); top.position.y = 1.32
+    const frontPanel = new Mesh(new BoxGeometry(0.44, 0.12, 0.045), panelMat); frontPanel.position.set(0, 0.78, 0.305)
+    const topPanel = new Mesh(new BoxGeometry(0.28, 0.075, 0.04), panelMat.clone()); topPanel.position.set(0, 1.35, 0.245)
+    group.add(pad, ring, base, body, top, frontPanel, topPanel)
+    clickable.push(base, body, top, frontPanel, topPanel)
+    const selectedFrame = selected ? new Mesh(new BoxGeometry(0.92, 1.34, 0.035), glowMat.clone()) : null
+    if (selectedFrame) { selectedFrame.position.set(0, 0.78, -0.31); group.add(selectedFrame) }
   }
+
+  setAgentId(group, agent.id)
+  return { group, clickable }
 }
 
-export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme }: SceneProps) {
+export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot' }: SceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const sceneRef = useRef<Scene | null>(null)
@@ -623,7 +687,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme }: 
     const controls = controlsRef.current
     if (!scene || !stageRoot || !pieceRoot || !camera || !controls) return
 
-    const palette = paletteForTheme(theme)
+    const palette = applySceneKind(paletteForTheme(theme), sceneKind, theme)
     scene.background = new Color(palette.background)
     scene.fog = new FogExp2(palette.fog, theme === 'light' ? 0.018 : 0.028)
 
@@ -651,7 +715,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme }: 
       const position = positions[index] || new Vector3()
       const selected = selectedId === agent.id
       const color = agent.role === 'chief_researcher' ? CHIEF_COLOR : ASSISTANT_COLOR
-      const { group, clickable } = makeAgentAvatar(agent, agent.locked ? LOCKED_COLOR : color, selected, theme)
+      const { group, clickable } = makeAgentAvatar(agent, agent.locked ? LOCKED_COLOR : color, selected, theme, avatarKind)
       const depthScale = clamp(1.02 + (position.z - target.center.z) * 0.035, 0.9, 1.14)
       group.position.copy(position)
       group.scale.setScalar((selected ? 1.06 : 1) * depthScale)
@@ -671,7 +735,7 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme }: 
       pieceRoot.add(group)
       clickableRef.current.push(...clickable)
     })
-  }, [agents, positions, selectedId, theme])
+  }, [agents, positions, selectedId, theme, sceneKind, avatarKind])
 
   return (
     <div className="relative h-full min-h-[360px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>

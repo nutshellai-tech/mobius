@@ -1,8 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, Lock, Plus, Rocket, Search, Trash2, Users, X } from 'lucide-react'
+import { CheckCircle2, Loader2, Lock, Plus, Rocket, Trash2, Users, X, Sparkles, Layers } from 'lucide-react'
 import { api, useStore } from '../store'
 import { ErrBanner } from './modals'
-import type { ResearchTeamSceneAgent } from './research-agent-team-scene'
+import { SCENE_KIND_OPTIONS, AVATAR_KIND_OPTIONS } from './research-agent-team-scene'
+import type { ResearchTeamSceneAgent, SceneKind, AvatarKind } from './research-agent-team-scene'
 
 type ResearchRole = 'chief_researcher' | 'research_assistant'
 type SessionLanguage = 'zh' | 'en'
@@ -286,6 +287,9 @@ export function ResearchAgentTeamModal({
   const [defaultExcludedMemoryIds, setDefaultExcludedMemoryIds] = useState<string[]>([])
   const [agents, setAgents] = useState<TeamAgent[]>([])
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
+  const [mode, setMode] = useState<'single' | 'team'>('team')
+  const [sceneKind, setSceneKind] = useState<SceneKind>('city')
+  const [avatarKind, setAvatarKind] = useState<AvatarKind>('robot')
   const [selectionPanel, setSelectionPanel] = useState<SelectionPanel | null>(null)
   const initializedRef = useRef(false)
 
@@ -416,6 +420,54 @@ export function ResearchAgentTeamModal({
     }
     setAgents(prev => [...prev, next])
     setEditingTarget({ agentId: next.id, field: 'purpose' })
+  }
+
+  // 模式切换: 单个 Agent (只留一个待创建) / Agent 团队 (补满预设到 3).
+  const switchMode = (next: 'single' | 'team') => {
+    if (next === mode || submitting) return
+    setMode(next)
+    const defaultModelKey = modelOptions[0]?.key || DEFAULT_MODEL
+    if (next === 'single') {
+      const unlocked = agents.filter(a => !a.locked)
+      const keep = unlocked[0] || null
+      let nextAgents = agents.filter(a => a.locked || (keep && a.id === keep.id))
+      if (nextAgents.length === 0) {
+        nextAgents = [{
+          id: makeLocalId(), locked: false, role: 'research_assistant', name: '研究助理 1',
+          purpose: '协助完成研究子任务，并把关键进展写回 Research Blackboard。',
+          model: defaultModelKey, language: 'zh', mainSkillId: '',
+          excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, '', agentSkills),
+          excludedMemoryIds: defaultExcludedMemoryIds,
+        }]
+      }
+      setAgents(nextAgents)
+      const first = nextAgents.find(a => !a.locked) || nextAgents[0]
+      if (first) setEditingTarget({ agentId: first.id, field: 'purpose' })
+    } else {
+      const hasChief = agents.some(a => a.role === 'chief_researcher')
+      const nextAgents = [...agents]
+      if (!hasChief) {
+        const preset = DEFAULT_TEAM_PRESETS[0]
+        const ms = findSkillByName(agentSkills, preset.skillName)
+        nextAgents.unshift({
+          id: makeLocalId(), locked: false, role: 'chief_researcher', name: preset.name, purpose: preset.purpose,
+          model: defaultModelKey, language: 'zh', mainSkillId: ms?.id || '',
+          excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, ms?.id || '', agentSkills),
+          excludedMemoryIds: defaultExcludedMemoryIds,
+        })
+      }
+      while (nextAgents.length < 3 && nextAgents.length < MAX_TEAM_SIZE) {
+        const preset = DEFAULT_TEAM_PRESETS[nextAgents.length % DEFAULT_TEAM_PRESETS.length]
+        const ms = findSkillByName(agentSkills, preset.skillName)
+        nextAgents.push({
+          id: makeLocalId(), locked: false, role: preset.role, name: preset.name, purpose: preset.purpose,
+          model: defaultModelKey, language: 'zh', mainSkillId: ms?.id || '',
+          excludedSkillIds: normalizeSkillExclusions(defaultExcludedSkillIds, ms?.id || '', agentSkills),
+          excludedMemoryIds: defaultExcludedMemoryIds,
+        })
+      }
+      setAgents(nextAgents)
+    }
   }
 
   const deleteAgent = (agentId: string) => {
@@ -635,7 +687,7 @@ export function ResearchAgentTeamModal({
               <Users className="h-4 w-4" strokeWidth={1.8} />
             </div>
             <div>
-              <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>创建 Agent 团队</div>
+              <div className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{mode === 'single' ? '创建单个 Research Agent' : '创建 Research Agent 团队'}</div>
               <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {agents.length}/{MAX_TEAM_SIZE} 个 Agent · 逐个创建并自动启动
               </div>
@@ -656,142 +708,159 @@ export function ResearchAgentTeamModal({
         ) : (
           <div className="grid flex-1 min-h-0 grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(430px,0.42fr)_minmax(0,0.58fr)]">
             <section className="flex min-h-0 flex-col gap-3">
-              <div className="rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="min-w-0 text-[12px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                    {selectedAgent ? `${selectedAgent.name || '未命名 Agent'} · ${selectedFieldLabel}` : '多用途文本框'}
-                  </div>
-                  {selectedAgent?.locked && (
-                    <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px]" style={{ background: 'var(--bg-card-hover)', color: 'var(--text-muted)' }}>
-                      <Lock className="h-3 w-3" /> 锁定
-                    </span>
-                  )}
-                </div>
-                <textarea
-                  value={selectedText}
-                  disabled={!editingTarget || !!selectedAgent?.locked || submitting}
-                  onChange={e => updateSelectedText(e.target.value)}
-                  className="h-28 w-full resize-none rounded-lg border px-3 py-2 text-[13px] leading-relaxed outline-none placeholder:!text-[var(--placeholder-color)] focus:border-blue-500/40 disabled:cursor-not-allowed disabled:opacity-60"
-                  placeholder="点击 Agent 行里的放大镜选择要编辑的名称或目的"
-                  style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}
-                />
+              {/* 模式切换: 单个 Agent / Agent 团队 (双模式共用本页) */}
+              <div className="grid grid-cols-2 gap-1.5 rounded-lg p-1" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                {([['single', '单个 Agent'], ['team', 'Agent 团队']] as const).map(([k, label]) => {
+                  const active = mode === k
+                  return (
+                    <button key={k} type="button" onClick={() => switchMode(k)} disabled={submitting}
+                      className="h-8 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40"
+                      style={active ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)' } : { color: 'var(--text-muted)' }}>
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                <div className="sticky top-0 z-10 flex items-center justify-between border-b px-3 py-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                  <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>Agent 列表</span>
-                  <button onClick={addAssistant} disabled={submitting || agents.length >= MAX_TEAM_SIZE}
-                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+              {/* Tab 栏: 一个 Agent 一个 Tab, 可水平滚动; 切 Tab 同步高亮右侧 3D 形象 */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'thin' }}>
+                {agents.map((agent, index) => {
+                  const active = selectedAgent?.id === agent.id
+                  return (
+                    <button key={agent.id} type="button" onClick={() => chooseField(agent.id, 'purpose')} disabled={submitting}
+                      title={agent.name}
+                      className="group relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors"
+                      style={active
+                        ? { borderColor: 'rgba(56,189,248,0.55)', background: isDark ? 'rgba(56,189,248,0.1)' : 'rgba(14,165,233,0.08)', color: 'var(--text-primary)' }
+                        : { borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded text-[9px] font-bold"
+                        style={{ background: agent.role === 'chief_researcher' ? 'rgba(16,185,129,0.18)' : 'rgba(59,130,246,0.18)', color: agent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>
+                        {index + 1}
+                      </span>
+                      <span className="max-w-[92px] truncate">{agent.name || `Agent ${index + 1}`}</span>
+                      {agent.locked && <Lock className="h-3 w-3" style={{ color: 'var(--text-muted)' }} />}
+                      {!agent.locked && agent.role !== 'chief_researcher' && (
+                        <span role="button" onClick={(e) => { e.stopPropagation(); deleteAgent(agent.id) }}
+                          className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded text-red-400 opacity-0 transition-opacity hover:bg-red-500/10 group-hover:opacity-100">
+                          <X className="h-3 w-3" />
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+                {mode === 'team' && agents.length < MAX_TEAM_SIZE && (
+                  <button onClick={addAssistant} disabled={submitting}
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-dashed px-2.5 text-[12px] text-emerald-400 transition-colors hover:bg-emerald-500/10 disabled:opacity-40"
+                    style={{ borderColor: 'rgba(16,185,129,0.4)' }}>
                     <Plus className="h-3.5 w-3.5" /> 添加
                   </button>
-                </div>
+                )}
+              </div>
 
-                <div className="space-y-2 p-2">
-                  {agents.map((agent, index) => {
-                    const active = selectedAgent?.id === agent.id
-                    const mainSkill = selectedMainSkill(agent)
-                    const skillCount = selectedSkillCount(agent, availableSkills, agentSkills)
-                    const memoryCount = selectedMemoryCount(agent, availableMemories)
-                    return (
-                      <div key={agent.id}
-                        className="rounded-lg border p-3 transition-colors"
-                        style={{
-                          borderColor: active ? 'rgba(56,189,248,0.55)' : 'var(--border-color)',
-                          background: active ? (isDark ? 'rgba(56,189,248,0.08)' : 'rgba(14,165,233,0.06)') : 'var(--bg-secondary)',
-                        }}>
-                        <div className="mb-2 flex items-start gap-2">
-                          <button onClick={() => chooseField(agent.id, 'name')}
-                            className="mt-0.5 rounded-md p-1 transition-colors hover:bg-[var(--bg-hover)]"
-                            title={agent.locked ? '查看名称' : '编辑名称'}
-                            style={{ color: editingTarget?.agentId === agent.id && editingTarget.field === 'name' ? '#38bdf8' : 'var(--text-muted)' }}>
-                            <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
-                          </button>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.name || `Agent ${index + 1}`}</span>
-                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{
-                                background: agent.role === 'chief_researcher' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)',
-                                color: agent.role === 'chief_researcher' ? '#10b981' : '#3b82f6',
-                              }}>{roleLabel(agent.role)}</span>
-                              {agent.locked && <Lock className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} />}
-                            </div>
-                            <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                              {agent.status || (agent.locked ? '已创建' : '待创建')}
-                            </div>
-                          </div>
-                          <button onClick={() => chooseField(agent.id, 'purpose')}
-                            className="mt-0.5 rounded-md p-1 transition-colors hover:bg-[var(--bg-hover)]"
-                            title={agent.locked ? '查看目的' : '编辑目的'}
-                            style={{ color: editingTarget?.agentId === agent.id && editingTarget.field === 'purpose' ? '#38bdf8' : 'var(--text-muted)' }}>
-                            <Search className="h-3.5 w-3.5" strokeWidth={1.8} />
-                          </button>
-                          {!agent.locked && agent.role !== 'chief_researcher' && (
-                            <button onClick={() => deleteAgent(agent.id)} disabled={submitting}
-                              className="mt-0.5 rounded-md p-1 text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"
-                              title="删除">
-                              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <select value={agent.model} disabled={agent.locked || submitting}
-                            onChange={e => updateAgent(agent.id, { model: e.target.value })}
-                            className="h-8 rounded-md border px-2 text-[11px] outline-none disabled:opacity-60"
-                            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
-                            {modelOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.title || opt.label}</option>)}
-                          </select>
-                          <select value={agent.language} disabled={agent.locked || submitting}
-                            onChange={e => updateAgent(agent.id, { language: e.target.value === 'en' ? 'en' : 'zh' })}
-                            className="h-8 rounded-md border px-2 text-[11px] outline-none disabled:opacity-60"
-                            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
-                            <option value="zh">中文</option>
-                            <option value="en">English</option>
-                          </select>
-                          <select value={agent.mainSkillId} disabled={agent.locked || submitting}
-                            onChange={e => setMainSkill(agent, e.target.value)}
-                            className="col-span-2 h-8 rounded-md border px-2 text-[11px] outline-none disabled:opacity-60"
-                            style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
-                            <option value="">{agent.locked ? '已创建' : '完全自定义'}</option>
-                            {agentSkills.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
-                          </select>
-                        </div>
-
-                        <div className="mt-2 grid grid-cols-2 gap-2">
-                          <button onClick={() => setSelectionPanel({ agentId: agent.id, type: 'skill' })} disabled={agent.locked || submitting}
-                            className="h-8 rounded-md border px-2 text-[11px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                            style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
-                            Skill {skillCount}/{availableSkills.length}
-                          </button>
-                          <button onClick={() => setSelectionPanel({ agentId: agent.id, type: 'memory' })} disabled={agent.locked || submitting}
-                            className="h-8 rounded-md border px-2 text-[11px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                            style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
-                            Memory {memoryCount}/{availableMemories.length}
-                          </button>
-                        </div>
-
-                        {mainSkill && (
-                          <div className="mt-2 truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            Main Skill: {mainSkill.name}
-                          </div>
-                        )}
+              {/* 选中 Tab 的完整配置面板: 名称/目的/模型/语言/主Skill/Skill/Memory 集中编辑 */}
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                {selectedAgent ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: selectedAgent.role === 'chief_researcher' ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)', color: selectedAgent.role === 'chief_researcher' ? '#10b981' : '#3b82f6' }}>{roleLabel(selectedAgent.role)}</span>
+                      {selectedAgent.locked && <span className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}><Lock className="h-3 w-3" /> 已创建·锁定</span>}
+                      <span className="ml-auto truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{selectedAgent.status || (selectedAgent.locked ? '已创建' : '待创建')}</span>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>名称</label>
+                      <input value={selectedAgent.name} disabled={selectedAgent.locked || submitting}
+                        onChange={e => updateAgent(selectedAgent.id, { name: e.target.value })}
+                        className="h-9 w-full rounded-md border px-2.5 text-[13px] outline-none focus:border-blue-500/40 disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>目的 / 职责</label>
+                      <textarea value={selectedAgent.purpose} disabled={selectedAgent.locked || submitting}
+                        onChange={e => updateAgent(selectedAgent.id, { purpose: e.target.value })}
+                        className="h-20 w-full resize-none rounded-md border px-2.5 py-2 text-[12px] leading-relaxed outline-none focus:border-blue-500/40 disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>模型</label>
+                        <select value={selectedAgent.model} disabled={selectedAgent.locked || submitting}
+                          onChange={e => updateAgent(selectedAgent.id, { model: e.target.value })}
+                          className="h-9 w-full rounded-md border px-2 text-[12px] outline-none disabled:opacity-60"
+                          style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                          {modelOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.title || opt.label}</option>)}
+                        </select>
                       </div>
-                    )
-                  })}
-                </div>
+                      <div>
+                        <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>语言</label>
+                        <select value={selectedAgent.language} disabled={selectedAgent.locked || submitting}
+                          onChange={e => updateAgent(selectedAgent.id, { language: e.target.value === 'en' ? 'en' : 'zh' })}
+                          className="h-9 w-full rounded-md border px-2 text-[12px] outline-none disabled:opacity-60"
+                          style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                          <option value="zh">中文</option>
+                          <option value="en">English</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px]" style={{ color: 'var(--text-muted)' }}>主 Skill（选定后关联自动锁定 · 冲突互斥）</label>
+                      <select value={selectedAgent.mainSkillId} disabled={selectedAgent.locked || submitting}
+                        onChange={e => setMainSkill(selectedAgent, e.target.value)}
+                        className="h-9 w-full rounded-md border px-2 text-[12px] outline-none disabled:opacity-60"
+                        style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                        <option value="">{selectedAgent.locked ? '已创建' : '完全自定义'}</option>
+                        {agentSkills.map(sk => <option key={sk.id} value={sk.id}>{sk.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setSelectionPanel({ agentId: selectedAgent.id, type: 'skill' })} disabled={selectedAgent.locked || submitting}
+                        className="h-9 rounded-md border px-2 text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60"
+                        style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+                        Skill {selectedSkillCount(selectedAgent, availableSkills, agentSkills)}/{availableSkills.length}
+                      </button>
+                      <button onClick={() => setSelectionPanel({ agentId: selectedAgent.id, type: 'memory' })} disabled={selectedAgent.locked || submitting}
+                        className="h-9 rounded-md border px-2 text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-60"
+                        style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>
+                        Memory {selectedMemoryCount(selectedAgent, availableMemories)}/{availableMemories.length}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>暂无 Agent，点击「添加」创建</div>
+                )}
               </div>
             </section>
 
             <section className="flex min-h-0 flex-col gap-3">
+              {/* 场景切换 / 形象素材选择 工具栏 (需求4) */}
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border p-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <label className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <Layers className="h-3.5 w-3.5" /> 场景
+                  <select value={sceneKind} onChange={e => setSceneKind(e.target.value as SceneKind)}
+                    className="h-8 rounded-md border px-2 text-[12px] outline-none"
+                    style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                    {SCENE_KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  <Sparkles className="h-3.5 w-3.5" /> 形象
+                  <select value={avatarKind} onChange={e => setAvatarKind(e.target.value as AvatarKind)}
+                    className="h-8 rounded-md border px-2 text-[12px] outline-none"
+                    style={{ background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-primary)' }}>
+                    {AVATAR_KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              </div>
               <Suspense fallback={<ResearchAgentTeamSceneFallback />}>
                 <ResearchAgentTeamScene
                   agents={sceneAgents}
                   selectedId={selectedAgent?.id || null}
-                  onSelect={(id) => setEditingTarget({ agentId: id, field: 'purpose' })}
+                  onSelect={(id) => chooseField(id, 'purpose')}
                   theme={theme}
+                  sceneKind={sceneKind}
+                  avatarKind={avatarKind}
                 />
               </Suspense>
-              <div className="min-h-[112px] rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+              <div className="min-h-[96px] rounded-lg border p-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                 {err && <ErrBanner className="mb-2">{err}</ErrBanner>}
                 {progress.length > 0 ? (
                   <div className="max-h-20 overflow-y-auto text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
@@ -800,7 +869,7 @@ export function ResearchAgentTeamModal({
                 ) : (
                   <div className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" strokeWidth={1.8} />
-                    团队会逐个创建并自动启动，已有 Agent 保持锁定。
+                    {mode === 'single' ? '单个 Agent 模式：创建并自动启动该 Agent。' : '团队模式：逐个创建并自动启动，已有 Agent 保持锁定。'}
                   </div>
                 )}
               </div>
@@ -817,7 +886,7 @@ export function ResearchAgentTeamModal({
           <button onClick={submit} disabled={loadingConfig || submitting}
             className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-500 px-4 text-[13px] text-white transition-colors hover:bg-emerald-600 disabled:opacity-40">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" strokeWidth={1.8} />}
-            {submitting ? '创建并启动中...' : '创建并启动团队'}
+            {submitting ? '创建并启动中...' : (mode === 'single' ? '创建并启动 Agent' : '创建并启动团队')}
           </button>
         </div>
 
