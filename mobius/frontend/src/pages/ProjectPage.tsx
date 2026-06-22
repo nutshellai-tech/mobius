@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, type ReactNode } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useStore, api } from '../store'
 import { TopNav } from '../components/shell'
 import {
@@ -10,7 +11,7 @@ import {
 import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
 import { ProjectSettingsPanel } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
-import { ResizablePanel, useMobileNavBreakpoint } from '../components/resizable-panel'
+import { ResizablePanel, useMobileNavBreakpoint, useIsMobile } from '../components/resizable-panel'
 import type { GitRepoDraft, IssueConfirmAction, ProjectFilter, ProjectListSection } from '../components/project-page/types'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
@@ -96,6 +97,9 @@ export default function ProjectPage() {
   // 项目详情页内容密集 (左栏 + 多面板主区), 把移动端断点提到 1024px,
   // 让平板宽度也进入抽屉式侧栏 + 主区纵向堆叠, 排版更宽松美观.
   useMobileNavBreakpoint(1024)
+  const isMobile = useIsMobile()
+  // 移动端: 项目设置收进右侧抽屉, 主区以「新建 Issue / 列表」为主.
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const [showNewProject, setShowNewProject] = useState(false)
   const [showNewIssue, setShowNewIssue] = useState(false)
@@ -565,88 +569,105 @@ export default function ProjectPage() {
 
         <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
           <div className="max-w-7xl mx-auto p-3 sm:p-6">
-            <div className="flex gap-6 items-start mobius-stack-lg">
-              <ProjectSettingsPanel
-                project={project}
-                values={{
-                  editName,
-                  editDesc,
-                  editBindPath,
-                  editGitRepos,
-                  editDefaultUseWorktree,
-                  editResearchEnabled,
-                  editVisibility,
-                  editAllowUserIds,
-                  editCanPostIssue,
-                  editCanRunSession,
-                  editDefaultModel,
-                  editForgottenFlagMessage,
-                  editForgottenFlagIssueInit,
-                  editForgottenFlagIssueBackoff,
-                  editForgottenFlagIssuePatience,
-                  editForgottenFlagResearchInit,
-                  editForgottenFlagResearchBackoff,
-                  editForgottenFlagResearchPatience,
-                }}
-                setters={{
-                  setEditName,
-                  setEditDesc,
-                  setEditBindPath,
-                  setEditBindPathManual,
-                  setEditGitRepos,
-                  setEditDefaultUseWorktree,
-                  setEditResearchEnabled,
-                  setEditVisibility,
-                  setEditAllowUserIds,
-                  setEditCanPostIssue,
-                  setEditCanRunSession,
-                  setEditDefaultModel,
-                  setEditForgottenFlagMessage,
-                  setEditForgottenFlagIssueInit,
-                  setEditForgottenFlagIssueBackoff,
-                  setEditForgottenFlagIssuePatience,
-                  setEditForgottenFlagResearchInit,
-                  setEditForgottenFlagResearchBackoff,
-                  setEditForgottenFlagResearchPatience,
-                }}
-                metaErr={metaErr}
-                savingMeta={savingMeta}
-                metaDirty={metaDirty}
-                onDeleteProject={() => setShowDelete(true)}
-                onOpenPathPicker={() => setPickerOpen(true)}
-                onArchitectureSessionCreated={handleArchitectureSessionCreated}
-              />
-
-              <ProjectItemsPanel
-                project={project}
-                userParam={userParam}
-                projectId={projectId}
-                section={section}
-                filter={filter}
-                search={search}
-                issues={pagedIssues}
-                researches={filteredResearches}
-                sessionsMap={sessionsMap}
-                issuePagination={{
-                  page: currentIssuePage,
-                  pageSize: ISSUE_PAGE_SIZE,
-                  totalItems: filteredIssues.length,
-                  totalPages: issueTotalPages,
-                  onPageChange: setIssuePage,
-                }}
-                onSectionChange={setSection}
-                canCreateIssue={canCreateIssue}
-                canCreateResearch={canCreateResearch}
-                onCreateIssue={openNewIssue}
-                onCreatePlanningIssue={openNewPlanningIssue}
-                onCreateResearch={openNewResearch}
-                onEditIssue={setEditingIssue}
-                onEditResearch={setEditingResearch}
-                onIssueConfirm={setConfirmAction}
-                onToggleResearchStatus={toggleResearchStatus}
-                onToggleIssueStar={toggleIssueStar}
-              />
-            </div>
+            {(() => {
+              const settingsPanel = (
+                <ProjectSettingsPanel
+                  project={project}
+                  values={{
+                    editName,
+                    editDesc,
+                    editBindPath,
+                    editGitRepos,
+                    editDefaultUseWorktree,
+                    editResearchEnabled,
+                    editVisibility,
+                    editAllowUserIds,
+                    editCanPostIssue,
+                    editCanRunSession,
+                    editDefaultModel,
+                    editForgottenFlagMessage,
+                    editForgottenFlagIssueInit,
+                    editForgottenFlagIssueBackoff,
+                    editForgottenFlagIssuePatience,
+                    editForgottenFlagResearchInit,
+                    editForgottenFlagResearchBackoff,
+                    editForgottenFlagResearchPatience,
+                  }}
+                  setters={{
+                    setEditName,
+                    setEditDesc,
+                    setEditBindPath,
+                    setEditBindPathManual,
+                    setEditGitRepos,
+                    setEditDefaultUseWorktree,
+                    setEditResearchEnabled,
+                    setEditVisibility,
+                    setEditAllowUserIds,
+                    setEditCanPostIssue,
+                    setEditCanRunSession,
+                    setEditDefaultModel,
+                    setEditForgottenFlagMessage,
+                    setEditForgottenFlagIssueInit,
+                    setEditForgottenFlagIssueBackoff,
+                    setEditForgottenFlagIssuePatience,
+                    setEditForgottenFlagResearchInit,
+                    setEditForgottenFlagResearchBackoff,
+                    setEditForgottenFlagResearchPatience,
+                  }}
+                  metaErr={metaErr}
+                  savingMeta={savingMeta}
+                  metaDirty={metaDirty}
+                  onDeleteProject={() => setShowDelete(true)}
+                  onOpenPathPicker={() => setPickerOpen(true)}
+                  onArchitectureSessionCreated={handleArchitectureSessionCreated}
+                />
+              )
+              const itemsPanel = (
+                <ProjectItemsPanel
+                  project={project}
+                  userParam={userParam}
+                  projectId={projectId}
+                  section={section}
+                  filter={filter}
+                  search={search}
+                  issues={pagedIssues}
+                  researches={filteredResearches}
+                  sessionsMap={sessionsMap}
+                  issuePagination={{
+                    page: currentIssuePage,
+                    pageSize: ISSUE_PAGE_SIZE,
+                    totalItems: filteredIssues.length,
+                    totalPages: issueTotalPages,
+                    onPageChange: setIssuePage,
+                  }}
+                  onSectionChange={setSection}
+                  canCreateIssue={canCreateIssue}
+                  canCreateResearch={canCreateResearch}
+                  onCreateIssue={openNewIssue}
+                  onCreatePlanningIssue={openNewPlanningIssue}
+                  onCreateResearch={openNewResearch}
+                  onEditIssue={setEditingIssue}
+                  onEditResearch={setEditingResearch}
+                  onIssueConfirm={setConfirmAction}
+                  onToggleResearchStatus={toggleResearchStatus}
+                  onToggleIssueStar={toggleIssueStar}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              )
+              return isMobile ? (
+                <>
+                  {itemsPanel}
+                  <MobileSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+                    {settingsPanel}
+                  </MobileSettingsDrawer>
+                </>
+              ) : (
+                <div className="flex gap-6 items-start">
+                  {settingsPanel}
+                  {itemsPanel}
+                </div>
+              )
+            })()}
           </div>
         </main>
       </div>
@@ -700,5 +721,41 @@ export default function ProjectPage() {
       {showDelete && <DeleteProjectModal project={project} onClose={() => setShowDelete(false)}
         onDeleted={() => { setShowDelete(false); navigate(`/u/${userParam}`) }} />}
     </div>
+  )
+}
+
+// 移动端「项目设置」抽屉: 从右滑入, 全高 + 内部滚动, 容纳 settings 全部 tab/表单.
+// 复用 .mobius-drawer / .mobius-drawer-backdrop 视觉, --right 变体改为右侧滑入.
+function MobileSettingsDrawer({ open, onClose, children }: { open: boolean; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [open, onClose])
+  if (!open) return null
+  return createPortal(
+    <>
+      <div className="mobius-drawer-backdrop" onClick={onClose} aria-hidden="true" />
+      <aside
+        className="mobius-drawer mobius-drawer--right mobius-drawer--open"
+        role="dialog"
+        aria-modal="true"
+        aria-label="项目设置"
+      >
+        <button type="button" className="mobius-drawer-close" onClick={onClose} aria-label="关闭" title="关闭">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+        {children}
+      </aside>
+    </>,
+    document.body
   )
 }

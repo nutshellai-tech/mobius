@@ -1,4 +1,4 @@
-import { ExternalLink, Wrench } from 'lucide-react'
+import { ExternalLink, Settings, Wrench } from 'lucide-react'
 import { IssueCard } from './IssueCard'
 import { ProjectTabButton, ProjectTabList } from './ProjectTabs'
 import { ResearchCard } from './ResearchCard'
@@ -34,6 +34,7 @@ type ProjectItemsPanelProps = {
   onIssueConfirm: (action: IssueConfirmAction) => void
   onToggleResearchStatus: (research: any, status: 'active' | 'completed') => void
   onToggleIssueStar: (issue: any) => void
+  onOpenSettings?: () => void
 }
 
 export function ProjectItemsPanel({
@@ -58,6 +59,7 @@ export function ProjectItemsPanel({
   onIssueConfirm,
   onToggleResearchStatus,
   onToggleIssueStar,
+  onOpenSettings,
 }: ProjectItemsPanelProps) {
   const extensionName = typeof project.extension_name === 'string' ? project.extension_name : ''
   const canRunExtension = project.kind === 'extension' && !!extensionName && !project.disabled
@@ -75,7 +77,7 @@ export function ProjectItemsPanel({
   }
 
   return (
-    <div className="w-1/2" data-tour="project-items-panel">
+    <div className="w-full lg:w-1/2" data-tour="project-items-panel">
       {project.kind === 'extension' && (
         <div
           data-tour="project-extension-entry"
@@ -124,7 +126,20 @@ export function ProjectItemsPanel({
         </div>
       )}
       <div className="flex items-center justify-between mb-3">
-        <ProjectTabList>
+        <div className="flex items-center gap-2 min-w-0">
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              title="项目设置"
+              aria-label="项目设置"
+              className="lg:hidden h-8 w-8 flex items-center justify-center rounded-lg border flex-shrink-0"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
+          <ProjectTabList>
           <ProjectTabButton active={section === 'issues'} onClick={() => onSectionChange('issues')} data-tour="project-issue-tab">
             Issue
           </ProjectTabButton>
@@ -147,6 +162,7 @@ export function ProjectItemsPanel({
             </ProjectTabButton>
           )}
         </ProjectTabList>
+        </div>
         <button onClick={() => section === 'issues' ? onCreateIssue() : onCreateResearch()}
           data-tour={section === 'issues' ? 'project-new-issue' : 'project-new-research'}
           disabled={section === 'issues' ? !canCreateIssue : (!project.research_enabled || !canCreateResearch)}

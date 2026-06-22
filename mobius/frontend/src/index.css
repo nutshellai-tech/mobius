@@ -5118,6 +5118,19 @@ body.mobius-resizing .mobius-resizable-handle {
   transform: translateX(0);
 }
 
+/* 右侧抽屉变体: ProjectPage 移动端「项目设置」从右滑入 (内容多, 加宽). */
+.mobius-drawer--right {
+  left: auto;
+  right: 0;
+  width: min(520px, 92vw);
+  transform: translateX(100%);
+  border-left: 1px solid var(--border-color-strong) !important;
+  border-right: 0 !important;
+}
+.mobius-drawer--right.mobius-drawer--open {
+  transform: translateX(0);
+}
+
 /* 抽屉关闭按钮: 浮在右上角 */
 .mobius-drawer-close {
   position: absolute;

@@ -695,7 +695,7 @@ export function ProjectSettingsPanel({
   const embeddedSettingsCardStyle = { '--bg-card': 'var(--bg-secondary)' } as CSSProperties
 
   return (
-    <section data-tour="project-settings-panel" className="w-1/2 rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+    <section data-tour="project-settings-panel" className="w-full lg:w-1/2 rounded-xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
       <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
         <ProjectTabList className="flex-wrap min-w-0">
           <ProjectTabButton active={activePane === 'settings'} onClick={() => setActivePane('settings')}>

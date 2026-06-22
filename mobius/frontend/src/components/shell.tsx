@@ -670,7 +670,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           >
             <CircleQuestionMark className="w-3.5 h-3.5" />
           </button>
-          <div data-tour="top-system-status" className="flex items-center gap-2">
+          <div data-tour="top-system-status" className="hidden md:flex items-center gap-2">
             <DiskIndicator />
             <MemoryIndicator />
             <VersionIndicator />
