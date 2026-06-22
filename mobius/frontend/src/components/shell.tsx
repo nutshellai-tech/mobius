@@ -6,9 +6,10 @@ import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleQuestionMark, Moon, Palette, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
+import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
+import { useIsMobile } from './resizable-panel'
 
 // =====================================================================
 // 主题辅助
@@ -375,7 +376,10 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     setResearchesMap,
     logout,
     branding,
+    setMobileNavOpen,
   } = useStore()
+  // 移动端才显示汉堡按钮 (断点与 ResizablePanel 抽屉态同源, 不会错位)
+  const isMobile = useIsMobile()
   const params = useParams()
   const navigate = useNavigate()
   const [showChangePw, setShowChangePw] = useState(false)
@@ -532,6 +536,18 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     <>
       <div className="mobius-topnav h-14 border-b flex items-center justify-between px-5 flex-shrink-0 select-none"
         style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+        {/* 移动端: 汉堡按钮唤出左侧栏抽屉 */}
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            aria-label="打开侧栏"
+            title="项目列表"
+            className="mobius-topnav-menu h-9 w-9 flex items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-card-hover)] flex-shrink-0"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
+            <Menu className="h-5 w-5" strokeWidth={2} />
+          </button>
+        )}
         {/* Logo + 面包屑 */}
         <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">

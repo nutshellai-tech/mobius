@@ -247,6 +247,11 @@ interface AppState {
   mutedProjectIds: string[]
   // Branding: logo/系统名/Tab 标题. 来自 .env, 前端只读不可改.
   branding: Branding
+  // 移动端侧栏抽屉开关 (TopNav 汉堡按钮触发, ResizablePanel 抽屉态读取)
+  mobileNavOpen: boolean
+  // 移动端断点(px): 由当前页面设置 (内容密集页可调大, 如 ProjectPage=1024);
+  // TopNav 汉堡按钮的显隐与 ResizablePanel 抽屉态都读它, 保证两者始终同步.
+  mobileNavBreakpoint: number
   // Actions
   setAuth: (token: string, user: User) => void
   logout: () => void
@@ -254,6 +259,8 @@ interface AppState {
   setCurrentProject: (project: Project | null) => void
   setHideOthersProjects: (hide: boolean) => void
   setMutedProjectIds: (ids: string[]) => void
+  setMobileNavOpen: (open: boolean) => void
+  setMobileNavBreakpoint: (px: number) => void
   setIssues: (issues: Issue[]) => void
   setIssuesMap: (projectId: string, issues: Issue[]) => void
   setCurrentIssue: (issue: Issue | null) => void
@@ -306,6 +313,8 @@ export const useStore = create<AppState>((set) => ({
   hideOthersProjects: false,
   mutedProjectIds: [],
   branding: loadInitialBranding(),
+  mobileNavOpen: false,
+  mobileNavBreakpoint: 768,
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user })
@@ -318,6 +327,8 @@ export const useStore = create<AppState>((set) => ({
   setCurrentProject: (project) => set({ currentProject: project }),
   setHideOthersProjects: (hide) => set({ hideOthersProjects: !!hide }),
   setMutedProjectIds: (ids) => set({ mutedProjectIds: Array.isArray(ids) ? ids : [] }),
+  setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
+  setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 768 }),
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),

@@ -10,7 +10,7 @@ import {
 import { ProjectItemsPanel } from '../components/project-page/ProjectItemsPanel'
 import { ProjectSettingsPanel } from '../components/project-page/ProjectSettingsPanel'
 import { ProjectSidebar } from '../components/project-page/ProjectSidebar'
-import { ResizablePanel } from '../components/resizable-panel'
+import { ResizablePanel, useMobileNavBreakpoint } from '../components/resizable-panel'
 import type { GitRepoDraft, IssueConfirmAction, ProjectFilter, ProjectListSection } from '../components/project-page/types'
 import {
   DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
@@ -92,6 +92,10 @@ export default function ProjectPage() {
           sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask } = useStore()
   const userParam = params.user || ''
   const projectId = params.project || ''
+
+  // 项目详情页内容密集 (左栏 + 多面板主区), 把移动端断点提到 1024px,
+  // 让平板宽度也进入抽屉式侧栏 + 主区纵向堆叠, 排版更宽松美观.
+  useMobileNavBreakpoint(1024)
 
   const [showNewProject, setShowNewProject] = useState(false)
   const [showNewIssue, setShowNewIssue] = useState(false)
@@ -561,7 +565,7 @@ export default function ProjectPage() {
 
         <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
           <div className="max-w-7xl mx-auto p-6">
-            <div className="flex gap-6 items-start">
+            <div className="flex gap-6 items-start mobius-stack-lg">
               <ProjectSettingsPanel
                 project={project}
                 values={{

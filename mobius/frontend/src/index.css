@@ -5020,21 +5020,8 @@ body.mobius-resizing .mobius-resizable-handle {
     height: 100dvh;
   }
 
-  /* 含可拖拽侧栏的布局行: 窄屏下从「侧栏 | 主区」改为纵向堆叠,
-     主区拿到完整宽度. :has() 在 2024 年起所有主流浏览器均支持. */
-  .flex:has(> .mobius-resizable) {
-    flex-direction: column;
-  }
-
-  /* 侧栏堆叠态: 全宽、把右侧分隔线改为底部分隔、限高并可内部滚动,
-     保证主内容区始终保留可见高度而不是被长侧栏吃掉整屏. */
-  .mobius-resizable--mobile {
-    max-height: 46vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    border-right-width: 0 !important;
-    border-bottom: 1px solid var(--border-color);
-  }
+  /* 含可拖拽侧栏的布局行在窄屏下侧栏改走「抽屉」(见文件末尾 .mobius-drawer),
+     抽屉通过 portal 固定定位脱离文档流, 因此主区自然拿到整屏宽度, 这里无需改方向. */
 
   /* 顶栏: 允许换行以同时容纳面包屑与操作按钮, 并避让刘海/屏幕圆角. */
   .mobius-topnav {
@@ -5079,3 +5066,89 @@ body.mobius-resizing .mobius-resizable-handle {
     max-height: none;
   }
 }
+
+/* ======================================================================
+   移动端侧栏抽屉 (.mobius-drawer)
+   ----------------------------------------------------------------------
+   这些元素只在 JS 判定为移动端 (matchMedia <= 当前断点) 时由
+   resizable-panel.tsx 通过 portal 渲染到 <body>, 因此这里的结构样式
+   不需要再套 @media, 也不会影响桌面端 (桌面端根本不会出现这些类).
+   ====================================================================== */
+
+/* 抽屉遮罩: 点击收起 */
+.mobius-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8999;
+  background: rgba(2, 6, 23, .52);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: mobius-drawer-fade-in .2s ease both;
+}
+@keyframes mobius-drawer-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* 抽屉本体: 从左侧滑入, 全高, 内部滚动以容纳「全部项目」长列表. */
+.mobius-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  max-width: 86vw;
+  max-height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* 桌面端侧栏默认带 border-r; 抽屉态改成右边界更明显的分隔 + 大阴影. */
+  border-right: 1px solid var(--border-color-strong) !important;
+  border-bottom: 0 !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .42);
+  transform: translateX(-100%);
+  transition: transform .26s cubic-bezier(.2, .8, .2, 1);
+  will-change: transform;
+  /* 避让刘海/状态栏与底部 Home 条 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.mobius-drawer--open {
+  transform: translateX(0);
+}
+
+/* 抽屉关闭按钮: 浮在右上角 */
+.mobius-drawer-close {
+  position: absolute;
+  top: .55rem;
+  right: .55rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.mobius-drawer-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ======================================================================
+   ProjectPage 主区: 内容密集, 断点提到 1024px (见 useMobileNavBreakpoint).
+   多面板横向布局在 ≤1024px 改为纵向堆叠, 让设置/Sessions 等面板各占整行.
+   该 class 仅 ProjectPage 使用, 不影响其它页面.
+   ====================================================================== */
+@media (max-width: 1024px) {
+  .mobius-stack-lg {
+    flex-direction: column;
+  }
+}
+
