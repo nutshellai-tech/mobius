@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mobius.local/assess_appearance/appearance-spec.schema.json",
+  "title": "AppearanceSpec",
+  "description": "小莫(Momo)助手虚拟形象配置对象 — assess_appearance MCP Skill 的产物。前端形象渲染系统据此消费。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dimension", "form", "style", "palette"],
+  "properties": {
+    "dimension": {
+      "type": "string",
+      "enum": ["2d", "3d"],
+      "description": "形象维度: 2d=平面立绘/动画; 3d=立体模型。"
+    },
+    "form": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category"],
+      "description": "形态/物种描述。",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["humanoid", "animal", "robot", "creature", "abstract"],
+          "description": "形态大类。"
+        },
+        "species": {
+          "type": "string",
+          "enum": ["cat", "dog", "fox", "dragon", "rabbit", "panda", "bear", "bird", "fish", "hamster", "owl", "axolotl"],
+          "description": "animal 类别下的具体物种。"
+        },
+        "variant": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "本地化变体名, 直接展示用(如『小猫』『幼龙』)。"
+        }
+      }
+    },
+    "style": {
+      "type": "string",
+      "enum": ["chibi", "anime", "pixel", "flat", "lowpoly", "realistic", "sketch", "cyberpunk"],
+      "description": "艺术风格。"
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary"],
+      "description": "配色方案, 所有值必须为 #RRGGBB 十六进制。",
+      "properties": {
+        "primary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "主色: 主体毛色/皮肤/外壳。" },
+        "secondary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "次色: 腹部/内耳/细节。" },
+        "accent": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "description": "点缀色: 鼻头/腮红/能量光。" }
+      }
+    },
+    "accessories": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 20 },
+      "maxItems": 8,
+      "default": [],
+      "description": "配饰列表(眼镜/领结/帽子/围巾...)。"
+    },
+    "expression": {
+      "type": "string",
+      "enum": ["neutral", "happy", "curious", "sleepy", "cool", "shy"],
+      "default": "neutral",
+      "description": "默认表情。"
+    },
+    "props": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 20 },
+      "maxItems": 5,
+      "default": [],
+      "description": "持有道具列表。"
+    },
+    "background": {
+      "type": "string",
+      "maxLength": 30,
+      "description": "可选背景预设名(由前端解析)。"
+    }
+  }
+}
