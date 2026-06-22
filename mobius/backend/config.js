@@ -33,6 +33,24 @@ function legacyFallbackWorkDirFor(userId) {
 }
 
 const MOBIUS_DATA_PATH = process.env.MOBIUS_DATA_PATH || '/data';
+
+// Branding: 顶部 Logo / 系统名称 / Tab 标题显示控制, 由 .env 注入, 不进管理面板.
+//   hideLogo:        直接控制 Logo 图片是否渲染
+//   systemNameZh:    若 REPLACE_SYSTEM_NAME=true 用 env 值, 否则用硬编码默认; 同时用作 Tab 标题
+//   systemNameEn:    若 REPLACE_SYSTEM_NAME=true 用 env 值, 否则用硬编码默认
+// 替换模式下留空字符串即可"隐藏"对应位置的文字.
+const DEFAULT_BRANDING_ZH = '莫比乌斯AI';
+const DEFAULT_BRANDING_EN = 'Mobius';
+const BRANDING_REPLACE_SYSTEM_NAME = process.env.MOBIUS_ADVANCED_REPLACE_SYSTEM_NAME === 'true';
+const BRANDING = Object.freeze({
+  hideLogo: process.env.MOBIUS_ADVANCED_HIDE_LOGO === 'true',
+  systemNameZh: BRANDING_REPLACE_SYSTEM_NAME
+    ? String(process.env.MOBIUS_ADVANCED_REPLACE_SYSTEM_NAME_ZH ?? '')
+    : DEFAULT_BRANDING_ZH,
+  systemNameEn: BRANDING_REPLACE_SYSTEM_NAME
+    ? String(process.env.MOBIUS_ADVANCED_REPLACE_SYSTEM_NAME_EN ?? '')
+    : DEFAULT_BRANDING_EN,
+});
 const CORE_DATA_PATH = process.env.CORE_DATA_PATH || '/data/protected_data';
 const MODEL_ACCESS_PATH = process.env.MODEL_ACCESS_PATH || path.join(MOBIUS_DATA_PATH, 'model-access.json');
 const BACKEND_WORKER_LOG_DIR = path.join(CORE_DATA_PATH, 'backend_worker_log');
@@ -97,6 +115,9 @@ module.exports = {
   UPLOAD_DIR: path.join(__dirname, '..', 'uploads'),
   PUBLIC_DIR: path.join(__dirname, '..', 'public'),
   TURNS_SUMMARY_DIR: process.env.TURNS_SUMMARY_DIR || path.join(MOBIUS_DATA_PATH, 'turn-summaries'),
+
+  // Branding: 顶部 Logo / 系统名称 / Tab 标题. 由 .env 控制, 不可前端修改.
+  BRANDING,
 
   // 新建 Session 可选模型: 前端传短键(opus/codex), 后端映射到完整 model id.
   // backend 由 model id 派生, 旧 Claude session 不需要改 DB schema.

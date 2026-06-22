@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { JWT_SECRET, ENABLE_PASSWORD_LOGIN } = require('../config');
+const { JWT_SECRET, ENABLE_PASSWORD_LOGIN, BRANDING } = require('../config');
 const { auth } = require('../middleware/auth');
 const { Users } = require('../repositories/users');
 const { db } = require('../../db');
@@ -10,6 +10,16 @@ const router = express.Router();
 
 router.get('/config', (req, res) => {
   res.json({ password_required: ENABLE_PASSWORD_LOGIN });
+});
+
+// 全站品牌显示配置 (顶部 Logo / 系统名称 / Tab 标题). 由 .env 注入, 任何客户端
+// (含未登录的登录页) 都可读取, 用于首屏渲染前同步注入避免闪烁. 不接受 PUT.
+router.get('/branding', (req, res) => {
+  res.json({
+    hideLogo: BRANDING.hideLogo === true,
+    systemNameZh: BRANDING.systemNameZh,
+    systemNameEn: BRANDING.systemNameEn,
+  });
 });
 
 router.post('/login', (req, res) => {

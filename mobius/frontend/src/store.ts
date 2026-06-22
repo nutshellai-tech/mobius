@@ -8,6 +8,36 @@ function loadBackgroundFlowEnabled() {
   return stored == null ? true : stored === '1'
 }
 
+// Branding: 由 index.html 头部同步阻塞 script 注入到 window.__BRANDING__,
+// React 启动前已经定型, 不需要异步 fetch, 避免首屏闪烁.
+interface Branding {
+  hideLogo: boolean
+  systemNameZh: string
+  systemNameEn: string
+}
+
+declare global {
+  interface Window {
+    __BRANDING__?: Branding
+  }
+}
+
+const DEFAULT_BRANDING: Branding = {
+  hideLogo: false,
+  systemNameZh: '莫比乌斯AI',
+  systemNameEn: 'Mobius',
+}
+
+function loadInitialBranding(): Branding {
+  const injected = typeof window !== 'undefined' ? window.__BRANDING__ : undefined
+  if (!injected) return DEFAULT_BRANDING
+  return {
+    hideLogo: !!injected.hideLogo,
+    systemNameZh: typeof injected.systemNameZh === 'string' ? injected.systemNameZh : DEFAULT_BRANDING.systemNameZh,
+    systemNameEn: typeof injected.systemNameEn === 'string' ? injected.systemNameEn : DEFAULT_BRANDING.systemNameEn,
+  }
+}
+
 interface User {
   id: string
   display_name: string
@@ -215,6 +245,8 @@ interface AppState {
   hideOthersProjects: boolean
   // 用户隔离 v3: 当前用户已 mute 的项目 ID 集合
   mutedProjectIds: string[]
+  // Branding: logo/系统名/Tab 标题. 来自 .env, 前端只读不可改.
+  branding: Branding
   // Actions
   setAuth: (token: string, user: User) => void
   logout: () => void
@@ -273,6 +305,7 @@ export const useStore = create<AppState>((set) => ({
   backgroundFlowEnabled: loadBackgroundFlowEnabled(),
   hideOthersProjects: false,
   mutedProjectIds: [],
+  branding: loadInitialBranding(),
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user })

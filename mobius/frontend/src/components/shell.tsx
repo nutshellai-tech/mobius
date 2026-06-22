@@ -374,6 +374,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     researchesMap,
     setResearchesMap,
     logout,
+    branding,
   } = useStore()
   const params = useParams()
   const navigate = useNavigate()
@@ -445,6 +446,11 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
     document.addEventListener('click', closeSwitcher)
     return () => document.removeEventListener('click', closeSwitcher)
   }, [openSwitcher])
+
+  // Tab 标题随 branding.systemNameZh 同步 (REPLACE=true 且 ZH 留空 → tab 显示空白).
+  useEffect(() => {
+    document.title = branding.systemNameZh || ' '
+  }, [branding.systemNameZh])
 
   // 打开项目切换器时, 若 store 还没有项目列表则按需拉取.
   useEffect(() => {
@@ -529,8 +535,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* Logo + 面包屑 */}
         <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
-            <MobiusLogo size={28} />
-            <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>Mobius</span>
+            {!branding.hideLogo && <MobiusLogo size={28} />}
+            {branding.systemNameEn && (
+              <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                {branding.systemNameEn}
+              </span>
+            )}
           </Link>
           <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
           <Link to={`/u/${userParam}`} className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"

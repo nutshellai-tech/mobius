@@ -11,7 +11,7 @@ export default function Login() {
   const [mounted, setMounted] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [passwordRequired, setPasswordRequired] = useState(false)
-  const { setAuth, theme, backgroundFlowEnabled } = useStore()
+  const { setAuth, theme, backgroundFlowEnabled, branding } = useStore()
   const usernameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -65,16 +65,22 @@ export default function Login() {
 
         {/* Logo */}
         <div className="text-center mb-12">
-          <div className="inline-block mb-6">
-            <MobiusLogo size={64} />
-          </div>
-          <h1 className="text-[28px] font-semibold tracking-tight mb-2"
-            style={{ color: theme !== 'light' ? '#ffffff' : '#1e293b' }}>
-            Mobius
-          </h1>
-          <p className="text-[13px]" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
-            莫比乌斯AI
-          </p>
+          {!branding.hideLogo && (
+            <div className="inline-block mb-6">
+              <MobiusLogo size={64} />
+            </div>
+          )}
+          {branding.systemNameEn && (
+            <h1 className="text-[28px] font-semibold tracking-tight mb-2"
+              style={{ color: theme !== 'light' ? '#ffffff' : '#1e293b' }}>
+              {branding.systemNameEn}
+            </h1>
+          )}
+          {branding.systemNameZh && (
+            <p className="text-[13px]" style={{ color: theme !== 'light' ? '#9ca3af' : '#64748b' }}>
+              {branding.systemNameZh}
+            </p>
+          )}
         </div>
 
         {/* 输入区域 */}
@@ -176,11 +182,13 @@ export default function Login() {
         </button>
 
         {/* 底部 */}
-        <div className="text-center mt-16">
-          <p className="text-[11px] tracking-wide" style={{ color: theme !== 'light' ? '#374151' : '#9ca3af' }}>
-            Mobius · 莫比乌斯 v2
-          </p>
-        </div>
+        {(branding.systemNameEn || branding.systemNameZh) && (
+          <div className="text-center mt-16">
+            <p className="text-[11px] tracking-wide" style={{ color: theme !== 'light' ? '#374151' : '#9ca3af' }}>
+              {[branding.systemNameEn, branding.systemNameZh].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── 输入框样式 ── */}
