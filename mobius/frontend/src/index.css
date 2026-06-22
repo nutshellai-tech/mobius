@@ -5048,6 +5048,19 @@ body.mobius-resizing .mobius-resizable-handle {
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+
+  /* 模态卡片: 多个创建/设置弹窗用固定 w-[560~680px], 在手机上会超出视口
+     导致右侧内容被裁. 这里用 max-width 覆盖 (CSS max-width 优先于 inline width),
+     强制裁到视口内. 仅命中"居中遮罩下的 relative 卡片", 不影响背景遮罩本身. */
+  [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] > [class~="relative"] {
+    max-width: calc(100vw - 1.5rem);
+  }
+  /* 模态内 3~5 列按钮组 (可见性/模型选择等) 在窄屏降到 2 列, 避免文字挤压溢出. */
+  [class~="fixed"][class~="inset-0"] .grid-cols-3,
+  [class~="fixed"][class~="inset-0"] .grid-cols-4,
+  [class~="fixed"][class~="inset-0"] .grid-cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 480px) {
@@ -5183,6 +5196,11 @@ body.mobius-resizing .mobius-resizable-handle {
   /* 可见性等按钮组在窄屏改两列, 避免文字挤压溢出 */
   .global-create-modal .grid-cols-4,
   .global-create-modal .grid-cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* 页面级无条件 3 列网格 (项目设置 Git 仓库/配置等) 在手机降到 2 列;
+     md:/lg:/sm: 响应式前缀的网格不受影响. */
+  .grid-cols-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
