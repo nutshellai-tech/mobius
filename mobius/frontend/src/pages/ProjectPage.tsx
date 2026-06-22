@@ -564,7 +564,7 @@ export default function ProjectPage() {
         </ResizablePanel>
 
         <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
-          <div className="max-w-7xl mx-auto p-6">
+          <div className="max-w-7xl mx-auto p-3 sm:p-6">
             <div className="flex gap-6 items-start mobius-stack-lg">
               <ProjectSettingsPanel
                 project={project}

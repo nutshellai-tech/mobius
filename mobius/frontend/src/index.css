@@ -5150,5 +5150,10 @@ body.mobius-resizing .mobius-resizable-handle {
   .mobius-stack-lg {
     flex-direction: column;
   }
+  /* 堆叠态: 子面板(桌面端 w-1/2 并排)在窄屏必须各占整行, 否则纵向堆叠后
+     仍各占 50% 宽 → 右侧大片空白、表单被挤成窄条(实测于 /u/:user/p/:id). */
+  .mobius-stack-lg > * {
+    width: 100%;
+  }
 }
 
