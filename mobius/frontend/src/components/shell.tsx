@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStore, api } from '../store'
-import { ChangePasswordModal, AimuxGuideModal, NewProjectModal, NewIssueModal, NewResearchModal } from './modals'
+import { ChangePasswordModal, AimuxGuideModal } from './modals'
+import { GlobalCreateMenu, GlobalCreateRoot, type CreateKind } from './global-create'
 import { AdminPanel } from './panels'
 import { MobiusLogo } from './mobius-logo'
 import { GuideHelpModal } from './guide-help'
 import { CustomThemePalette } from './custom-theme-palette'
-import { Check, ChevronDown, CircleDot, CircleQuestionMark, FlaskConical, FolderPlus, Menu, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
+import { Check, ChevronDown, CircleQuestionMark, Menu, Moon, Palette, Plus, Search, Sliders, Sun, WavesHorizontal } from 'lucide-react'
 import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
@@ -402,7 +403,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
   const closeSwitcher = () => { setOpenSwitcher(null); setSwitcherSearch('') }
   // 顶部「新建」下拉: 项目 / Issue / Research 三入口. Issue/Research 需在项目上下文内.
   const [showNewMenu, setShowNewMenu] = useState(false)
-  const [createKind, setCreateKind] = useState<'project' | 'issue' | 'research' | null>(null)
+  const [createKind, setCreateKind] = useState<CreateKind | null>(null)
 
   const refreshCustomThemes = () => {
     const map = loadCustomThemes()
@@ -677,63 +678,15 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex items-center gap-2 flex-shrink-0">
           {rightExtra}
-          {/* 新建下拉 — 快速创建项目 / Issue / Research */}
-          <div className="relative" data-tour="top-create">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setShowNewMenu(v => !v) }}
-              title="新建"
-              aria-label="新建"
-              aria-haspopup="menu"
-              aria-expanded={showNewMenu}
-              className="btn-primary h-8 flex items-center gap-1 rounded-lg pl-2 pr-2 transition-opacity"
-            >
-              <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-              <span className="text-[12px] font-semibold hidden sm:inline">新建</span>
-              <ChevronDown className={`w-3 h-3 hidden sm:block transition-transform ${showNewMenu ? 'rotate-180' : ''}`} />
-            </button>
-            {showNewMenu && (
-              <div
-                className="absolute right-0 top-10 z-50 w-[208px] rounded-lg p-1.5 shadow-xl"
-                style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
-                onClick={e => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() => { setShowNewMenu(false); setCreateKind('project') }}
-                  className="w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <FolderPlus className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                  <span className="text-[12px] font-medium">新建项目</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { if (canCreateIssue) { setShowNewMenu(false); setCreateKind('issue') } }}
-                  disabled={!canCreateIssue}
-                  title={!inProject ? '需先进入某个项目' : (currentProject?.can_create_issue === false ? '无权新建 Issue' : '新建 Issue')}
-                  className="w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <CircleDot className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                  <span className="text-[12px] font-medium">新建 Issue</span>
-                  {!inProject && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>需进入项目</span>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { if (canCreateResearch) { setShowNewMenu(false); setCreateKind('research') } }}
-                  disabled={!canCreateResearch}
-                  title={!inProject ? '需先进入某个项目' : (!researchEnabled ? '该项目未启用 Research 系统' : (currentProject?.can_create_research === false ? '无权新建 Research' : '新建 Research'))}
-                  className="w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  <FlaskConical className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                  <span className="text-[12px] font-medium">新建 Research</span>
-                  {!canCreateResearch && inProject && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>未启用</span>}
-                </button>
-              </div>
-            )}
-          </div>
+          {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
+          <GlobalCreateMenu
+            open={showNewMenu}
+            onOpenChange={setShowNewMenu}
+            onPick={setCreateKind}
+            inProject={inProject}
+            currentProject={currentProject}
+            researchEnabled={researchEnabled}
+          />
           <button
             type="button"
             onClick={() => setShowGuideHelp(true)}
@@ -947,43 +900,11 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {showAimuxGuide && <AimuxGuideModal onClose={() => setShowAimuxGuide(false)} />}
       {showGuideHelp && <GuideHelpModal onClose={() => setShowGuideHelp(false)} />}
       {showPalette && <CustomThemePalette onClose={() => setShowPalette(false)} />}
-      {createKind === 'project' && (
-        <NewProjectModal
+      {createKind && (
+        <GlobalCreateRoot
+          kind={createKind}
+          ctx={{ projectId: projectParam, issueId: issueParam }}
           onClose={() => setCreateKind(null)}
-          onCreated={(p: any) => {
-            setCreateKind(null)
-            if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`)
-          }}
-        />
-      )}
-      {createKind === 'issue' && projectParam && (
-        <NewIssueModal
-          projectId={projectParam}
-          defaultUseWorktree={!!currentProject?.default_use_worktree}
-          onClose={() => setCreateKind(null)}
-          onCreated={(iss: any, options: any) => {
-            setCreateKind(null)
-            // 同步面包屑切换器缓存, 避免下拉里看不到刚建的 Issue.
-            const cached = issuesMap[projectParam]
-            if (cached) setIssuesMap(projectParam, [iss, ...cached])
-            if (options?.planningSessionId) {
-              navigate(`/u/${userParam}/p/${projectParam}/i/${iss.id}?session=${options.planningSessionId}`)
-            } else {
-              navigate(`/u/${userParam}/p/${projectParam}/i/${iss.id}${options?.createFirstSession ? '?newSession=1' : ''}`)
-            }
-          }}
-        />
-      )}
-      {createKind === 'research' && projectParam && (
-        <NewResearchModal
-          projectId={projectParam}
-          onClose={() => setCreateKind(null)}
-          onCreated={(research: any) => {
-            setCreateKind(null)
-            const cached = researchesMap[projectParam]
-            if (cached) setResearchesMap(projectParam, [research, ...cached])
-            navigate(`/u/${userParam}/p/${projectParam}/r/${research.id}`)
-          }}
         />
       )}
       <OverlayPanels />
