@@ -1063,8 +1063,8 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
         title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
         className="btn-primary h-8 flex items-center gap-1 rounded-lg pl-2 pr-2 transition-opacity">
         <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-        <span className="text-[12px] font-semibold hidden sm:inline">新建</span>
-        <ChevronDown className={`w-3 h-3 hidden sm:block transition-transform ${open ? 'rotate-180' : ''}`} />
+        <span className="text-[12px] font-semibold hidden md:inline">新建</span>
+        <ChevronDown className={`w-3 h-3 hidden md:block transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="absolute right-0 top-10 z-50 w-[212px] rounded-lg p-1.5 shadow-xl"
