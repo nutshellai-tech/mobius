@@ -2952,10 +2952,10 @@ export function ChatArea() {
         </div>
       )}
 
-      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑) */}
-      <div className="flex-1 flex min-h-0">
+      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body). */}
+      <div className="mobius-chat-body flex-1 flex min-h-0">
         {/* 左 68%: JSONL 视图 */}
-        <div data-tour="session-jsonl-view" className="flex flex-col min-w-0" style={{ width: '68%' }}>
+        <div data-tour="session-jsonl-view" className="mobius-chat-history flex flex-col min-w-0" style={{ width: '68%' }}>
           <div className="flex-1 overflow-y-auto relative" ref={chatContainerRef}
             onScroll={(e) => {
               const el = e.currentTarget
@@ -3001,8 +3001,8 @@ export function ChatArea() {
           )}
         </div>
 
-        {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. */}
-        <div className="flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+        {/* 右 32%: 输入区 (顶) + skill/memory editor (底). 整列竖向滚动. 窄屏整宽 (见 index.css .mobius-chat-input). */}
+        <div className="mobius-chat-input flex flex-col border-l flex-shrink-0" style={{ width: '32%', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
           {/* 输入区 */}
           <div className="border-b p-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
             <div>

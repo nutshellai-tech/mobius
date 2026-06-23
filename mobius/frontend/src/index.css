@@ -5183,6 +5183,33 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   Chat 会话页 body: 桌面端横向 68/32 分栏 (左 JSONL 历史 + 右输入/skill-memory).
+   窄屏 (≤768px) 下 32% 输入列约 ~120px, 根本放不下 3×40px 按钮 + textarea +
+   4 个快捷操作, 输入框无法使用. 改纵向堆叠 (思路同 .mobius-stack-lg):
+   - 历史在上, 整宽, 内部滚动, 占据多数高度;
+   - 输入列在下, 整宽, 左竖向边框改顶横向边框; 输入区 flex-shrink-0 始终完整可见,
+     skill/memory (flex-1 overflow-y-auto) 吃剩余空间并自滚动 → 输入框不会被裁切.
+   仅 ≤768px 生效, 桌面端保持 68/32 横向不动 (!important 用以覆盖 inline width).
+   ====================================================================== */
+@media (max-width: 768px) {
+  .mobius-chat-body {
+    flex-direction: column;
+  }
+  .mobius-chat-history {
+    width: 100% !important;
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+  .mobius-chat-input {
+    width: 100% !important;
+    flex: 1 1 0%;
+    min-height: 0;
+    border-left: 0 !important;
+    border-top: 1px solid var(--border-color) !important;
+  }
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.
