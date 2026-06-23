@@ -558,7 +558,7 @@ function SessionOverviewPagination({
   return (
     <div className={`flex flex-wrap items-center justify-between gap-3 ${compact ? 'pt-1' : ''}`}>
       <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-        显示 {pageStart}-{pageEnd} / {totalItems} 个Session · 第 {page} / {totalPages} 页
+        显示 {pageStart}-{pageEnd} / {totalItems} 个Session<span className="hidden md:inline"> · 第 {page} / {totalPages} 页</span>
       </span>
       <div className="flex items-center gap-1.5">
         <button

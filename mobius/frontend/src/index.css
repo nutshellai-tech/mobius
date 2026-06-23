@@ -5237,6 +5237,10 @@ body.mobius-resizing .mobius-resizable-handle {
   .global-create-modal { border-radius: 16px; }
   /* 顶栏新建下拉菜单: 拉宽到近全屏, 避免文字截断. */
   [data-tour="top-create"] > div:last-child { min-width: calc(100vw - 32px); }
+  /* 新建下拉菜单项: 触摸热区增大到 40px, 底部提示放大至 11px 提升窄屏可读性.
+     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑的 py-1.5. */
+  [data-tour="top-create"] > div:last-child button { min-height: 40px; }
+  [data-tour="top-create"] > div:last-child > div:last-child { font-size: 11px; }
 }
 
 @media (max-width: 480px) {
