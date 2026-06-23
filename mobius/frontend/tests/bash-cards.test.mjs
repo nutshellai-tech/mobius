@@ -341,19 +341,19 @@ test('extractBashCalls: display_images 命令原样进入 BashCall.command', () 
   assert.equal(calls[0].command, 'display_images /abs/path/a.png /abs/path/b.png')
 })
 
-// ── 回归保护: product.py 主题判断所需的 input.command 字段未被破坏 ────────
-test('extractBashCalls: input.command 包含 product.py 时仍正常解析 (gold 主题用)', () => {
+// ── 回归保护: start.py 主题判断所需的 input.command 字段未被破坏 ────────
+test('extractBashCalls: input.command 包含 start.py 时仍正常解析 (gold 主题用)', () => {
   const entry = {
     type: 'assistant',
     message: {
       content: [
-        { type: 'tool_use', name: 'Bash', input: { command: 'python3 product.py build' } },
+        { type: 'tool_use', name: 'Bash', input: { command: 'python3 start.py build' } },
       ],
     },
   }
   const calls = extractBashCalls(entry)
   assert.equal(calls.length, 1)
-  assert.ok(calls[0].command.includes('product.py'))
+  assert.ok(calls[0].command.includes('start.py'))
 })
 
 // ── Codex function_call (exec_command) 走另一条路径, 不应被这里误判 ──────

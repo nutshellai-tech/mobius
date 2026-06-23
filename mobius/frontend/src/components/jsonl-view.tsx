@@ -8,7 +8,7 @@
  *    其他容器默认折叠 (避免噪音淹没); primitive 总是直接显示.
  *  - 顶层 type 字段决定卡片整体配色, 方便快扫;
  *    特例: assistant 里 name:"Edit" 的 tool_use 卡片用专属 indigo 色 (文件改动易扫);
- *    特例: assistant 里 Bash tool_use 且 command 包含 "product.py" 的卡片用专属 gold 色 (产品构建易扫).
+ *    特例: assistant 里 Bash tool_use 且 command 包含 "start.py" 的卡片用专属 gold 色 (产品构建易扫).
  *    特例: assistant 响应文本命中关键词时用专属 gold 色 (关键回复易扫).
  *  - 卡片整体默认折叠, 唯独"第一张 user 卡片"(会话起始 prompt) 与"最后一张
  *    assistant 卡片"(最新回复) 默认展开 — 一头一尾最值得先看;
@@ -92,23 +92,23 @@ const DEFAULT_THEME = { dot: 'bg-gray-500', border: 'border-gray-500/30', bg: 'b
 // 边框/底色比常规 type 稍重一点, 方便在长列表里一眼扫到文件改动.
 const EDIT_TOOL_THEME = { dot: 'bg-indigo-400', border: 'border-indigo-500/40', bg: 'bg-indigo-500/[0.07]', text: 'text-indigo-300', label: 'file·edit' }
 
-// 特例: assistant 里带 name:"Bash" 且 input.command 包含 "product.py" 的 tool_use 卡片 —
+// 特例: assistant 里带 name:"Bash" 且 input.command 包含 "start.py" 的 tool_use 卡片 —
 // 用 gold (yellow), 提示这是触发了产品构建的 shell 调用, 在长列表里一眼可扫.
 // 用 yellow 与 system/turn 的 amber 拉开, 避免和已有暖色调混淆.
-const PRODUCT_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/40', bg: 'bg-yellow-500/[0.07]', text: 'text-yellow-300', label: 'product.py' }
+const START_PY_THEME = { dot: 'bg-yellow-400', border: 'border-yellow-500/40', bg: 'bg-yellow-500/[0.07]', text: 'text-yellow-300', label: 'start.py' }
 
 // 特例: assistant 里带 name:"Bash" 的 tool_use 卡片 (Claude Code shell 调用).
-// 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、product.py yellow 都拉开, 长列表里可识别.
+// 用 cyan, 呼应终端/控制台意象, 与 Edit indigo、start.py yellow 都拉开, 长列表里可识别.
 const BASH_TOOL_THEME = { dot: 'bg-cyan-400', border: 'border-cyan-500/40', bg: 'bg-cyan-500/[0.06]', text: 'text-cyan-300', label: 'bash' }
 
 // 特例: event_msg.payload.type === 'context_compacted' 的卡片 — 一次上下文压缩事件,
-// 在长列表里需要一眼可扫, 复用 yellow (gold) 与 product.py 同色但 label 区分.
-const CONTEXT_COMPACTED_THEME = { ...PRODUCT_PY_THEME, label: 'ctx·compact' }
+// 在长列表里需要一眼可扫, 复用 yellow (gold) 与 start.py 同色但 label 区分.
+const CONTEXT_COMPACTED_THEME = { ...START_PY_THEME, label: 'ctx·compact' }
 
 // 特例: assistant 响应文本命中这些关键词时整卡复用 gold 主题.
 // 只检查 assistant 文本响应, 不把 tool_use/input.command 当作本规则的命中范围.
-const ASSISTANT_RESPONSE_GOLD_KEYWORDS = ['根因', 'product.py']
-const ASSISTANT_RESPONSE_KEYWORD_THEME = { ...PRODUCT_PY_THEME, label: 'assistant·keyword' }
+const ASSISTANT_RESPONSE_GOLD_KEYWORDS = ['根因', 'start.py']
+const ASSISTANT_RESPONSE_KEYWORD_THEME = { ...START_PY_THEME, label: 'assistant·keyword' }
 
 // 对话轮次分组的纯逻辑 (BLACKBOARD_MARKER / isBlackboardReminder / isNewRound) 抽到了
 // ./jsonl-round-helpers.ts, 这样 Node 单元测试可以无 React 直接 import 同一份实现.
@@ -282,17 +282,17 @@ function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
   return { files, displayPath, sourceLength }
 }
 
-// 该 entry 是否为 "assistant 发起的 Bash tool_use 且 input.command 包含 'product.py'"
+// 该 entry 是否为 "assistant 发起的 Bash tool_use 且 input.command 包含 'start.py'"
 // (即触发了产品构建的 shell 调用).
 // 走 isBashToolUseName 让大小写兼容与 BashCall 卡片渲染对齐, 避免 'bash' 时主题/识别脱节.
-function isProductPyToolUse(entry: AnyEntry): boolean {
+function isStartPyToolUse(entry: AnyEntry): boolean {
   if (entry?.type !== 'assistant') return false
   const c = entry?.message?.content
   if (!Array.isArray(c)) return false
   return c.some((b: any) => {
     if (b?.type !== 'tool_use' || !isBashToolUseName(b?.name)) return false
     const cmd = b?.input?.command
-    return typeof cmd === 'string' && cmd.includes('product.py')
+    return typeof cmd === 'string' && cmd.includes('start.py')
   })
 }
 
@@ -991,16 +991,16 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
   const canCode = !!codeEdit || !!writeCall || bashCalls.length > 0
   // 正文含 blackboard 标记 → 视作 Research Blackboard 相关消息.
   const isBlackboard = headerSummary.full.includes(BLACKBOARD_MARKER)
-  // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "product.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
-  // product.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
+  // 配色优先级: blackboard 相关 (最醒目) > assistant 文本关键词 (gold) > name:"Edit" 的 tool_use (indigo) > Bash command 含 "start.py" (gold) > 普通 Bash tool_use (cyan) > event_msg.context_compacted (gold) > 顶层 type.
+  // start.py 必须排在 Bash 之前: 它本身也是 Bash, 但语义更具体, 不能被 cyan 普通主题盖掉.
   const theme = isBlackboard
     ? BLACKBOARD_THEME
     : isAssistantResponseGoldKeyword(entry)
     ? ASSISTANT_RESPONSE_KEYWORD_THEME
     : isEditToolUse(entry)
     ? EDIT_TOOL_THEME
-    : isProductPyToolUse(entry)
-    ? PRODUCT_PY_THEME
+    : isStartPyToolUse(entry)
+    ? START_PY_THEME
     : bashCalls.length > 0
     ? BASH_TOOL_THEME
     : isContextCompactedEvent(entry)

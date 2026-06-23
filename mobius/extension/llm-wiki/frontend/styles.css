@@ -413,6 +413,10 @@ button.danger-soft:hover { background: rgba(255, 107, 107, 0.18); }
   display: block;
   width: 100%;
   user-select: none;
+  pointer-events: none;
+}
+.graph-node-g {
+  pointer-events: auto;
 }
 .graph-edge {
   stroke: rgba(255, 255, 255, 0.18);

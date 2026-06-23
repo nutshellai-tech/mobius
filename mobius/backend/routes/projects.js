@@ -66,7 +66,7 @@ function spawnProductOtherVersion(gitHash) {
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, 'deploy_other_version.log');
   const out = fs.openSync(logPath, 'a');
-  const child = spawn('python3', ['product.py', '--detach', '--other-versions', gitHash], {
+  const child = spawn('python3', ['start.py', '--detach', '--other-versions', gitHash], {
     cwd: APP_DIR,
     detached: true,
     stdio: ['ignore', out, out],
@@ -94,7 +94,7 @@ function spawnProductHardReset(gitHash) {
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, 'hard_reset_version.log');
   const out = fs.openSync(logPath, 'a');
-  const child = spawn('python3', ['product.py', '--detach', '--hard-reset', gitHash], {
+  const child = spawn('python3', ['start.py', '--detach', '--hard-reset', gitHash], {
     cwd: APP_DIR,
     detached: true,
     stdio: ['ignore', out, out],
