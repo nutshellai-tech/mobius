@@ -1038,8 +1038,18 @@ class TmuxCodexBackend extends AgentBackend {
     if (finalUseProxy) {
       // 加载代理相关环境变量。
       cmdLines.push(`source ${shellQuote(PROXY_ENVS)}`)
+      // admin 管理的「模型 proxychains」开启时优先用 model.conf, 否则回退到 legacy ~/proxy_claude.conf.
+      let modelConf = PROXY_CONF
+      try {
+        const adminSettings = require('../services/admin-settings')
+        const cfg = adminSettings.getProxychains()
+        if (cfg && cfg.modelEnabled) {
+          const p = adminSettings.proxychainsConfPathForKind('model')
+          if (p && fs.existsSync(p)) modelConf = p
+        }
+      } catch {}
       // 通过 proxychains 启动 Codex，并传入 profile、子命令和参数。
-      cmdLines.push(`exec proxychains -q -f ${shellQuote(PROXY_CONF)} codex ${profileArg} ${subcommand}${argStr}`)
+      cmdLines.push(`exec proxychains -q -f ${shellQuote(modelConf)} codex ${profileArg} ${subcommand}${argStr}`)
     } else {
       // 不走代理时直接启动 Codex。
       cmdLines.push(`exec codex ${profileArg} ${subcommand}${argStr}`)

@@ -980,6 +980,62 @@ router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
   }
 });
 
+// ── 出网 proxychains 统一配置 (模型 / 系统 各一份独立 conf + enable 开关) ──
+// 仅 admin 可见/可改/可测; 普通用户访问系统设置看不到该入口 (前端按 role=admin 渲染,
+// 后端 adminAuth 兜底). 配置文件落盘到 CORE_DATA_PATH/proxychains/{model,system}.conf.
+
+router.get('/settings/proxychains/availability', adminAuth, (req, res) => {
+  try {
+    const proxychainsRuntime = require('../services/proxychains-runtime');
+    res.json(proxychainsRuntime.detectAvailability({ refresh: String(req.query?.refresh) === '1' }));
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
+router.get('/settings/proxychains', adminAuth, (req, res) => {
+  try {
+    res.json(adminSettings.getProxychains());
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
+router.put('/settings/proxychains', adminAuth, (req, res) => {
+  try {
+    const merged = adminSettings.setProxychains(req.body || {});
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: 'update',
+      resourceType: 'proxychains',
+      resourceId: 'all',
+    });
+    res.json(merged);
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) });
+  }
+});
+
+router.post('/settings/proxychains/test', adminAuth, async (req, res) => {
+  try {
+    const kind = String(req.body?.kind || '').trim();
+    if (kind !== 'model' && kind !== 'system') {
+      return res.status(400).json({ ok: false, error: 'kind 必须是 model 或 system' });
+    }
+    const proxychainsRuntime = require('../services/proxychains-runtime');
+    const result = await proxychainsRuntime.runTest(kind, { timeoutMs: 15_000 });
+    AdminAuditLog.record({
+      adminId: req.user.id,
+      action: `test-${kind}`,
+      resourceType: 'proxychains',
+      resourceId: kind,
+    });
+    return res.json(result);
+  } catch (e) {
+    return res.json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
 // ── Claude Code 模型接入 (raw settings JSON, 不做 secret 管理) ──
 router.get('/model-access/claude-code', adminAuth, (req, res) => {
   res.json(modelAccess.listClaudeCodeModels({ includeSettings: false }));

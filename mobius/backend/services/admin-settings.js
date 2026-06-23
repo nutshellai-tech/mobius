@@ -5,16 +5,23 @@
  *   - 每个 Session 模型创建新 Session 时检查的提问 / tmux 窗口限制.
  *   - 每个 Session 模型是否使用 proxychains.
  *   - 管理员小莫是否接收全站 Session 完成/失败回调.
+ *   - 出网 proxychains 统一配置 (model / system 各一份, 落盘到独立 .conf 文件).
  *
  * 旧 agentBackendDefaults 已移除: 代理只从 modelNetworkProxy.perModel 读取.
  *
  * 落盘: MOBIUS_DATA_PATH/admin-settings.json (与 hub-runtime.json 同目录), tmp+rename 原子写.
+ * proxychains 实际 .conf 文件: CORE_DATA_PATH/proxychains/{model,system}.conf
  */
 const fs = require('fs')
 const path = require('path')
-const { MOBIUS_DATA_PATH } = require('../config')
+const { MOBIUS_DATA_PATH, CORE_DATA_PATH } = require('../config')
 
 const SETTINGS_FILE = path.join(MOBIUS_DATA_PATH, 'admin-settings.json')
+
+// proxychains 配置文件落盘目录: 受控, 不污染 /etc/proxychains.conf.
+const PROXYCHAINS_DIR = path.join(CORE_DATA_PATH, 'proxychains')
+const PROXYCHAINS_MODEL_CONF = path.join(PROXYCHAINS_DIR, 'model.conf')
+const PROXYCHAINS_SYSTEM_CONF = path.join(PROXYCHAINS_DIR, 'system.conf')
 
 const MODEL_PROMPT_LIMIT_WINDOW_HOURS = 5
 const MODEL_PROMPT_LIMIT_WINDOW_MINUTES = 5
@@ -81,6 +88,15 @@ const DEFAULTS = Object.freeze({
     baseUrl: '',
     apiKey: '',
     model: LIGHT_MODEL_API_DEFAULT_MODEL,
+  },
+  // 出网 proxychains 统一配置: 两份独立 .conf + 各自 enable 开关.
+  // conf 内容遵循 proxychains-ng 格式 (strict_chain / socks5 ... 等).
+  // enabled=false 时 Mobius 一切出网回退到不走 proxychains.
+  proxychains: {
+    modelEnabled: false,
+    systemEnabled: false,
+    modelConf: '',
+    systemConf: '',
   },
 })
 
@@ -375,6 +391,70 @@ function maskLightModelApi(value) {
   }
 }
 
+// ── proxychains 出网配置 ──────────────────────────────────────────────────
+// .conf 内容来自多行文本框, 直接保存; 限制总长度 + 拒绝 NUL; 写入前临时目录 + rename.
+const PROXYCHAINS_KINDS = Object.freeze(['model', 'system'])
+const PROXYCHAINS_MAX_CONF_BYTES = 64 * 1024
+
+function normalizeProxychainsKind(value) {
+  const k = String(value || '').trim().toLowerCase()
+  if (!PROXYCHAINS_KINDS.includes(k)) throw new Error(`kind 必须是 ${PROXYCHAINS_KINDS.join(' / ')}`)
+  return k
+}
+
+function normalizeProxychainsConfText(value) {
+  const text = String(value ?? '')
+  if (text.includes('\0')) throw new Error('proxychains 配置不能包含 NUL 字符')
+  if (Buffer.byteLength(text, 'utf8') > PROXYCHAINS_MAX_CONF_BYTES) {
+    throw new Error(`proxychains 配置过大 (${PROXYCHAINS_MAX_CONF_BYTES} 字节以内)`)
+  }
+  return text
+}
+
+function normalizeProxychainsForRead(value) {
+  const obj = value && typeof value === 'object' ? value : {}
+  return {
+    modelEnabled: obj.modelEnabled === true || obj.model_enabled === true,
+    systemEnabled: obj.systemEnabled === true || obj.system_enabled === true,
+    modelConf: normalizeProxychainsConfText(obj.modelConf ?? obj.model_conf ?? ''),
+    systemConf: normalizeProxychainsConfText(obj.systemConf ?? obj.system_conf ?? ''),
+  }
+}
+
+function proxychainsConfPath(kind) {
+  return kind === 'model' ? PROXYCHAINS_MODEL_CONF : PROXYCHAINS_SYSTEM_CONF
+}
+
+function writeProxychainsConf(kind, text) {
+  fs.mkdirSync(PROXYCHAINS_DIR, { recursive: true })
+  const target = proxychainsConfPath(kind)
+  const tmp = `${target}.imac-tmp-${process.pid}-${Date.now()}`
+  fs.writeFileSync(tmp, text, { mode: 0o600 })
+  fs.renameSync(tmp, target)
+}
+
+function removeProxychainsConf(kind) {
+  const target = proxychainsConfPath(kind)
+  try {
+    if (fs.existsSync(target)) fs.unlinkSync(target)
+  } catch (e) {
+    console.warn(`[admin-settings] 删除 ${target} 失败: ${e.message}`)
+  }
+}
+
+// 应用 proxychains 设置: 把 modelConf/systemConf 落盘到独立文件, 文本为空则删文件.
+function applyProxychainsConfs(proxychains) {
+  const normalized = normalizeProxychainsForRead(proxychains)
+  if (normalized.modelConf) writeProxychainsConf('model', normalized.modelConf)
+  else removeProxychainsConf('model')
+  if (normalized.systemConf) writeProxychainsConf('system', normalized.systemConf)
+  else removeProxychainsConf('system')
+}
+
+function proxychainsConfPathForKind(kind) {
+  return proxychainsConfPath(normalizeProxychainsKind(kind))
+}
+
 function writeSettings(next) {
   const dir = path.dirname(SETTINGS_FILE)
   fs.mkdirSync(dir, { recursive: true })
@@ -403,6 +483,9 @@ function loadSettings() {
     }
     if (parsed && typeof parsed === 'object' && parsed.lightModelApi) {
       merged.lightModelApi = normalizeLightModelApiForRead(parsed.lightModelApi)
+    }
+    if (parsed && typeof parsed === 'object' && parsed.proxychains) {
+      merged.proxychains = normalizeProxychainsForRead(parsed.proxychains)
     }
     return merged
   } catch (e) {
@@ -561,12 +644,44 @@ function setLightModelApi(payload) {
   return maskLightModelApi(next.lightModelApi)
 }
 
+function getProxychains() {
+  return loadSettings().proxychains
+}
+
+function setProxychains(payload) {
+  const obj = payload && typeof payload === 'object' ? payload : {}
+  const next = loadSettings()
+  const current = normalizeProxychainsForRead(next.proxychains)
+  const merged = {
+    modelEnabled: obj.modelEnabled !== undefined || obj.model_enabled !== undefined
+      ? (obj.modelEnabled === true || obj.model_enabled === true)
+      : current.modelEnabled,
+    systemEnabled: obj.systemEnabled !== undefined || obj.system_enabled !== undefined
+      ? (obj.systemEnabled === true || obj.system_enabled === true)
+      : current.systemEnabled,
+    modelConf: obj.modelConf !== undefined || obj.model_conf !== undefined
+      ? normalizeProxychainsConfText(obj.modelConf ?? obj.model_conf)
+      : current.modelConf,
+    systemConf: obj.systemConf !== undefined || obj.system_conf !== undefined
+      ? normalizeProxychainsConfText(obj.systemConf ?? obj.system_conf)
+      : current.systemConf,
+  }
+  next.proxychains = merged
+  writeSettings(next)
+  applyProxychainsConfs(merged)
+  return next.proxychains
+}
+
 module.exports = {
   MODEL_PROMPT_LIMIT_WINDOW_HOURS,
   MODEL_PROMPT_LIMIT_WINDOW_MINUTES,
   DEFAULT_MODEL_TMUX_WINDOW_LIMIT,
   LIGHT_MODEL_API_TYPES,
   LIGHT_MODEL_API_DEFAULT_TYPE,
+  PROXYCHAINS_KINDS,
+  PROXYCHAINS_DIR,
+  PROXYCHAINS_MODEL_CONF,
+  PROXYCHAINS_SYSTEM_CONF,
   loadSettings,
   getModelPromptLimits,
   getModelPromptLimit,
@@ -586,4 +701,8 @@ module.exports = {
   getLightModelApi,
   getLightModelApiMasked,
   setLightModelApi,
+  getProxychains,
+  setProxychains,
+  proxychainsConfPathForKind,
+  normalizeProxychainsKind,
 }

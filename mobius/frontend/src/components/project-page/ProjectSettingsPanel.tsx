@@ -1085,7 +1085,7 @@ export function ProjectSettingsPanel({
                 </div>
               </div>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 1.25 / 64。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 5 / 5。第 N 次后的下一次等待为 Init × Backoff^N；达到 Patience 后只记录日志。</p>
           </div>
         </SettingsCard>
 

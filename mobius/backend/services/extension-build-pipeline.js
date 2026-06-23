@@ -128,7 +128,17 @@ async function runBuild(entry) {
 
     if (install) {
       pushLog(st, '[build-pipeline] node_modules 不存在, 先跑 npm install\n');
-      const inst = spawn('npm', ['install', '--no-audit', '--no-fund'], { cwd: frontendDir });
+      // admin 「系统 proxychains」开启时, 给 npm install 子进程注入 LD_PRELOAD + PROXYCHAINS_CONF_FILE.
+      let installEnv;
+      try {
+        const proxychainsRuntime = require('./proxychains-runtime');
+        const extra = proxychainsRuntime.buildSpawnEnv('system');
+        if (extra) installEnv = { ...process.env, ...extra };
+      } catch {}
+      const inst = spawn('npm', ['install', '--no-audit', '--no-fund'], {
+        cwd: frontendDir,
+        ...(installEnv ? { env: installEnv } : {}),
+      });
       inst.stdout.on('data', (b) => pushLog(st, b.toString()));
       inst.stderr.on('data', (b) => pushLog(st, b.toString()));
       inst.on('error', (e) => { pushLog(st, `[npm install error] ${e.message}\n`); });

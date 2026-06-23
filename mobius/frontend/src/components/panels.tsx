@@ -2266,6 +2266,308 @@ function AdminLightModelApiCard() {
   )
 }
 
+// ── 出网 proxychains 配置 (仅管理员可见/可改/可测) ──
+type ProxychainsKind = 'model' | 'system'
+
+type ProxychainsSettings = {
+  modelEnabled: boolean
+  systemEnabled: boolean
+  modelConf: string
+  systemConf: string
+}
+
+type ProxychainsAvailability = {
+  ok: boolean
+  binPath: string | null
+  libPath: string | null
+  reason: string
+}
+
+type ProxychainsTestResult = {
+  ok: boolean
+  elapsedMs?: number
+  httpStatus?: number | null
+  exitIp?: string | null
+  body?: string
+  error?: string
+}
+
+const PROXYCHAINS_SAMPLE_CONF = `# proxychains-ng 配置示例 (ROULETOR/socks/http 二选一)
+strict_chain
+proxy_dns
+remote_dns_subnet 224
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+localnet 127.0.0.0/255.0.0.0
+
+[ProxyList]
+# socks5 127.0.0.1 1080
+# http 127.0.0.1 7890
+`
+
+function AdminProxychainsCard() {
+  const [settings, setSettings] = useState<ProxychainsSettings | null>(null)
+  const [availability, setAvailability] = useState<ProxychainsAvailability | null>(null)
+  const [modelConfDraft, setModelConfDraft] = useState('')
+  const [systemConfDraft, setSystemConfDraft] = useState('')
+  const [modelEnabled, setModelEnabled] = useState(false)
+  const [systemEnabled, setSystemEnabled] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [testingKind, setTestingKind] = useState<ProxychainsKind | null>(null)
+  const [testResults, setTestResults] = useState<Record<ProxychainsKind, ProxychainsTestResult | null>>({
+    model: null,
+    system: null,
+  })
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [s, a] = await Promise.all([
+        api('/api/admin/settings/proxychains') as Promise<ProxychainsSettings>,
+        api('/api/admin/settings/proxychains/availability') as Promise<ProxychainsAvailability>,
+      ])
+      setSettings(s)
+      setModelConfDraft(s.modelConf || '')
+      setSystemConfDraft(s.systemConf || '')
+      setModelEnabled(!!s.modelEnabled)
+      setSystemEnabled(!!s.systemEnabled)
+      setAvailability(a)
+      setDirty(false)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const body: ProxychainsSettings = {
+        modelEnabled,
+        systemEnabled,
+        modelConf: modelConfDraft,
+        systemConf: systemConfDraft,
+      }
+      const next = await api('/api/admin/settings/proxychains', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }) as ProxychainsSettings
+      setSettings(next)
+      setModelConfDraft(next.modelConf || '')
+      setSystemConfDraft(next.systemConf || '')
+      setModelEnabled(!!next.modelEnabled)
+      setSystemEnabled(!!next.systemEnabled)
+      setDirty(false)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const runTest = async (kind: ProxychainsKind) => {
+    setTestingKind(kind)
+    setError('')
+    try {
+      const result = await api('/api/admin/settings/proxychains/test', {
+        method: 'POST',
+        body: JSON.stringify({ kind }),
+      }) as ProxychainsTestResult
+      setTestResults(prev => ({ ...prev, [kind]: result }))
+    } catch (e: any) {
+      setTestResults(prev => ({ ...prev, [kind]: { ok: false, error: e?.message || String(e) } }))
+    } finally {
+      setTestingKind(null)
+    }
+  }
+
+  const refreshAvailability = async () => {
+    try {
+      const a = await api('/api/admin/settings/proxychains/availability?refresh=1') as ProxychainsAvailability
+      setAvailability(a)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    }
+  }
+
+  const markDirty = () => setDirty(true)
+
+  return (
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            出网 Proxychains 配置
+          </h3>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            两份独立配置: 模型 (LLM 出网) / 系统 (pip / git / curl 等 Mobius 自身命令). 启用开关关闭后行为完全回退.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={load} disabled={loading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
+      </div>
+
+      {availability && !availability.ok && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <div className="flex-1 break-all">
+            <div>未检测到可用的 proxychains: {availability.reason || '请先安装 proxychains4'}</div>
+            <div className="mt-1 text-[11px] opacity-80">
+              bin: {availability.binPath || '—'} · lib: {availability.libPath || '—'}
+            </div>
+          </div>
+          <button type="button" onClick={refreshAvailability}
+            className="inline-flex h-7 items-center gap-1 rounded border border-amber-400/40 px-2 text-[11px] text-amber-200 hover:bg-amber-500/20">
+            <RefreshCw className="h-3 w-3" /> 重新检测
+          </button>
+        </div>
+      )}
+
+      {availability && availability.ok && (
+        <div className="mb-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-1.5 text-[11px] text-emerald-300">
+          proxychains 已就绪 · bin: {availability.binPath} · lib: {availability.libPath}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {/* 模型 conf */}
+        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>模型 Proxychains</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>用于 LLM API 出网 (OpenAI / Anthropic / MiniMax / GLM …)</div>
+            </div>
+            <label className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={modelEnabled}
+                onChange={e => { setModelEnabled(e.target.checked); markDirty() }}
+                className="h-4 w-4"
+              />
+              启用
+            </label>
+          </div>
+          <textarea
+            value={modelConfDraft}
+            onChange={e => { setModelConfDraft(e.target.value); markDirty() }}
+            placeholder={PROXYCHAINS_SAMPLE_CONF}
+            spellCheck={false}
+            className="h-48 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => runTest('model')}
+              disabled={testingKind === 'model' || saving || !modelEnabled || !modelConfDraft.trim()}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            >
+              {testingKind === 'model' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              测试 (访问 api.anthropic.com)
+            </button>
+            {testResults.model && (
+              <ProxychainsTestResultInline result={testResults.model} />
+            )}
+          </div>
+        </div>
+
+        {/* 系统 conf */}
+        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>系统 Proxychains</div>
+              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>用于 Mobius 自身系统命令 (pip install / git clone / curl …)</div>
+            </div>
+            <label className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={systemEnabled}
+                onChange={e => { setSystemEnabled(e.target.checked); markDirty() }}
+                className="h-4 w-4"
+              />
+              启用
+            </label>
+          </div>
+          <textarea
+            value={systemConfDraft}
+            onChange={e => { setSystemConfDraft(e.target.value); markDirty() }}
+            placeholder={PROXYCHAINS_SAMPLE_CONF}
+            spellCheck={false}
+            className="h-48 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => runTest('system')}
+              disabled={testingKind === 'system' || saving || !systemEnabled || !systemConfDraft.trim()}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            >
+              {testingKind === 'system' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              测试 (访问 ifconfig.me/ip)
+            </button>
+            {testResults.system && (
+              <ProxychainsTestResultInline result={testResults.system} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-color)] pt-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || loading || !dirty}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {savedFlash ? '已保存' : '保存'}
+        </button>
+        {dirty && (
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动</span>
+        )}
+        <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          配置文件落盘到受控目录 (CORE_DATA_PATH/proxychains/), 不污染 /etc/proxychains.conf
+        </span>
+      </div>
+    </section>
+  )
+}
+
+function ProxychainsTestResultInline({ result }: { result: ProxychainsTestResult }) {
+  return (
+    <span className="text-[11px] break-all" style={{ color: result.ok ? '#10b981' : '#f87171' }}>
+      {result.ok ? '✓ ' : '✗ '}
+      {result.ok
+        ? `成功${result.elapsedMs ? ` · ${result.elapsedMs}ms` : ''}${result.exitIp ? ` · 出口 IP ${result.exitIp}` : ''}${result.httpStatus ? ` · HTTP ${result.httpStatus}` : ''}`
+        : (result.error || '测试失败')}
+    </span>
+  )
+}
+
 type ClaudeCodeModelConfig = {
   key: string
   session_model: string
@@ -4306,7 +4608,10 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           {activeTab === 'redaction' && <AdminTextRedactionPanel />}
 
           {activeTab === 'settings' && (
-            <ModelPromptLimitsCard />
+            <div className="flex flex-col gap-3">
+              <ModelPromptLimitsCard />
+              <AdminProxychainsCard />
+            </div>
           )}
 
           {activeTab === 'models' && <AdminModelsPanel />}

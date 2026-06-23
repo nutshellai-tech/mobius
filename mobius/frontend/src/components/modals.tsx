@@ -27,9 +27,9 @@ import { markFireAndForgetSession } from '../services/session-start-policy'
 const DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES = 10
 const DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES = 30
 const DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF = 2
-const DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF = 1.25
+const DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF = 5
 const DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE = 3
-const DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE = 64
+const DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE = 5
 const FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX = 7 * 24 * 60
 const FORGOTTEN_FLAG_BACKOFF_MAX = 100
 const FORGOTTEN_FLAG_PATIENCE_MAX = 1000
@@ -1055,7 +1055,7 @@ export function ProjectSettingsModal({ project, onClose, onSaved }: { project: a
                 </div>
               </div>
             </div>
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 1.25 / 64。达到 Patience 后只记录日志，不改状态。</p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>默认 Issue: 10 / 2 / 3；Research: 30 / 5 / 5。达到 Patience 后只记录日志，不改状态。</p>
           </div>
 
           <div className="pt-2">
