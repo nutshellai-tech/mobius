@@ -652,16 +652,6 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       : `--settings "$HOME/.claude/mobiusdefault.settings.json"`
 
     // bash -lc 链: 按 Session 配置决定是否用 proxychains, 但都清理 IDE IPC 环境。
-    // admin 管理的「模型 proxychains」开启时优先用 model.conf, 否则回退到 legacy ~/proxy_claude.conf.
-    let modelProxyConf = '$HOME/proxy_claude.conf'
-    try {
-      const adminSettings = require('../services/admin-settings')
-      const cfg = adminSettings.getProxychains()
-      if (cfg && cfg.modelEnabled) {
-        const p = adminSettings.proxychainsConfPathForKind('model')
-        if (p && fs.existsSync(p)) modelProxyConf = JSON.stringify(p)
-      }
-    } catch {}
     // 构造 bash -lc 要执行的命令片段；数组里的 null 会在后面过滤掉。
     const cmd = [
       // 走代理时先加载代理环境变量。
@@ -672,7 +662,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       `export IS_SANDBOX=1`,
       // 根据代理开关选择 proxychains 包裹 claude，或直接 exec claude。
       finalUseProxy
-        ? `exec proxychains -q -f ${modelProxyConf} claude ${claudeArgs.join(' ')}`
+        ? `exec proxychains -q -f "$HOME/proxy_claude.conf" claude ${claudeArgs.join(' ')}`
         : `exec claude ${settingsArg} ${claudeArgs.join(' ')}`,
       // 删除空片段，并用 && 保证前一步失败时不继续执行。
     ].filter(Boolean).join(' && ')

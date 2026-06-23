@@ -576,12 +576,6 @@ function runNpxSkillsAdd(targetDir, skillName) {
     childEnv.NO_PROXY = noProxy;
   }
   return new Promise((resolve) => {
-    // admin 「系统 proxychains」开启时, 给 npx 子进程注入 LD_PRELOAD + PROXYCHAINS_CONF_FILE.
-    try {
-      const proxychainsRuntime = require('./proxychains-runtime');
-      const extra = proxychainsRuntime.buildSpawnEnv('system');
-      if (extra) Object.assign(childEnv, extra);
-    } catch {}
     const proc = spawn('npx', ['--yes', 'skills', 'add', skillName, '--agent', 'claude-code', '--yes'], {
       cwd: targetDir, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'],
     });
