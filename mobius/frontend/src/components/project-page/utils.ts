@@ -1,3 +1,6 @@
+// 前端 forgotten-flag 默认值的单一真相源 (前端侧). 必须与后端
+// mobius/backend/config.js 的 DEFAULT_FORGOTTEN_FLAG_* 保持同步.
+// 任何默认值调整需同时改这里 + 后端 config.js, 不要在其它前端文件再开硬编码副本.
 export const DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES = 10
 export const DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES = 30
 export const DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF = 2

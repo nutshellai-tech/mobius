@@ -2266,6 +2266,171 @@ function AdminLightModelApiCard() {
   )
 }
 
+// ── Proxychains 配置文件直编 (仅 admin 可见) ──
+type ProxyFilesPayload = {
+  systemPath: string
+  modelPath: string
+  system: string
+  systemExists: boolean
+  systemError: string
+  systemWritable: boolean
+  model: string
+  modelExists: boolean
+  modelError: string
+  modelWritable: boolean
+}
+
+function AdminProxyFilesCard() {
+  const [systemText, setSystemText] = useState('')
+  const [modelText, setModelText] = useState('')
+  const [meta, setMeta] = useState<ProxyFilesPayload | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const next = await api('/api/admin/settings/proxy-files') as ProxyFilesPayload
+      setMeta(next)
+      setSystemText(next.system || '')
+      setModelText(next.model || '')
+      setDirty(false)
+      setError('')
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const next = await api('/api/admin/settings/proxy-files', {
+        method: 'PUT',
+        body: JSON.stringify({ system: systemText, model: modelText }),
+      }) as Partial<ProxyFilesPayload>
+      if (next.system !== undefined) setSystemText(next.system)
+      if (next.model !== undefined) setModelText(next.model)
+      if (meta) {
+        setMeta({
+          ...meta,
+          ...(next.systemExists !== undefined ? { systemExists: next.systemExists } : {}),
+          ...(next.systemWritable !== undefined ? { systemWritable: next.systemWritable } : {}),
+          ...(next.modelExists !== undefined ? { modelExists: next.modelExists } : {}),
+          ...(next.modelWritable !== undefined ? { modelWritable: next.modelWritable } : {}),
+        })
+      }
+      setDirty(false)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1500)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Proxychains 配置
+          </h3>
+          <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            直接编辑两个 proxychains 配置文件 (保存即落盘)
+          </div>
+        </div>
+        <button type="button" onClick={load} disabled={loading}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-60">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          刷新
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span className="break-all">{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>系统</div>
+              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.systemPath || '/etc/proxychains.conf'}</div>
+            </div>
+            {meta && !meta.systemWritable && (
+              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">
+                无写权限
+              </span>
+            )}
+          </div>
+          <textarea
+            value={systemText}
+            onChange={e => { setSystemText(e.target.value); setDirty(true) }}
+            spellCheck={false}
+            placeholder={'strict_chain\nproxy_dns\n[ProxyList]\nsocks5 127.0.0.1 1080'}
+            className="h-56 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+          {meta && !meta.systemWritable && (
+            <div className="mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              提示: sudo touch {meta.systemPath} &amp;&amp; sudo chown $(whoami) {meta.systemPath}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>模型 (LLM)</div>
+              <div className="break-all text-[11px]" style={{ color: 'var(--text-muted)' }}>{meta?.modelPath || '~/proxy_claude.conf'}</div>
+            </div>
+            {meta && !meta.modelWritable && (
+              <span className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-300">
+                无写权限
+              </span>
+            )}
+          </div>
+          <textarea
+            value={modelText}
+            onChange={e => { setModelText(e.target.value); setDirty(true) }}
+            spellCheck={false}
+            placeholder={'strict_chain\nproxy_dns\n[ProxyList]\nsocks5 127.0.0.1 1080'}
+            className="h-56 w-full resize-y rounded-md p-2 font-mono text-[11px] leading-[1.5]"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border-color)] pt-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || loading || !dirty}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-color)] px-3 text-[12px] text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          {savedFlash ? '已保存' : '保存'}
+        </button>
+        {dirty && (
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>有未保存的改动</span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 type ClaudeCodeModelConfig = {
   key: string
   session_model: string
@@ -4306,7 +4471,10 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           {activeTab === 'redaction' && <AdminTextRedactionPanel />}
 
           {activeTab === 'settings' && (
-            <ModelPromptLimitsCard />
+            <div className="flex flex-col gap-3">
+              <ModelPromptLimitsCard />
+              <AdminProxyFilesCard />
+            </div>
           )}
 
           {activeTab === 'models' && <AdminModelsPanel />}

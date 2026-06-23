@@ -1,5 +1,6 @@
 const express = require('express');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const { adminAuth } = require('../middleware/auth');
@@ -977,6 +978,99 @@ router.post('/settings/light-model-api/test', adminAuth, async (req, res) => {
     return res.json({ ok: !!result.ok, summary: result.summary, reason: result.reason });
   } catch (e) {
     return res.json({ ok: false, error: e?.message || String(e) });
+  }
+});
+
+// ── Proxychains 配置文件直编: 系统 /etc/proxychains.conf + 模型 ~/proxy_claude.conf ──
+// 直接读写两个文件本身, 不引入新落盘路径, 不加 enable 开关 / availability 检测.
+const PROXYCHAINS_SYSTEM_PATH = '/etc/proxychains.conf';
+const PROXYCHAINS_MODEL_PATH = path.join(os.homedir(), 'proxy_claude.conf');
+
+function readProxyFile(p) {
+  try {
+    if (!fs.existsSync(p)) return { content: '', exists: false };
+    return { content: fs.readFileSync(p, 'utf8'), exists: true };
+  } catch (e) {
+    return { content: '', exists: false, error: e.message };
+  }
+}
+
+function writeProxyFile(p, content) {
+  const text = String(content ?? '');
+  if (text.includes('\0')) throw new Error('配置不能包含 NUL 字符');
+  if (Buffer.byteLength(text, 'utf8') > 256 * 1024) throw new Error('配置过大 (256KB 以内)');
+  const dir = path.dirname(p);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  const tmp = `${p}.imac-tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, p);
+}
+
+function proxyFileWritable(p) {
+  try {
+    if (fs.existsSync(p)) return fs.accessSync(p, fs.constants.W_OK), true;
+    const dir = path.dirname(p);
+    if (!fs.existsSync(dir)) return false;
+    return fs.accessSync(dir, fs.constants.W_OK), true;
+  } catch {
+    return false;
+  }
+}
+
+router.get('/settings/proxy-files', adminAuth, (req, res) => {
+  try {
+    const system = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
+    const model = readProxyFile(PROXYCHAINS_MODEL_PATH);
+    res.json({
+      systemPath: PROXYCHAINS_SYSTEM_PATH,
+      modelPath: PROXYCHAINS_MODEL_PATH,
+      system: system.content,
+      systemExists: !!system.exists,
+      systemError: system.error || '',
+      systemWritable: proxyFileWritable(PROXYCHAINS_SYSTEM_PATH),
+      model: model.content,
+      modelExists: !!model.exists,
+      modelError: model.error || '',
+      modelWritable: proxyFileWritable(PROXYCHAINS_MODEL_PATH),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
+router.put('/settings/proxy-files', adminAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const out = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'system')) {
+      writeProxyFile(PROXYCHAINS_SYSTEM_PATH, body.system);
+      const r = readProxyFile(PROXYCHAINS_SYSTEM_PATH);
+      out.system = r.content;
+      out.systemExists = !!r.exists;
+      out.systemWritable = proxyFileWritable(PROXYCHAINS_SYSTEM_PATH);
+      AdminAuditLog.record({
+        adminId: req.user.id,
+        action: 'update-system',
+        resourceType: 'proxy-files',
+        resourceId: PROXYCHAINS_SYSTEM_PATH,
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'model')) {
+      writeProxyFile(PROXYCHAINS_MODEL_PATH, body.model);
+      const r = readProxyFile(PROXYCHAINS_MODEL_PATH);
+      out.model = r.content;
+      out.modelExists = !!r.exists;
+      out.modelWritable = proxyFileWritable(PROXYCHAINS_MODEL_PATH);
+      AdminAuditLog.record({
+        adminId: req.user.id,
+        action: 'update-model',
+        resourceType: 'proxy-files',
+        resourceId: PROXYCHAINS_MODEL_PATH,
+      });
+    }
+    res.json(out);
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) });
   }
 });
 

@@ -22,17 +22,24 @@ import {
 } from '../services/self-evolve-demo'
 import { LOGO_REVIEW_PROJECT_ID, readLogoReviewDemoState } from '../services/logo-review-demo'
 import { draftClear, draftLoad, draftSave } from '../services/input-drafts'
+import {
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF,
+  DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE,
+  DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE,
+  FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX,
+  FORGOTTEN_FLAG_BACKOFF_MAX,
+  FORGOTTEN_FLAG_PATIENCE_MAX,
+  intervalInputValue,
+  numberInputValue,
+  parseIntervalInput,
+  parseBackoffInput,
+  parsePatienceInput,
+} from './project-page/utils'
 import { markFireAndForgetSession } from '../services/session-start-policy'
 
-const DEFAULT_FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES = 10
-const DEFAULT_FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES = 30
-const DEFAULT_FORGOTTEN_FLAG_ISSUE_BACKOFF = 2
-const DEFAULT_FORGOTTEN_FLAG_RESEARCH_BACKOFF = 5
-const DEFAULT_FORGOTTEN_FLAG_ISSUE_PATIENCE = 3
-const DEFAULT_FORGOTTEN_FLAG_RESEARCH_PATIENCE = 5
-const FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX = 7 * 24 * 60
-const FORGOTTEN_FLAG_BACKOFF_MAX = 100
-const FORGOTTEN_FLAG_PATIENCE_MAX = 1000
 type ProjectVisibility = 'private' | 'team' | 'public' | 'allowlist'
 type IssueVisibility = 'inherit' | ProjectVisibility
 const PROJECT_VISIBILITY_OPTIONS: Array<{ value: ProjectVisibility; label: string; description: string }> = [
@@ -118,39 +125,6 @@ export function ErrBanner({ children, className = '' }: { children: React.ReactN
   )
 }
 
-function intervalInputValue(value: any, fallback: number) {
-  const n = Number(value)
-  return Number.isInteger(n) && n > 0 ? String(n) : String(fallback)
-}
-
-function numberInputValue(value: any, fallback: number) {
-  const n = Number(value)
-  return Number.isFinite(n) ? String(n) : String(fallback)
-}
-
-function parseIntervalInput(value: string, label: string, min: number) {
-  const n = Number(value)
-  if (!Number.isInteger(n)) throw new Error(`${label}必须是整数分钟`)
-  if (n < min) throw new Error(`${label}不能小于 ${min} 分钟`)
-  if (n > FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX) throw new Error(`${label}不能超过 ${FORGOTTEN_FLAG_INTERVAL_MINUTES_MAX} 分钟`)
-  return n
-}
-
-function parseBackoffInput(value: string, label: string) {
-  const n = Number(value)
-  if (!Number.isFinite(n)) throw new Error(`${label}必须是数字`)
-  if (n < 1) throw new Error(`${label}不能小于 1`)
-  if (n > FORGOTTEN_FLAG_BACKOFF_MAX) throw new Error(`${label}不能超过 ${FORGOTTEN_FLAG_BACKOFF_MAX}`)
-  return n
-}
-
-function parsePatienceInput(value: string, label: string) {
-  const n = Number(value)
-  if (!Number.isInteger(n)) throw new Error(`${label}必须是整数`)
-  if (n < 1) throw new Error(`${label}不能小于 1`)
-  if (n > FORGOTTEN_FLAG_PATIENCE_MAX) throw new Error(`${label}不能超过 ${FORGOTTEN_FLAG_PATIENCE_MAX}`)
-  return n
-}
 
 // =====================================================================
 // 路径选择器（限定家目录）
