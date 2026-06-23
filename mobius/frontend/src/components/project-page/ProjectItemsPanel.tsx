@@ -310,7 +310,7 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
           type="button"
           onClick={() => goToPage(pagination.page - 1)}
           disabled={pagination.page <= 1}
-          className="h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="h-8 sm:h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
         >
           上一页
@@ -319,7 +319,7 @@ function IssuePaginationControls({ pagination, compact = false }: IssuePaginatio
           type="button"
           onClick={() => goToPage(pagination.page + 1)}
           disabled={pagination.page >= pagination.totalPages}
-          className="h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="h-8 sm:h-7 px-2.5 rounded-md border text-[11px] transition-colors hover:bg-[var(--bg-card-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
         >
           下一页
