@@ -884,6 +884,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                   修改密码
                 </button>
+                <button onClick={() => { setShowUserMenu(false); toggleTheme() }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 md:hidden"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <Palette className="w-3.5 h-3.5" />
+                  切换主题
+                </button>
                 <button onClick={() => { setShowUserMenu(false); logout(); navigate('/') }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-red-500/10 flex items-center gap-2"
                   style={{ color: '#ef4444' }}>
