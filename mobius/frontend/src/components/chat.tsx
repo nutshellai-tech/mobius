@@ -1021,6 +1021,7 @@ function ChatHeaderOverflowMenu({
   showJsonlMeta, onToggleShowJsonlMeta,
   onSendProjectKnowledge, projectKnowledgeSending, canSendProjectKnowledge,
   onContinueWithOtherModel, canContinueWithOtherModel,
+  onStop, canStop,
 }: {
   jsonlCount: number
   minorCount: number
@@ -1034,6 +1035,8 @@ function ChatHeaderOverflowMenu({
   canSendProjectKnowledge: boolean
   onContinueWithOtherModel: () => void
   canContinueWithOtherModel: boolean
+  onStop: () => void
+  canStop: boolean
 }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1063,6 +1066,12 @@ function ChatHeaderOverflowMenu({
             boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
             color: 'var(--text-primary)',
           }}>
+          {/* 移动端: 顶栏终止按钮已隐藏, 终止收纳进此菜单 (md:hidden = 仅移动端显示) */}
+          <button className={`${itemClass} md:hidden`} style={{ color: '#f87171' }}
+            disabled={!canStop}
+            onClick={() => { setOpen(false); onStop() }}>
+            <span>终止当前操作</span>
+          </button>
           <button className={itemClass} disabled={jsonlCount === 0}
             onClick={() => { setOpen(false); onOpenRaw() }}>
             <span>原始 JSONL 数据</span>
@@ -2853,7 +2862,7 @@ export function ChatArea() {
             disabled={!sessionId}
             aria-live="polite"
             title="终止当前智能体正在执行的操作"
-            className={`session-stop-button h-7 px-2.5 text-[11px] border border-red-500/25 text-red-300 rounded-xl hover:bg-red-500/15 hover:text-red-100 transition-all inline-flex items-center justify-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
+            className={`session-stop-button h-7 px-2.5 text-[11px] border border-red-500/25 text-red-300 rounded-xl hover:bg-red-500/15 hover:text-red-100 transition-all hidden md:inline-flex items-center justify-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${stopFeedbackActive ? 'session-stop-button--active' : ''}`}>
             {stopFeedbackActive && (
               <>
                 <span className="session-stop-button__shock" />
@@ -2886,6 +2895,8 @@ export function ChatArea() {
             canSendProjectKnowledge={jsonlEntries.length > 0 && !!currentProjectId && connectionStatus === 'connected'}
             onContinueWithOtherModel={() => setContinueModalOpen(true)}
             canContinueWithOtherModel={!!currentSession?.session_id && !!currentIssueId}
+            onStop={handleStopSession}
+            canStop={!!sessionId}
           />
         </div>
       </div>
