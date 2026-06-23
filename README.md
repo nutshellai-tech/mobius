@@ -27,10 +27,8 @@ Mobius 是第一个通过 Z.AI 兼容接口，让 GLM-5.2 完整驱动 Agent Ses
 
 - Git clone with command:
    - `git clone https://github.com/nutshellai-tech/mobius.git && cd mobius`
-- Build image (stage 1, environment only, no code):
-   - `docker build -t imac-mobius-base:latest -f deploy/Dockerfile .`
-- Build image (stage 2, copy code into image):
-   - `docker build -t imac-mobius-exe:latest .`
+- Build image (stage 1: environment only without code + stage 2: copy code into image):
+   - `docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest .`
 - Run image:
    - `docker compose up`
 
