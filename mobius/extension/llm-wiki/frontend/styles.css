@@ -400,6 +400,63 @@ button.danger-soft:hover { background: rgba(255, 107, 107, 0.18); }
   font-family: ui-monospace, monospace;
 }
 
+#graph-canvas-wrap {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(10, 132, 255, 0.08), transparent 70%),
+    var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 8px;
+}
+.graph-svg {
+  display: block;
+  width: 100%;
+  user-select: none;
+}
+.graph-edge {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 0.5;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.graph-node-g circle {
+  transition: stroke 0.1s, stroke-width 0.1s;
+}
+.graph-label {
+  fill: var(--text-1);
+  font-size: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--bg-0);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 10px;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+.gl-item { display: inline-flex; align-items: center; gap: 4px; }
+.gl-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.gl-dot.gl-project  { background: #0a84ff; }
+.gl-dot.gl-issue    { background: #ff6b6b; }
+.gl-dot.gl-entity   { background: #bf5af2; }
+.gl-dot.gl-meta     { background: #34c759; }
+
+.graph-list-title {
+  margin-top: 4px;
+}
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;

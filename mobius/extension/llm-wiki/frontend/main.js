@@ -506,6 +506,190 @@ async function runLint() {
   }
 }
 
+// ============================================================
+// 力导向关系图
+// ============================================================
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const GRAPH_W = 280;
+const GRAPH_H = 280;
+const GRAPH_TOP_N = 28;
+
+const NODE_STYLE = {
+  project:  { color: '#0a84ff', r: 6 },
+  issue:    { color: '#ff6b6b', r: 4 },
+  entity:   { color: '#bf5af2', r: 5 },
+  index:    { color: '#34c759', r: 8 },
+  overview: { color: '#34c759', r: 8 },
+  log:      { color: '#ffd60a', r: 6 },
+};
+
+function layoutForceDirected(nodes, edges) {
+  // 初始: 圆周分布, 加一点扰动避免共线
+  nodes.forEach((n, i) => {
+    const ang = (i / nodes.length) * Math.PI * 2;
+    const radius = Math.min(GRAPH_W, GRAPH_H) * 0.35;
+    n.x = GRAPH_W / 2 + Math.cos(ang) * radius + (Math.random() - 0.5) * 8;
+    n.y = GRAPH_H / 2 + Math.sin(ang) * radius + (Math.random() - 0.5) * 8;
+    n.vx = 0; n.vy = 0;
+  });
+
+  const k_repel = 900;
+  const k_spring = 0.035;
+  const restLen = 42;
+  const k_center = 0.012;
+
+  for (let it = 0; it < 140; it++) {
+    // 排斥 (Coulomb-like)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) { dx = (Math.random() - 0.5) * 0.1; dy = (Math.random() - 0.5) * 0.1; d2 = 0.01; }
+        const d = Math.sqrt(d2);
+        const f = k_repel / d2;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      }
+    }
+    // 弹簧 (Hooke)
+    for (const e of edges) {
+      const a = e._src, b = e._dst;
+      if (!a || !b) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const f = k_spring * (d - restLen);
+      const fx = (dx / d) * f, fy = (dy / d) * f;
+      a.vx += fx; a.vy += fy;
+      b.vx -= fx; b.vy -= fy;
+    }
+    // 中心吸引 + 阻尼 + 边界
+    for (const n of nodes) {
+      n.vx += (GRAPH_W / 2 - n.x) * k_center;
+      n.vy += (GRAPH_H / 2 - n.y) * k_center;
+      n.vx *= 0.82; n.vy *= 0.82;
+      n.x += n.vx; n.y += n.vy;
+      const pad = 14;
+      n.x = Math.max(pad, Math.min(GRAPH_W - pad, n.x));
+      n.y = Math.max(pad, Math.min(GRAPH_H - pad, n.y));
+    }
+  }
+}
+
+function renderGraphSvg(nodes, edges, id2node) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${GRAPH_W} ${GRAPH_H}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(GRAPH_H));
+  svg.classList.add('graph-svg');
+
+  // defs: 弱光晕滤镜 (可选, 先省了)
+
+  const edgeGroup = document.createElementNS(SVG_NS, 'g');
+  const nodeGroup = document.createElementNS(SVG_NS, 'g');
+  svg.appendChild(edgeGroup);
+  svg.appendChild(nodeGroup);
+
+  const edgeEls = [];
+  for (const e of edges) {
+    const a = e._src, b = e._dst;
+    if (!a || !b) continue;
+    const ln = document.createElementNS(SVG_NS, 'line');
+    ln.setAttribute('x1', a.x);
+    ln.setAttribute('y1', a.y);
+    ln.setAttribute('x2', b.x);
+    ln.setAttribute('y2', b.y);
+    ln.setAttribute('class', 'graph-edge');
+    ln.dataset.source = a.id;
+    ln.dataset.target = b.id;
+    edgeGroup.appendChild(ln);
+    edgeEls.push(ln);
+  }
+
+  const nodeEls = [];
+  for (const n of nodes) {
+    const style = NODE_STYLE[n.type] || { color: '#8b94a3', r: 4 };
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.classList.add('graph-node-g');
+    g.dataset.id = n.id;
+    g.style.cursor = 'pointer';
+
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', n.x);
+    c.setAttribute('cy', n.y);
+    c.setAttribute('r', String(style.r));
+    c.setAttribute('fill', style.color);
+    c.setAttribute('stroke', 'rgba(255,255,255,0.25)');
+    c.setAttribute('stroke-width', '1');
+    g.appendChild(c);
+
+    // 高入度的节点附标签 (top 5)
+    if (n.deg >= 3 || n.type === 'index' || n.type === 'overview') {
+      const t = document.createElementNS(SVG_NS, 'text');
+      const label = (n.title || '').slice(0, 10);
+      t.setAttribute('x', n.x + style.r + 3);
+      t.setAttribute('y', n.y + 3);
+      t.setAttribute('class', 'graph-label');
+      t.textContent = label;
+      g.appendChild(t);
+    }
+
+    const title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = `${n.title} (${n.type}, 入度 ${n.deg})`;
+    g.appendChild(title);
+
+    nodeGroup.appendChild(g);
+    nodeEls.push(g);
+  }
+
+  function highlight(id) {
+    const neighbors = new Set([id]);
+    for (const e of edges) {
+      if (e._src.id === id) neighbors.add(e._dst.id);
+      if (e._dst.id === id) neighbors.add(e._src.id);
+    }
+    nodeEls.forEach((el) => {
+      const isN = neighbors.has(el.dataset.id);
+      el.style.opacity = isN ? '1' : '0.15';
+      const c = el.querySelector('circle');
+      if (c) {
+        c.setAttribute('stroke', el.dataset.id === id ? '#fff' : 'rgba(255,255,255,0.25)');
+        c.setAttribute('stroke-width', el.dataset.id === id ? '2' : '1');
+      }
+    });
+    edgeEls.forEach((el) => {
+      const isE = el.dataset.source === id || el.dataset.target === id;
+      el.style.opacity = isE ? '0.9' : '0.05';
+    });
+  }
+  function reset() {
+    nodeEls.forEach((el) => {
+      el.style.opacity = '1';
+      const c = el.querySelector('circle');
+      if (c) {
+        c.setAttribute('stroke', 'rgba(255,255,255,0.25)');
+        c.setAttribute('stroke-width', '1');
+      }
+    });
+    edgeEls.forEach((el) => { el.style.opacity = ''; });
+  }
+
+  nodeEls.forEach((el) => {
+    el.addEventListener('mouseenter', () => highlight(el.dataset.id));
+    el.addEventListener('mouseleave', reset);
+    el.addEventListener('click', () => {
+      const n = id2node.get(el.dataset.id);
+      if (n && n.path) navigate(n.path, { pushHistory: true });
+    });
+  });
+
+  // 列表 hover 也高亮 SVG
+  svg._highlight = highlight;
+  svg._reset = reset;
+  return svg;
+}
+
 async function showGraph() {
   const btn = $('#graphBtn');
   btn.disabled = true;
@@ -514,28 +698,45 @@ async function showGraph() {
     const r = await extCall({ action: 'graph' });
     if (!r.ok) throw new Error(r.error || 'graph 失败');
     showSidePanel('graph');
-    $('#graph-stats').textContent = `${r.nodes.length} 节点 · ${r.edges.length} 边`;
-    const byType = {};
-    for (const n of r.nodes) byType[n.type] = (byType[n.type] || 0) + 1;
+
     // 入度
     const inDeg = new Map();
     for (const e of r.edges) inDeg.set(e.target, (inDeg.get(e.target) || 0) + 1);
-    // top 节点 (按入度)
-    const sorted = r.nodes
-      .map((n) => ({ ...n, deg: inDeg.get(n.id) || 0 }))
-      .sort((a, b) => b.deg - a.deg)
-      .slice(0, 30);
+    for (const n of r.nodes) n.deg = inDeg.get(n.id) || 0;
+
+    // top N 节点 + 子图
+    const topN = r.nodes.slice().sort((a, b) => b.deg - a.deg).slice(0, GRAPH_TOP_N);
+    const topIds = new Set(topN.map((n) => n.id));
+    const id2node = new Map(topN.map((n) => [n.id, n]));
+    const subEdges = r.edges
+      .filter((e) => topIds.has(e.source) && topIds.has(e.target))
+      .map((e) => ({ _src: id2node.get(e.source), _dst: id2node.get(e.target) }));
+
+    $('#graph-stats').textContent = `top ${topN.length} / ${r.nodes.length} 节点 · 子图 ${subEdges.length} / ${r.edges.length} 边`;
+
+    // 布局
+    layoutForceDirected(topN, subEdges);
+
+    // 渲染 SVG
+    const wrap = $('#graph-canvas-wrap');
+    wrap.innerHTML = '';
+    const svg = renderGraphSvg(topN, subEdges, id2node);
+    wrap.appendChild(svg);
+
+    // 列表
     const typeIcons = { project: '📁', issue: '🐞', entity: '🔗', index: '📚', overview: '🌍', log: '📜' };
     const list = $('#graph-list');
-    list.innerHTML = sorted.map((n) => {
+    list.innerHTML = topN.slice(0, 18).map((n) => {
       const icon = typeIcons[n.type] || '📄';
-      return `<li class="result-item" data-path="${escapeHtml(n.path)}">
+      return `<li class="result-item" data-path="${escapeHtml(n.path)}" data-id="${escapeHtml(n.id)}">
         <span class="ri-title">${icon} ${escapeHtml(n.title)}<span class="ri-tag">入度 ${n.deg}</span></span>
         <span class="ri-path">${escapeHtml(n.path)}</span>
       </li>`;
     }).join('');
     $$('#graph-list .result-item').forEach((el) => {
       el.addEventListener('click', () => navigate(el.getAttribute('data-path'), { pushHistory: true }));
+      el.addEventListener('mouseenter', () => svg._highlight && svg._highlight(el.dataset.id));
+      el.addEventListener('mouseleave', () => svg._reset && svg._reset());
     });
   } catch (e) {
     toast(e.message || 'graph 失败', 'error');

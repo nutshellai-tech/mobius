@@ -1400,6 +1400,8 @@ export function ChatArea() {
   // count-then-tail: 后端先发 jsonl_meta {total}, 再回灌末尾 200 条. 这里存服务端 total,
   // 用作 "加载全部" 按钮的判断和标题显示, 不依赖 entries.length.
   const [jsonlTotal, setJsonlTotal] = useState<number>(0)
+  // 后端在 jsonl_meta 里附带的真实 jsonl 文件绝对路径, 用于原始数据弹窗标题展示.
+  const [jsonlPath, setJsonlPath] = useState<string | null>(null)
   const [jsonlLoadingMore, setJsonlLoadingMore] = useState<boolean>(false)
   const [showRaw, setShowRaw] = useState(false)
   const [inputReplayOpen, setInputReplayOpen] = useState(false)
@@ -2261,6 +2263,7 @@ export function ChatArea() {
           if (msg.session_id && msg.session_id !== sid) return
           const total = Number(msg.total)
           if (Number.isFinite(total)) setJsonlTotal(total)
+          if (typeof msg.jsonl_path === 'string') setJsonlPath(msg.jsonl_path)
         }
         else if (msg.event === 'jsonl_history') {
           // SSE 建连时分块回灌 jsonl 历史: reset=true 的第一块覆盖, 后续块追加.
@@ -2372,6 +2375,7 @@ export function ChatArea() {
     setMessages([])
     setJsonlEntries([])
     setJsonlTotal(0)
+    setJsonlPath(null)
     setJsonlLoadingMore(false)
     setHistoryLoaded(false)
     loadHistory()
@@ -3379,11 +3383,43 @@ export function ChatArea() {
             onClick={e => e.stopPropagation()}
             style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
             <div className="px-5 py-3 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-              <span className="text-[14px] font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>
-                原始 JSONL <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>· {jsonlEntries.length} 条</span>
+              <span className="text-[14px] font-semibold flex-1 min-w-0 flex items-baseline gap-2" style={{ color: 'var(--text-primary)' }}>
+                <span className="flex-shrink-0">原始 JSONL <span className="text-[11px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>· {jsonlEntries.length} 条</span></span>
+                {jsonlPath && (
+                  <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-muted)' }} title={jsonlPath}>{jsonlPath}</span>
+                )}
               </span>
-              <button onClick={() => {
-                  try { navigator.clipboard.writeText(jsonlEntries.map(e => JSON.stringify(e)).join('\n')) } catch {}
+              <button onClick={async () => {
+                  // 复制全部前必须确保拿到完整 entries: 后端 SSE 默认只回灌末尾 200 条,
+                  // 且 REST 单次最多 5000 条. 这里分页拉满全量, 不省略不截断.
+                  try {
+                    const sid = currentSession?.session_id || currentTask?.task_id
+                    let entriesToCopy = jsonlEntries
+                    if (sid && jsonlTotal > jsonlEntries.length) {
+                      const collected: any[] = []
+                      let from = 0
+                      const pageSize = 5000
+                      let total = jsonlTotal
+                      while (from < total) {
+                        const data = await api(`/api/sessions/${sid}/jsonl-history?from=${from}&limit=${pageSize}`)
+                        const slice = Array.isArray(data?.entries) ? data.entries : []
+                        if (slice.length === 0) break
+                        collected.push(...slice)
+                        from += slice.length
+                        if (Number.isFinite(Number(data?.total))) total = Number(data.total)
+                        if (slice.length < pageSize) break
+                      }
+                      if (collected.length > 0) {
+                        const activeSid = useStore.getState().currentSession?.session_id || useStore.getState().currentTask?.task_id
+                        if (sid === activeSid) {
+                          entriesToCopy = collected
+                          setJsonlEntries(collected)
+                          if (collected.length === total) setJsonlTotal(total)
+                        }
+                      }
+                    }
+                    await navigator.clipboard.writeText(entriesToCopy.map(e => JSON.stringify(e)).join('\n'))
+                  } catch {}
                 }}
                 className="h-7 px-2.5 text-[11px] rounded-md border border-[var(--border-color-strong)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 style={{ color: 'var(--text-secondary)' }}

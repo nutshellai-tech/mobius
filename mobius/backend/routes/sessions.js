@@ -568,6 +568,7 @@ router.get('/:id/events', authOrQuery, async (req, res) => {
             total: metaTotal,
             total_approximate: metaApproximate,
             tail_count: DEFAULT_HISTORY_TAIL,
+            jsonl_path: counted?.paths?.primary || histPath || null,
           });
           if (!metaSent || closed) return endStream();
         }
