@@ -470,7 +470,7 @@ function CreateModalShell({ title, onClose, children, footer, dark, width = 560 
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5">{children}</div>
-        <div className="shrink-0 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>{footer}</div>
+        <div className="gc-modal-footer shrink-0 px-5 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>{footer}</div>
       </div>
     </div>
   )

@@ -5205,3 +5205,45 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   移动端细致打磨 (第二轮: 手感层)
+   触控目标 / 输入字号(防 iOS 聚焦缩放) / 滚动手感 / 安全区 / 极窄屏模态.
+   仅 max-width 断点内生效, 桌面端零影响.
+   ====================================================================== */
+@media (max-width: 768px) {
+  /* iOS Safari: 文本输入字号 <16px 聚焦时自动放大整个页面, 统一拉到 16px. */
+  input[type="text"], input[type="search"], input[type="email"],
+  input[type="password"], input[type="url"], input[type="number"],
+  input[type="tel"], input:not([type]), textarea, select {
+    font-size: 16px;
+  }
+  /* 移动端隐藏滚动条: 惯性滚动 + 节省横向空间, 滚动条冗余且占地. */
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  /* 抽屉内可点项 (项目/Issue/Research 列表): 保证最小触控高度, 防误触. */
+  .mobius-drawer button, .mobius-drawer a { min-height: 40px; }
+  /* 顶栏操作按钮 (汉堡/新建/主题等): 最小触控尺寸. */
+  .mobius-topnav-actions button { min-height: 36px; min-width: 36px; }
+  /* 模态底部操作栏避让底部 Home 指示条. */
+  .gc-modal-footer { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  /* 可拖拽分割条在窄屏无意义 (已是抽屉), 缩小避免误触. */
+  [class*="cursor-col-resize"] { pointer-events: none; }
+}
+
+@media (max-width: 640px) {
+  /* 模态底部主按钮 (取消/提交): 高度 44px, 触控友好. */
+  .global-create-modal .gc-modal-footer button { min-height: 44px; }
+  /* 模态卡片圆角略收, 视觉更贴合小屏. */
+  .global-create-modal { border-radius: 16px; }
+  /* 顶栏新建下拉菜单: 拉宽到近全屏, 避免文字截断. */
+  [data-tour="top-create"] > div:last-child { min-width: calc(100vw - 32px); }
+}
+
+@media (max-width: 480px) {
+  /* 极窄屏: 模态卡片近全宽, 充分利用屏幕, 两侧仅留 8px 边距. */
+  [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] > [class~="relative"] {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+}
+
