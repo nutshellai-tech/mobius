@@ -1,5 +1,11 @@
 <a id="readme-top"></a>
 
+<p align="right">
+  <sub>
+    <b>简体中文</b> · <a href="./README.en.md">English</a>
+  </sub>
+</p>
+
 <h1 align="center">
   <a href="https://mobius.nutshellai.cn/">
     <img src="./mobius/extension/mobius-home/frontend/favicon.svg" width="56" alt="莫比乌斯 Logo" />
