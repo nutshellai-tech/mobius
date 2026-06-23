@@ -2802,7 +2802,7 @@ export function ChatArea() {
               {currentSession?.name || currentTask?.name}
             </h2>
             {currentModelLabel && (
-              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0"
+              <span className="text-[10px] px-2 py-0.5 rounded-md flex-shrink-0 hidden md:inline-flex"
                 title={`模型: ${currentModelLabel}`}
                 style={{ color: 'var(--text-muted)', background: 'var(--bg-card-hover)' }}>
                 {currentModelLabel}
@@ -2869,7 +2869,7 @@ export function ChatArea() {
               projectId={currentProjectId}
               subPath={currentVscodeSubPath}
               showWorktreeOption={!!currentVscodeSubPath}
-              className="h-7 px-2.5 text-[11px] border border-blue-500/20 text-blue-400 rounded-xl hover:bg-blue-500/10 transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+              className="h-7 px-2.5 text-[11px] border border-blue-500/20 text-blue-400 rounded-xl hover:bg-blue-500/10 transition-colors hidden md:inline-flex items-center gap-1.5 whitespace-nowrap"
             />
           )}
           {/* … 溢出菜单: 把 "原始数据 / 隐藏次要条目 / 项目知识沉淀" 收纳进来 */}

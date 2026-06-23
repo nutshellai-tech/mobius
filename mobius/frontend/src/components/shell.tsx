@@ -716,7 +716,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
               aria-label="选择主题"
               aria-expanded={showThemeMenu}
-              className="h-8 px-2 md:min-w-[76px] flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+              className="h-8 px-2 md:min-w-[76px] hidden md:flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
               style={{
                 color: 'var(--text-muted)',
                 borderColor: 'var(--border-color)',
