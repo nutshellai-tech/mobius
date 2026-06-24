@@ -191,7 +191,7 @@ function listSessionModelOptions() {
   const codexDynamics = modelAccess.listCodexModels({ enabledOnly: true })
     .map((m) => dynamicCodexEntryFor(m.session_model))
     .filter(Boolean)
-    .filter((m) => !builtinCodexProfileKey || m.key !== builtinCodexProfileKey)
+    .filter((m) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
 
   const claudeDynamics = modelAccess.listClaudeCodeModels({ enabledOnly: true })
     .map((m) => dynamicEntryFor(m.session_model))
