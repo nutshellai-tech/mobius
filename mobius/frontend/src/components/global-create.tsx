@@ -1061,13 +1061,13 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
       <button type="button"
         onClick={(e) => { e.stopPropagation(); onOpenChange(!open) }}
         title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
-        className="btn-primary h-8 flex items-center gap-1 rounded-lg pl-2 pr-2 transition-opacity">
+        className="mobius-create-trigger h-8 flex items-center gap-1 rounded-lg pl-2 pr-2">
         <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
         <span className="text-[12px] font-semibold hidden md:inline">新建</span>
         <ChevronDown className={`w-3 h-3 hidden md:block transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-[212px] rounded-lg p-1.5 shadow-xl"
+        <div className="absolute right-0 top-10 z-50 min-w-[200px] rounded-lg shadow-xl py-1"
           style={{ background: 'var(--menu-bg)', border: '1px solid var(--border-color)' }}
           onClick={e => e.stopPropagation()}>
           {MENU_ITEMS.map(item => {
@@ -1078,17 +1078,14 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
               <button key={item.kind} type="button"
                 disabled={!ok}
                 onClick={() => { if (ok) { onOpenChange(false); onPick(item.kind) } }}
-                className="w-full rounded-md px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 style={{ color: 'var(--text-primary)' }}>
-                <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                <span className="text-[12px] font-medium">{item.label}</span>
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{item.label}</span>
                 {hint && <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>{hint}</span>}
               </button>
             )
           })}
-          <div className="mt-1 pt-1 border-t px-2 py-1 text-[9px] leading-snug" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-            4 类创建均在弹窗内单页完成，无需跳转。
-          </div>
         </div>
       )}
     </div>

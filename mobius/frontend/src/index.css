@@ -804,6 +804,19 @@ body::after {
 .btn-primary:active:not(:disabled) { transform: scale(0.97); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* ===== 顶栏「+」新建按钮: 配色同步系统头像主色调 =====
+   头像为固定 from-blue-500/30 to-cyan-500/20; 此触发按钮取同色相实色渐变作 CTA,
+   与头像一样不随主题变 (全主题一致), 视觉协调无违和. 仅作用于该触发按钮,
+   不影响全局 .btn-primary. */
+.mobius-create-trigger {
+  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  color: #ffffff;
+  transition: filter 120ms ease, transform 80ms ease, opacity 120ms ease;
+}
+.mobius-create-trigger:hover:not(:disabled) { filter: brightness(1.08); }
+.mobius-create-trigger:active:not(:disabled) { transform: scale(0.97); }
+.mobius-create-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ===== Mobius 品牌 Logo ===== */
 .mobius-brand-logo {
   display: inline-flex;
@@ -5294,10 +5307,9 @@ body.mobius-resizing .mobius-resizable-handle {
     width: auto;
     min-width: 0;
   }
-  /* 新建下拉菜单项: 触摸热区增大到 40px, 底部提示放大至 11px 提升窄屏可读性.
-     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑的 py-1.5. */
+  /* 新建下拉菜单项: 触摸热区增大到 40px, 提升窄屏可读性与可点性.
+     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑排版. */
   [data-tour="top-create"] > div:last-child button { min-height: 40px; }
-  [data-tour="top-create"] > div:last-child > div:last-child { font-size: 11px; }
 }
 
 @media (max-width: 480px) {
