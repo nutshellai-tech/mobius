@@ -571,20 +571,20 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
             {!branding.hideLogo && <MobiusLogo size={28} />}
             {branding.systemNameEn && (
-              <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
                 {branding.systemNameEn}
               </span>
             )}
           </Link>
-          <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-          <Link to={`/u/${userParam}`} className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+          <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+          <Link to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
             {userParam}
           </Link>
           {projectParam && (
             <>
-              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+              <span className="mobius-topnav-sep-post text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <div className="mobius-topnav-projectcrumb relative flex min-w-0 flex-shrink-0 items-center">
                 <Link to={`/u/${userParam}/p/${projectParam}`}
                   className="text-[13px] hover:text-blue-400 truncate"
                   style={{ color: 'var(--text-secondary)', maxWidth: 180 }}

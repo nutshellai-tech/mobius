@@ -5257,6 +5257,21 @@ body.mobius-resizing .mobius-resizable-handle {
   [class*="cursor-col-resize"] { pointer-events: none; }
 }
 
+/* ======================================================================
+   移动端顶栏面包屑: 375px 视口下面包屑各段 (品牌文字 + / + admin + / + 项目名)
+   合计宽于可用区, 项目名 (如 "system self evolve") 被右侧操作区压盖成 "syste".
+   窄屏隐藏冗余段 — 保留 logo 图标, 去掉品牌文字 / 用户名段及其两侧分隔符,
+   把横向空间让给项目名; 项目名段改可收缩 (覆盖 flex-shrink-0), 名称过长时
+   干净截断加省略号, 不再被操作区压盖. 桌面端 (≥769px) 完整面包屑不动.
+   ====================================================================== */
+@media (max-width: 768px) {
+  .mobius-topnav .mobius-topnav-brandtext,
+  .mobius-topnav .mobius-topnav-userlink,
+  .mobius-topnav .mobius-topnav-sep-pre,
+  .mobius-topnav .mobius-topnav-sep-post { display: none; }
+  .mobius-topnav .mobius-topnav-projectcrumb { flex-shrink: 1; }
+}
+
 @media (max-width: 640px) {
   /* 模态底部主按钮 (取消/提交): 高度 44px, 触控友好. */
   .global-create-modal .gc-modal-footer button { min-height: 44px; }
