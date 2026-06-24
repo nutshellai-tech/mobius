@@ -1,6 +1,5 @@
 const fs = require('fs')
 const path = require('path')
-const util = require('util')
 const { spawnSync } = require('child_process')
 
 const { TEST_ROOT } = require('../config')
@@ -61,21 +60,9 @@ function recordTmuxCommand(args, opts = {}) {
   }
 }
 
-function recordConsoleLog(args) {
-  try {
-    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true })
-    fs.appendFileSync(LOG_FILE, `${util.format(...args)}\n`)
-  } catch (e) {
-    if (!warned) {
-      warned = true
-      console.warn(`[tmux-operation-log] append failed (${LOG_FILE}): ${e.message}`)
-    }
-  }
-}
-
 function tmux(args, opts = {}) {
   recordTmuxCommand(args, opts)
   return spawnSync('tmux', args, { encoding: 'utf8', ...opts })
 }
 
-module.exports = { LOG_FILE, recordConsoleLog, recordTmuxCommand, shouldRecordTmuxCommand, tmux, tmuxCommandString }
+module.exports = { LOG_FILE, recordTmuxCommand, shouldRecordTmuxCommand, tmux, tmuxCommandString }
