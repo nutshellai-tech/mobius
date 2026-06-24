@@ -51,6 +51,25 @@ type WriteToolCall = {
   lineCount: number
   charCount: number
 }
+type BashToolResult = {
+  entry: AnyEntry
+  lineNo: number
+  toolUseId?: string
+  parentUuid?: string
+  sourceAssistantUuid?: string
+  stdout: string
+  stderr: string
+  content: string
+  isError: boolean
+  interrupted: boolean
+  isImage: boolean
+  noOutputExpected: boolean
+}
+type JsonlViewItem = {
+  entry: AnyEntry
+  lineNo: number
+  bashResults?: BashToolResult[]
+}
 type DiffRow = {
   key: string
   kind: 'added' | 'removed' | 'same' | 'hunk'
@@ -286,14 +305,7 @@ function extractCodeEdit(entry: AnyEntry): CodeEdit | null {
 // (即触发了产品构建的 shell 调用).
 // 走 isBashToolUseName 让大小写兼容与 BashCall 卡片渲染对齐, 避免 'bash' 时主题/识别脱节.
 function isStartPyToolUse(entry: AnyEntry): boolean {
-  if (entry?.type !== 'assistant') return false
-  const c = entry?.message?.content
-  if (!Array.isArray(c)) return false
-  return c.some((b: any) => {
-    if (b?.type !== 'tool_use' || !isBashToolUseName(b?.name)) return false
-    const cmd = b?.input?.command
-    return typeof cmd === 'string' && cmd.includes('start.py')
-  })
+  return extractBashCalls(entry).some((call) => call.command.includes('start.py'))
 }
 
 // Claude Code Bash tool_use 卡片的纯逻辑 (BashCall 类型, extract*, summary) 抽到了
@@ -309,11 +321,203 @@ import type { BashCall } from './jsonl-bash-helpers'
 
 // 从 assistant.message.content 抽出全部 Bash tool_use 调用 (保序, 含同一条 entry 多个 Bash).
 function extractBashCalls(entry: AnyEntry): BashCall[] {
-  return extractBashCallsFromHelpers(entry)
+  const claudeCalls = extractBashCallsFromHelpers(entry)
+  if (claudeCalls.length > 0) return claudeCalls
+
+  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call') {
+    const payload = entry.payload
+    const cmd = functionCallCommand(payload)
+    if (!cmd) return []
+    const args = parseFunctionCallArguments(payload?.arguments) || {}
+    const name = typeof payload?.name === 'string' ? payload.name : ''
+    if (name && name !== 'exec_command' && name !== 'bash' && name !== 'shell') return []
+
+    const cwd = stringField(args.workdir) || stringField(args.cwd) || stringField(args?.input?.workdir) || stringField(args?.input?.cwd) || stringField(entry?.cwd)
+    let commandSource: BashCall['commandSource'] = 'command'
+    if (typeof args.cmd === 'string') commandSource = 'cmd'
+    else if (typeof args.script === 'string' || typeof args?.input?.script === 'string') commandSource = 'script'
+
+    return [{
+      id: stringField(payload?.call_id) || undefined,
+      description: '',
+      cwd,
+      command: cmd,
+      commandSource,
+    }]
+  }
+
+  return []
 }
 
 function isBashToolUse(entry: AnyEntry): boolean {
   return extractBashCalls(entry).length > 0
+}
+
+function stringField(value: any): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function outputField(value: any): string {
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function toolResultContentText(content: any): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return outputField(content)
+  return content
+    .map((block: any) => {
+      if (typeof block === 'string') return block
+      if (!block || typeof block !== 'object') return ''
+      if (typeof block.text === 'string') return block.text
+      if (typeof block.content === 'string') return block.content
+      if (typeof block.output_text === 'string') return block.output_text
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+function isPureToolResultEntry(entry: AnyEntry): boolean {
+  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output') return true
+  const content = entry?.message?.content
+  return entry?.type === 'user'
+    && Array.isArray(content)
+    && content.length > 0
+    && content.every((block: any) => block?.type === 'tool_result')
+}
+
+function extractBashToolResultRecords(entry: AnyEntry, lineNo: number): BashToolResult[] {
+  if (entry?.type === 'response_item' && entry?.payload?.type === 'function_call_output') {
+    const output = functionOutputBody(entry.payload?.output)
+    return [{
+      entry,
+      lineNo,
+      toolUseId: stringField(entry.payload?.call_id) || undefined,
+      stdout: output,
+      stderr: '',
+      content: output,
+      isError: entry.payload?.status === 'failed' || entry.payload?.is_error === true,
+      interrupted: false,
+      isImage: false,
+      noOutputExpected: false,
+    }]
+  }
+
+  if (entry?.type !== 'user') return []
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return []
+  const blocks = content.filter((block: any) => block?.type === 'tool_result')
+  if (blocks.length === 0) return []
+
+  const toolUseResult = entry?.toolUseResult && typeof entry.toolUseResult === 'object'
+    ? entry.toolUseResult
+    : {}
+  const stdout = outputField(toolUseResult.stdout)
+  const stderr = outputField(toolUseResult.stderr)
+  const sourceAssistantUuid = stringField(toolUseResult.sourceToolAssistantUUID)
+  const parentUuid = stringField(entry?.parentUuid)
+  const interrupted = toolUseResult.interrupted === true
+  const isImage = toolUseResult.isImage === true
+  const noOutputExpected = toolUseResult.noOutputExpected === true
+
+  return blocks.map((block: any) => {
+    const blockContent = toolResultContentText(block?.content)
+    const fallbackContent = [stdout, stderr].filter(Boolean).join('\n')
+    return {
+      entry,
+      lineNo,
+      toolUseId: stringField(block?.tool_use_id) || undefined,
+      parentUuid: parentUuid || undefined,
+      sourceAssistantUuid: sourceAssistantUuid || undefined,
+      stdout,
+      stderr,
+      content: blockContent || fallbackContent,
+      isError: block?.is_error === true || toolUseResult.is_error === true || !!toolUseResult.error,
+      interrupted,
+      isImage,
+      noOutputExpected,
+    }
+  })
+}
+
+function mergeBashToolResultItems(visibleEntries: AnyEntry[], windowOffset: number): JsonlViewItem[] {
+  type BashSource = { index: number; uuid: string; calls: BashCall[] }
+  const sourcesByUuid = new Map<string, BashSource>()
+  const sourceByCallId = new Map<string, BashSource>()
+
+  visibleEntries.forEach((entry, index) => {
+    const calls = extractBashCalls(entry)
+    const uuid = stringField(entry?.uuid)
+    if (calls.length === 0) return
+    const source = { index, uuid, calls }
+    if (uuid) sourcesByUuid.set(uuid, source)
+    calls.forEach((call) => {
+      if (call.id) sourceByCallId.set(call.id, source)
+    })
+  })
+
+  const resultsBySourceIndex = new Map<number, BashToolResult[]>()
+  const hiddenResultEntryIndexes = new Set<number>()
+
+  visibleEntries.forEach((entry, index) => {
+    const lineNo = windowOffset + index + 1
+    const records = extractBashToolResultRecords(entry, lineNo)
+    if (records.length === 0) return
+
+    let matchedCount = 0
+    for (const record of records) {
+      let source: BashSource | undefined
+      let matchedCallId = record.toolUseId
+
+      if (record.toolUseId) {
+        source = sourceByCallId.get(record.toolUseId)
+      }
+
+      if (!source) {
+        const candidateUuids = [record.sourceAssistantUuid, record.parentUuid].filter(Boolean) as string[]
+        for (const uuid of candidateUuids) {
+          const candidate = sourcesByUuid.get(uuid)
+          if (!candidate) continue
+          source = candidate
+          break
+        }
+      }
+
+      if (!source) continue
+
+      if (record.toolUseId) {
+        const callMatches = source.calls.some((call) => call.id === record.toolUseId)
+        if (!callMatches) continue
+      } else if (source.calls.length === 1) {
+        matchedCallId = source.calls[0].id
+      } else {
+        continue
+      }
+
+      const next = { ...record, toolUseId: matchedCallId }
+      const existing = resultsBySourceIndex.get(source.index) || []
+      existing.push(next)
+      resultsBySourceIndex.set(source.index, existing)
+      matchedCount += 1
+    }
+
+    if (matchedCount > 0 && matchedCount === records.length && isPureToolResultEntry(entry)) {
+      hiddenResultEntryIndexes.add(index)
+    }
+  })
+
+  return visibleEntries.flatMap((entry, index) => {
+    if (hiddenResultEntryIndexes.has(index)) return []
+    const lineNo = windowOffset + index + 1
+    const bashResults = resultsBySourceIndex.get(index)
+    return [{ entry, lineNo, bashResults }]
+  })
 }
 
 function isContextCompactedEvent(entry: AnyEntry): boolean {
@@ -889,17 +1093,28 @@ function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall }) {
  *   + 命令体 (终端色 pre + bash 高亮, 长/多行命令可滚).
  * - 命令文本严格按原样展示 (引号 / && / | / 重定向 / 换行全部保留), 不执行不重写.
  */
-function JsonEntryBashCommands({ calls }: { calls: BashCall[] }) {
+function JsonEntryBashCommands({ calls, results = [] }: { calls: BashCall[]; results?: BashToolResult[] }) {
   return (
     <div className="flex flex-col gap-2">
-      {calls.map((call, idx) => (
-        <BashCallCard key={(call.id || `bash-${idx}`) + idx} call={call} index={calls.length > 1 ? idx + 1 : null} />
-      ))}
+      {calls.map((call, idx) => {
+        const callResults = results.filter((result) => {
+          if (result.toolUseId && call.id) return result.toolUseId === call.id
+          return calls.length === 1
+        })
+        return (
+          <BashCallCard
+            key={(call.id || `bash-${idx}`) + idx}
+            call={call}
+            index={calls.length > 1 ? idx + 1 : null}
+            results={callResults}
+          />
+        )
+      })}
     </div>
   )
 }
 
-function BashCallCard({ call, index }: { call: BashCall; index: number | null }) {
+function BashCallCard({ call, index, results = [] }: { call: BashCall; index: number | null; results?: BashToolResult[] }) {
   const [copied, setCopied] = useState<boolean>(false)
   const lines = useMemo(() => splitDiffValue(call.command), [call.command])
   // 多行脚本首屏只露前 N 行, 余下 details 折叠, 与 Write 预览行为一致.
@@ -973,6 +1188,112 @@ function BashCallCard({ call, index }: { call: BashCall; index: number | null })
           </div>
         )}
       </div>
+      {results.length > 0 && (
+        <div className="border-t border-[var(--border-color)] bg-black/5 dark:bg-white/[0.02]">
+          {results.map((result, idx) => (
+            <BashResultPanel key={`${result.toolUseId || 'result'}-${result.lineNo}-${idx}`} result={result} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResultTextPreview({ text }: { text: string }) {
+  const lines = useMemo(() => splitDiffValue(text), [text])
+  const previewLines = lines.slice(0, WRITE_PREVIEW_LINE_LIMIT)
+  const restLines = lines.slice(WRITE_PREVIEW_LINE_LIMIT)
+  if (!text) return null
+  return (
+    <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
+      <CodePreviewRows lines={previewLines} />
+      {restLines.length > 0 && (
+        <details className="border-t border-[var(--border-color)]/60">
+          <summary className="cursor-pointer px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
+            展开剩余 {restLines.length} 行
+          </summary>
+          <CodePreviewRows lines={restLines} startLine={WRITE_PREVIEW_LINE_LIMIT + 1} />
+        </details>
+      )}
+    </div>
+  )
+}
+
+function BashResultPanel({ result }: { result: BashToolResult }) {
+  const [copied, setCopied] = useState(false)
+  const stdout = result.stdout || (!result.stderr ? result.content : '')
+  const stderr = result.stderr
+  const copyText = [
+    stdout ? `stdout:\n${stdout}` : '',
+    stderr ? `stderr:\n${stderr}` : '',
+  ].filter(Boolean).join('\n\n')
+  const displayText = stdout || stderr || result.content
+  const displayLines = splitDiffValue(displayText)
+  const stateLabel = result.interrupted
+    ? 'interrupted'
+    : result.isError
+      ? 'error'
+      : result.noOutputExpected && !displayText
+        ? 'no output expected'
+        : 'ok'
+  const stateClass = result.isError || result.interrupted
+    ? 'text-red-300'
+    : 'text-emerald-300'
+
+  return (
+    <div className="border-t border-[var(--border-color)]/70 first:border-t-0">
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-[10px]">
+        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]">
+          返回结果
+          <span className="ml-1 text-[var(--text-muted)]">#{result.lineNo}</span>
+        </span>
+        <span className={`flex-shrink-0 font-mono ${stateClass}`}>{stateLabel}</span>
+        {displayText && (
+          <>
+            <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+              {displayLines.length} lines
+            </span>
+            <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
+              {displayText.length} chars
+            </span>
+          </>
+        )}
+        {copyText && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              navigator.clipboard.writeText(copyText).then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1000)
+              })
+            }}
+            className="flex-shrink-0 rounded border border-[var(--border-color)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-secondary)]"
+            title="复制完整返回结果到剪贴板"
+          >
+            {copied ? '已复制 ✓' : '复制结果'}
+          </button>
+        )}
+      </div>
+      {displayText ? (
+        <div className="max-h-[34rem] overflow-auto">
+          {stdout && stderr ? (
+            <div>
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-emerald-300/90">stdout</div>
+              <ResultTextPreview text={stdout} />
+              <div className="border-y border-[var(--border-color)]/60 px-2.5 py-1 text-[10px] font-mono text-red-300/90">stderr</div>
+              <ResultTextPreview text={stderr} />
+            </div>
+          ) : (
+            <ResultTextPreview text={displayText} />
+          )}
+        </div>
+      ) : (
+        <div className="px-2.5 pb-2 text-[11px] font-mono text-[var(--text-muted)]">
+          无输出
+        </div>
+      )}
     </div>
   )
 }
@@ -980,7 +1301,13 @@ function BashCallCard({ call, index }: { call: BashCall; index: number | null })
 /**
  * 单条 entry 卡片. type 决定颜色, 摘要行展示关键内容 (供快速扫).
  */
-function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }: { entry: AnyEntry; lineNo?: number; defaultExpanded?: boolean; showMeta?: boolean }) {
+function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true, bashResults = [] }: {
+  entry: AnyEntry
+  lineNo?: number
+  defaultExpanded?: boolean
+  showMeta?: boolean
+  bashResults?: BashToolResult[]
+}) {
   const type = entry?.type || 'unknown'
   const headerSummary = useMemo(() => buildHeaderSummary(entry), [entry])
   const codeEdit = useMemo(() => extractCodeEdit(entry), [entry])
@@ -1081,7 +1408,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
           ) : mode === 'code' && writeCall ? (
             <JsonEntryWritePreview writeCall={writeCall} />
           ) : mode === 'code' && bashCalls.length > 0 ? (
-            <JsonEntryBashCommands calls={bashCalls} />
+            <JsonEntryBashCommands calls={bashCalls} results={bashResults} />
           ) : mode === 'compact' && canCompact && !canCode ? (
             <div className="max-h-[60vh] overflow-y-auto pr-1">
               <Suspense fallback={<CompactPlainTextFallback text={headerSummary.full} />}>
@@ -1099,7 +1426,7 @@ function JsonEntryCardInner({ entry, lineNo, defaultExpanded, showMeta = true }:
 
 export const JsonEntryCard = memo(
   JsonEntryCardInner,
-  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta,
+  (prev, next) => prev.entry === next.entry && prev.lineNo === next.lineNo && prev.showMeta === next.showMeta && prev.bashResults === next.bashResults,
 )
 
 // 卡片标题栏摘要: full 是不截断版, short 是给标题栏一行用的截断版.
@@ -1111,7 +1438,7 @@ type HeaderSummary = { short: string; full: string; truncated: boolean; canCompa
 const HEADER_SHORT_LIMIT = 160
 const HEADER_COMPACT_LIMIT = 40
 const WRITE_PREVIEW_LINE_LIMIT = 40
-const ENCRYPTED_REASONING_LABEL = 'Reasoning (被加密，无法解码）'
+const ENCRYPTED_REASONING_LABEL = 'Reasoning (闭源模型的推理过程被加密，无法解码）'
 
 function clip(text: string, limit: number = HEADER_SHORT_LIMIT): HeaderSummary {
   const s = text || ''
@@ -1303,7 +1630,7 @@ function buildHeaderSummary(entry: AnyEntry): HeaderSummary {
           : Array.isArray(tr.content) ? tr.content.map((b: any) => b?.text || '').join('') : ''
         const head = `tool_result ← ${tr.tool_use_id?.slice(0, 8)}…`
         if (!body) return clip(head, HEADER_SHORT_LIMIT)
-        return clip(`${head}\n${body}`, HEADER_SHORT_LIMIT)
+        return clip(`${body}`, HEADER_SHORT_LIMIT)
       }
     }
   }
@@ -1577,6 +1904,7 @@ export function DisplayImagesCard({ images, lineNo, sourceLabel = 'display_image
 
 interface RoundItem {
   entry: AnyEntry
+  bashResults?: BashToolResult[]
   relIdx: number  // 0 = 该轮用户问题, 1+ = agent 回复
   lineNo: number  // 全局行号 (1-based)
 }
@@ -1629,14 +1957,12 @@ function isAssistantOutput(e: AnyEntry): boolean {
 }
 
 function buildRounds(
-  visibleEntries: AnyEntry[],
-  windowOffset: number,
-): { preItems: Array<{ entry: AnyEntry; lineNo: number }>; rounds: Round[] } {
-  const preItems: Array<{ entry: AnyEntry; lineNo: number }> = []
+  visibleItems: JsonlViewItem[],
+): { preItems: JsonlViewItem[]; rounds: Round[] } {
+  const preItems: JsonlViewItem[] = []
   const rounds: Round[] = []
-  for (let i = 0; i < visibleEntries.length; i++) {
-    const e = visibleEntries[i]
-    const lineNo = windowOffset + i + 1
+  for (const item of visibleItems) {
+    const e = item.entry
     if (isNewRound(e)) {
       // 去重: 同一次用户输入会以多种形态出现 (mobius type:user 写一条, codex 紧接着写
       // response_item.message[role=user] + event_msg.user_message). 若上一轮的"开篇用户
@@ -1650,18 +1976,19 @@ function buildRounds(
       rounds.push({ roundNum: rounds.length + 1, items: [] })
     }
     if (rounds.length === 0) {
-      preItems.push({ entry: e, lineNo })
+      preItems.push(item)
     } else {
       const cur = rounds[rounds.length - 1]
-      cur.items.push({ entry: e, relIdx: cur.items.length, lineNo })
+      cur.items.push({ ...item, relIdx: cur.items.length })
     }
   }
   return { preItems, rounds }
 }
 
-function EntryCardWithImages({ entry, lineNo, defaultExpanded = false, showMeta = true }: {
+function EntryCardWithImages({ entry, lineNo, bashResults = [], defaultExpanded = false, showMeta = true }: {
   entry: AnyEntry
   lineNo: number
+  bashResults?: BashToolResult[]
   defaultExpanded?: boolean
   showMeta?: boolean
 }) {
@@ -1675,13 +2002,13 @@ function EntryCardWithImages({ entry, lineNo, defaultExpanded = false, showMeta 
       : 'display_images'
   return (
     <>
-      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} />
+      <JsonEntryCard entry={entry} lineNo={lineNo} defaultExpanded={defaultExpanded} showMeta={showMeta} bashResults={bashResults} />
       {imgs.length > 0 && <DisplayImagesCard images={imgs} lineNo={lineNo} sourceLabel={sourceLabel} />}
     </>
   )
 }
 
-function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Array<{ entry: AnyEntry; lineNo: number }>; onlyGroup: boolean; showMeta?: boolean }) {
+function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: JsonlViewItem[]; onlyGroup: boolean; showMeta?: boolean }) {
   // 只有一组时强制展开, 禁止折叠; 其它场景保留原默认折叠行为
   const [open, setOpen] = useState(onlyGroup)
   useEffect(() => { if (onlyGroup) setOpen(true) }, [onlyGroup])
@@ -1714,13 +2041,13 @@ function ContinuationGroup({ items, onlyGroup, showMeta = true }: { items: Array
 
       {open && (
         <div className="mt-0.5 pl-2 border-l border-[var(--border-color)]/40 ml-2">
-          {items.map(({ entry, lineNo }) => (
+          {items.map(({ entry, lineNo, bashResults }) => (
             <div key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo} className="flex items-start gap-1.5">
               <span className="font-mono text-[9px] text-[var(--text-dimmed)] flex-shrink-0 mt-2.5 w-7 text-right leading-none select-none">
                 ...
               </span>
               <div className="flex-1 min-w-0">
-                <EntryCardWithImages entry={entry} lineNo={lineNo} showMeta={showMeta} />
+                <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} showMeta={showMeta} />
               </div>
             </div>
           ))}
@@ -1788,6 +2115,7 @@ function RoundGroup({ round, isLast, onlyGroup, showMeta = true }: { round: Roun
                     <EntryCardWithImages
                       entry={item.entry}
                       lineNo={item.lineNo}
+                      bashResults={item.bashResults}
                       showMeta={showMeta}
                     />
                   </div>
@@ -1826,7 +2154,8 @@ export function JsonlView({
   const recent = entries.slice(-(showAll ? entries.length : 200))
   const windowOffset = entries.length - recent.length
   const headerTitle = title === undefined ? 'JSONL' : title
-  const { preItems, rounds } = buildRounds(recent, windowOffset)
+  const visibleItems = useMemo(() => mergeBashToolResultItems(recent, windowOffset), [recent, windowOffset])
+  const { preItems, rounds } = useMemo(() => buildRounds(visibleItems), [visibleItems])
   // 总数显示: 优先用后端给的 total (服务器侧 count, 比前端 entries.length 准)
   const displayTotal = typeof total === 'number' && total > entries.length ? total : entries.length
   const hasRemoteMore = typeof total === 'number' && total > entries.length
@@ -1891,9 +2220,9 @@ export function JsonlView({
       {preItems.length > 0 && hasOmittedHead ? (
         <ContinuationGroup items={preItems} onlyGroup={onlyGroup} showMeta={showMeta} />
       ) : (
-        preItems.map(({ entry, lineNo }) => (
+        preItems.map(({ entry, lineNo, bashResults }) => (
           <Fragment key={(entry?.uuid || entry?.id || entry?.timestamp || '') + '#' + lineNo}>
-            <EntryCardWithImages entry={entry} lineNo={lineNo} showMeta={showMeta} />
+            <EntryCardWithImages entry={entry} lineNo={lineNo} bashResults={bashResults} showMeta={showMeta} />
           </Fragment>
         ))
       )}

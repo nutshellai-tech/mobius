@@ -100,3 +100,5 @@ projects/
 .deploy_data/
 host-data/
 docs/superpowers
+/docs/
+/assess_appearance/
