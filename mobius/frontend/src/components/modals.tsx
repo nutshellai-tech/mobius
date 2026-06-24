@@ -2631,8 +2631,8 @@ export function NewSessionModal({
                   <div className="mt-2 text-[12px] font-medium" style={{ color: selectedTmuxWarning ? '#f59e0b' : '#16a34a' }}>
                     {selectedTmuxUsage?.limit != null
                       ? selectedTmuxWarning
-                        ? `${selectedModelOption.label || selectedBackendLabel} tmux 窗口达到软提醒阈值（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}），仍可创建。`
-                        : `${selectedModelOption.label || selectedBackendLabel} tmux 窗口正常（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}）`
+                        ? `${selectedModelOption?.label || selectedBackendLabel} tmux 窗口达到软提醒阈值（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}），仍可创建。`
+                        : `${selectedModelOption?.label || selectedBackendLabel} tmux 窗口正常（当前 ${selectedTmuxUsage.count} / ${selectedTmuxUsage.limit}）`
                       : `${selectedBackendLabel} 活跃后台窗口 ${selectedActiveWindowCount}`}
                   </div>
                 )}
@@ -2730,9 +2730,9 @@ export function NewSessionModal({
                   }}>
                     勾选要在本 {displayEntityLabel} 启用的 Skill / Memory. <strong>{isPresetMode ? '保存预设时' : `创建 ${displayEntityLabel} 时`}</strong>会记录这份配置, 首次发消息按配置注入所选智能体, 修改全局 Skill/Memory 不再影响已创建的 {displayEntityLabel}.
                     {isResearch && <div className="mt-1.5">Research Role: <strong>{role}</strong>（创建后不可更改）</div>}
-                    <div className="mt-1.5">模型: <strong>{selectedModelOption.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
+                    <div className="mt-1.5">模型: <strong>{selectedModelOption?.label || SESSION_MODEL_LABEL[model] || model}</strong>（创建后不可更改, 如需更换请返回上一步）</div>
                     <div className="mt-1">语言: <strong>{SESSION_LANGUAGE_LABEL[language]}</strong>（创建后不可更改）</div>
-                    {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality.label}</strong></div>}
+                    {selectedPersonality && <div className="mt-1">性格: <strong>{selectedPersonality?.label}</strong></div>}
                     {requiredSessionSkill && <div className="mt-1">必选 Skill: <strong>{requiredSessionSkill.label || requiredSessionSkill.dirName}</strong></div>}
                   </div>
 

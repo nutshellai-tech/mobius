@@ -5183,6 +5183,33 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   Chat 会话页 body: 桌面端横向 68/32 分栏 (左 JSONL 历史 + 右输入/skill-memory).
+   窄屏 (≤768px) 下 32% 输入列约 ~120px, 根本放不下 3×40px 按钮 + textarea +
+   4 个快捷操作, 输入框无法使用. 改纵向堆叠 (思路同 .mobius-stack-lg):
+   - 历史在上, 整宽, 内部滚动, 占据多数高度;
+   - 输入列在下, 整宽, 左竖向边框改顶横向边框; 输入区 flex-shrink-0 始终完整可见,
+     skill/memory (flex-1 overflow-y-auto) 吃剩余空间并自滚动 → 输入框不会被裁切.
+   仅 ≤768px 生效, 桌面端保持 68/32 横向不动 (!important 用以覆盖 inline width).
+   ====================================================================== */
+@media (max-width: 768px) {
+  .mobius-chat-body {
+    flex-direction: column;
+  }
+  .mobius-chat-history {
+    width: 100% !important;
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+  .mobius-chat-input {
+    width: 100% !important;
+    flex: 1 1 0%;
+    min-height: 0;
+    border-left: 0 !important;
+    border-top: 1px solid var(--border-color) !important;
+  }
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.
@@ -5202,6 +5229,79 @@ body.mobius-resizing .mobius-resizable-handle {
      md:/lg:/sm: 响应式前缀的网格不受影响. */
   .grid-cols-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ======================================================================
+   移动端细致打磨 (第二轮: 手感层)
+   触控目标 / 输入字号(防 iOS 聚焦缩放) / 滚动手感 / 安全区 / 极窄屏模态.
+   仅 max-width 断点内生效, 桌面端零影响.
+   ====================================================================== */
+@media (max-width: 768px) {
+  /* iOS Safari: 文本输入字号 <16px 聚焦时自动放大整个页面, 统一拉到 16px. */
+  input[type="text"], input[type="search"], input[type="email"],
+  input[type="password"], input[type="url"], input[type="number"],
+  input[type="tel"], input:not([type]), textarea, select {
+    font-size: 16px;
+  }
+  /* 移动端隐藏滚动条: 惯性滚动 + 节省横向空间, 滚动条冗余且占地. */
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  /* 抽屉内可点项 (项目/Issue/Research 列表): 保证最小触控高度, 防误触. */
+  .mobius-drawer button, .mobius-drawer a { min-height: 40px; }
+  /* 顶栏操作按钮 (汉堡/新建/主题等): 最小触控尺寸. */
+  .mobius-topnav-actions button { min-height: 36px; min-width: 36px; }
+  /* 模态底部操作栏避让底部 Home 指示条. */
+  .gc-modal-footer { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  /* 可拖拽分割条在窄屏无意义 (已是抽屉), 缩小避免误触. */
+  [class*="cursor-col-resize"] { pointer-events: none; }
+}
+
+/* ======================================================================
+   移动端顶栏面包屑: 375px 视口下面包屑各段 (品牌文字 + / + admin + / + 项目名)
+   合计宽于可用区, 项目名 (如 "system self evolve") 被右侧操作区压盖成 "syste".
+   窄屏隐藏冗余段 — 保留 logo 图标, 去掉品牌文字 / 用户名段及其两侧分隔符,
+   把横向空间让给项目名; 项目名段改可收缩 (覆盖 flex-shrink-0), 名称过长时
+   干净截断加省略号, 不再被操作区压盖. 桌面端 (≥769px) 完整面包屑不动.
+   ====================================================================== */
+@media (max-width: 768px) {
+  .mobius-topnav .mobius-topnav-brandtext,
+  .mobius-topnav .mobius-topnav-userlink,
+  .mobius-topnav .mobius-topnav-sep-pre,
+  .mobius-topnav .mobius-topnav-sep-post { display: none; }
+  .mobius-topnav .mobius-topnav-projectcrumb { flex-shrink: 1; }
+}
+
+@media (max-width: 640px) {
+  /* 模态底部主按钮 (取消/提交): 高度 44px, 触控友好. */
+  .global-create-modal .gc-modal-footer button { min-height: 44px; }
+  /* 模态卡片圆角略收, 视觉更贴合小屏. */
+  .global-create-modal { border-radius: 16px; }
+  /* 顶栏「新建」下拉: 移动端改为 fixed 近全宽面板 (左右对称 12px gutter).
+     桌面端用 absolute right-0 锚定「+」按钮右缘即可; 但移动端顶栏操作区里「+」按钮
+     左侧还有主题/用户菜单等可见元素 (按钮不贴屏幕右缘), 近全宽面板若仍 right-0 锚在
+     按钮处会向左溢出视口左缘, 被 html/body 的 overflow-x:hidden 裁切 → 菜单项左侧
+     图标/文字被切 (即「左边不对」). 改 fixed + 对称 gutter (与顶栏 padding 对齐),
+     彻底不溢出; top 紧贴单行顶栏下方. 仅 ≤640px 生效, 桌面端保持右锚不动. */
+  [data-tour="top-create"] > div:last-child {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: calc(env(safe-area-inset-top) + 3.5rem + 4px);
+    width: auto;
+    min-width: 0;
+  }
+  /* 新建下拉菜单项: 触摸热区增大到 40px, 底部提示放大至 11px 提升窄屏可读性.
+     命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑的 py-1.5. */
+  [data-tour="top-create"] > div:last-child button { min-height: 40px; }
+  [data-tour="top-create"] > div:last-child > div:last-child { font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  /* 极窄屏: 模态卡片近全宽, 充分利用屏幕, 两侧仅留 8px 边距. */
+  [class~="fixed"][class~="inset-0"][class~="flex"][class~="items-center"][class~="justify-center"] > [class~="relative"] {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px) !important;
   }
 }
 

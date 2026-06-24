@@ -571,20 +571,20 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <Link to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
             {!branding.hideLogo && <MobiusLogo size={28} />}
             {branding.systemNameEn && (
-              <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
                 {branding.systemNameEn}
               </span>
             )}
           </Link>
-          <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-          <Link to={`/u/${userParam}`} className="text-[13px] hover:text-blue-400 truncate flex-shrink-0"
+          <span className="mobius-topnav-sep-pre text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+          <Link to={`/u/${userParam}`} className="mobius-topnav-userlink text-[13px] hover:text-blue-400 truncate flex-shrink-0"
             style={{ color: 'var(--text-secondary)', maxWidth: 140 }}>
             {userParam}
           </Link>
           {projectParam && (
             <>
-              <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
-              <div className="relative flex min-w-0 flex-shrink-0 items-center">
+              <span className="mobius-topnav-sep-post text-[13px]" style={{ color: 'var(--text-muted)' }}>/</span>
+              <div className="mobius-topnav-projectcrumb relative flex min-w-0 flex-shrink-0 items-center">
                 <Link to={`/u/${userParam}/p/${projectParam}`}
                   className="text-[13px] hover:text-blue-400 truncate"
                   style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
@@ -692,7 +692,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             onClick={() => setShowGuideHelp(true)}
             title="帮助与引导"
             data-tour="top-guide-help"
-            className="h-8 w-8 flex items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+            className="h-8 w-8 hidden md:flex items-center justify-center border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
             style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
           >
             <CircleQuestionMark className="w-3.5 h-3.5" />
@@ -716,14 +716,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               title={`当前主题: ${headerLabel}。Alt+点击切换下一个主题`}
               aria-label="选择主题"
               aria-expanded={showThemeMenu}
-              className="h-8 min-w-[76px] px-2 flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
+              className="h-8 px-2 md:min-w-[76px] hidden md:flex items-center justify-center gap-1.5 border rounded-lg hover:bg-[var(--bg-card-hover)] transition-colors"
               style={{
                 color: 'var(--text-muted)',
                 borderColor: 'var(--border-color)',
               }}
             >
               {headerIconKey === 'light' ? <Sun className="w-3.5 h-3.5" /> : headerIconKey === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5" />}
-              <span className="text-[12px] font-medium truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
+              <span className="text-[12px] font-medium truncate max-w-[120px] hidden md:inline" style={{ color: 'var(--text-secondary)' }}>{headerLabel}</span>
             </button>
             {showThemeMenu && (
               <div
@@ -856,8 +856,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/20 flex items-center justify-center text-blue-300 text-[11px] font-semibold border border-blue-500/20">
                 {user?.display_name?.[0]}
               </div>
-              <span className="text-[12px]" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>
-              <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <span className="text-[12px] hidden md:inline" style={{ color: 'var(--text-secondary)' }}>{user?.display_name}</span>
+              <svg className="w-3 h-3 hidden md:block" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             {showUserMenu && (
               <div className="absolute right-0 top-10 z-50 rounded-lg shadow-xl py-1 min-w-[180px]"
@@ -883,6 +883,12 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
                   style={{ color: 'var(--text-primary)' }}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>
                   修改密码
+                </button>
+                <button onClick={() => { setShowUserMenu(false); toggleTheme() }}
+                  className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--bg-hover)] flex items-center gap-2 md:hidden"
+                  style={{ color: 'var(--text-primary)' }}>
+                  <Palette className="w-3.5 h-3.5" />
+                  切换主题
                 </button>
                 <button onClick={() => { setShowUserMenu(false); logout(); navigate('/') }}
                   className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-red-500/10 flex items-center gap-2"
