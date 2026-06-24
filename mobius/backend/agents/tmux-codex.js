@@ -29,8 +29,17 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { tmux } = require('./tmux-operation-log')
+const { recordConsoleLog, tmux } = require('./tmux-operation-log')
 const { take_tmux_window_text } = require('./tmux_utils')
+
+const realConsole = console
+const console = {
+  ...realConsole,
+  log: (...args) => {
+    recordConsoleLog(args)
+    realConsole.log(...args)
+  },
+}
 
 let Database = null
 try { Database = require('better-sqlite3') } catch {}
