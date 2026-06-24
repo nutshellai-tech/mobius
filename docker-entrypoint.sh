@@ -9,6 +9,9 @@ set -euo pipefail
 : "${CS_DATA_ROOT:=/data/code_server/cs-data}"
 : "${CS_EXT_ROOT:=/data/code_server/cs-ext}"
 : "${CODE_SERVER_PORT:=33317}"
+: "${MOBIUS_SSH_PORT:=33318}"
+: "${MOBIUS_SSH_URL:=localhost:${MOBIUS_SSH_PORT}}"
+: "${MOBIUS_SSH_FORWARD_USER:=mobius-forward}"
 
 # aimux bridge 反向代理 broker: 内置于 mobius 容器, 通过 PM2 ecosystem imac-mobius-bridge 拉起.
 # runtime.json 是 mobius 反代路由 /aimux_bridge/* 的服务发现凭据 (url + token).
@@ -22,6 +25,7 @@ export AIMUX_BRIDGE_HOST AIMUX_BRIDGE_PORT
 
 export APP_DIR MOBIUS_DATA_PATH MODEL_ACCESS_PATH CORE_DATA_PATH WORKSPACE_ROOT
 export CS_DATA_ROOT CS_EXT_ROOT CODE_SERVER_PORT
+export MOBIUS_SSH_PORT MOBIUS_SSH_URL MOBIUS_SSH_FORWARD_USER
 
 mkdir -p \
   "$APP_DIR" \
@@ -62,6 +66,15 @@ if [[ -d /opt/claude-seed ]] && [[ -z "$(ls -A "$CLAUDE_HOME_DIR" 2>/dev/null)" 
   echo "[entrypoint] seeding $CLAUDE_HOME_DIR from /opt/claude-seed (first boot)"
   mkdir -p "$CLAUDE_HOME_DIR"
   cp -a /opt/claude-seed/. "$CLAUDE_HOME_DIR"/
+fi
+
+if [[ -x /app_image/mobius/scripts/setup-ssh-port-forward.sh ]]; then
+  echo "[entrypoint] starting ssh port-forward sshd on :${MOBIUS_SSH_PORT}"
+  CORE_DATA_PATH="$CORE_DATA_PATH" \
+  MOBIUS_SSH_PORT="$MOBIUS_SSH_PORT" \
+  MOBIUS_SSH_FORWARD_USER="$MOBIUS_SSH_FORWARD_USER" \
+    /app_image/mobius/scripts/setup-ssh-port-forward.sh start \
+    || echo "[entrypoint] ssh port-forward sshd setup failed (startup continues)"
 fi
 
 cd "$APP_DIR/mobius"
