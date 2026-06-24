@@ -453,9 +453,6 @@ node -c mobius/backend/routes/assistant.js
 |---|---|
 | `ANTHROPIC_AUTH_TOKEN` | Claude Code Agent Session driver key |
 | `ANTHROPIC_BASE_URL` | Agent API endpoint |
-| `ASSISTANT_API_KEY` | XiaoMo chat model key |
-| `ASSISTANT_API_BASE` | XiaoMo chat model endpoint |
-| `ASSISTANT_MODEL` | Model used by XiaoMo |
 | `JWT_SECRET` | JWT signing secret; use a random long string |
 | `APP_DIR`, `DB_PATH`, `WORKSPACE_ROOT` | Local code, database, and workspace paths |
 

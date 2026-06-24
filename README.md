@@ -385,7 +385,7 @@ flowchart LR
 
 ### 快速开始
 
-#### 方式一：容器中安装和运行（推荐）
+#### 方式一：容器中安装和运行（所有操作系统，推荐）
 
 ```bash
 # 1. 克隆仓库
@@ -393,7 +393,7 @@ git clone https://github.com/nutshellai-tech/mobius.git
 cd mobius
 
 # 2. 生成配置（随机秘钥密码，可以手动配置跳过此步）
-python3 prepare_conf.py --docker && python3 check_conf.py --docker
+python3 conf_prepare.py --docker && python3 conf_check.py --docker
 
 # 3. 构建 base 镜像（仅环境，不含代码）
 docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest .
@@ -402,62 +402,30 @@ docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -
 docker compose up
 ```
 
-#### 方式二：本地开发
-
-系统依赖：`tmux`、Node.js `18+`、Python 3，以及至少一种 Agent CLI（Codex 或 Claude Code）。
+#### 方式二：直接部署（Linux or MacOS）
 
 ```bash
+# 1. 安装 tmux git 等必要依赖
+sudo apt install tmux python3 git curl proxychains openssh-server
+
+# 2. 安装claude code和codex（其中之一即可，但建议都安装）
+npm install -g @anthropic-ai/claude-code @openai/codex
+
+# 3. 克隆仓库
 git clone https://github.com/nutshellai-tech/mobius.git
 cd mobius
 
-cp .env.example .env
-# 编辑 .env，填写 API Key、JWT_SECRET 和本机路径
+# 4. 生成和配置秘钥（将会复制 .env.default 到 .env，并创建随机密码）
+python3 conf_prepare.py && python3 conf_check.py
 ```
 
-首次启动前初始化管理员（对应 `.env` / `.env.default` 中的 `IMAC_BOOTSTRAP_USERS`）：
 
-```bash
-cd mobius
-IMAC_BOOTSTRAP_USERS="admin:your-strong-password:admin:Administrator" \
-  DB_PATH=<your_local_data>/mobius.db \
-  WORKSPACE_ROOT=<your_local_data>/workspace \
-  node scripts/bootstrap-users.js
-```
-
-> 该步骤在容器部署时由 `docker-entrypoint.sh` 自动执行；本地开发需手动运行一次。`IMAC_BOOTSTRAP_USERS` 格式为 `id:password:role:display_name`，多个用户用 `;` 分隔。
-
-回到仓库根目录启动开发环境：
-
-```bash
-cd ..
-python3 start.py --detach
-```
-
-调试服务默认监听：
-
-| 服务 | 默认地址 |
-|---|---|
-| Web 前端 | `http://localhost:45616` |
-| 后端 API | `http://localhost:45614` |
-| aimux bridge | `http://localhost:45615` |
-| VS Code Web | `http://localhost:45617` |
-
-前端构建与后端检查：
-
-```bash
-cd mobius/frontend && npm run build
-node -c mobius/backend/routes/assistant.js
-```
 
 ### 配置
 
 | 环境变量 | 用途 |
 |---|---|
-| `ANTHROPIC_AUTH_TOKEN` | Claude Code Agent Session 驱动密钥 |
 | `ANTHROPIC_BASE_URL` | Agent API 端点 |
-| `ASSISTANT_API_KEY` | 小莫聊天模型密钥 |
-| `ASSISTANT_API_BASE` | 小莫聊天模型端点 |
-| `ASSISTANT_MODEL` | 小莫使用的模型 |
 | `JWT_SECRET` | JWT 签名密钥，应使用随机长字符串 |
 | `APP_DIR`、`DB_PATH`、`WORKSPACE_ROOT` | 本机代码、数据库和工作区路径 |
 

@@ -3,7 +3,7 @@
  *
  * 优先级:
  *   1) 用户自定义 ARXIV_SUMMARIZER_ENDPOINT (POST {title, abstract} -> {summary})
- *   2) 平台 LLM 网关 (ASSISTANT_API_BASE / ASSISTANT_API_KEY, 默认 qwen3.6-plus @ 192.168.4.254:29928)
+ *   2) 平台 LLM 网关 (ARXIV_LLM_API_BASE / ARXIV_LLM_API_KEY, 默认 qwen3.6-plus @ 192.168.4.254:29928)
  *   3) 直接把 abstract 截断到 200 字 (英文兜底, 非中文, 仅作为最坏情况)
  *
  * 永不抛错; 任何一步失败都安全降级.
@@ -53,15 +53,9 @@ async function callUserEndpoint({ title, abstract }) {
 }
 
 function resolveLlm() {
-  const apiBase = process.env.ARXIV_LLM_API_BASE
-    || process.env.ASSISTANT_API_BASE
-    || DEFAULT_LLM_BASE;
-  const apiKey = process.env.ARXIV_LLM_API_KEY
-    || process.env.ASSISTANT_API_KEY
-    || '';
-  const model = process.env.ARXIV_LLM_MODEL
-    || process.env.ASSISTANT_LLM_MODEL
-    || DEFAULT_LLM_MODEL;
+  const apiBase = process.env.ARXIV_LLM_API_BASE || DEFAULT_LLM_BASE;
+  const apiKey = process.env.ARXIV_LLM_API_KEY || '';
+  const model = process.env.ARXIV_LLM_MODEL || DEFAULT_LLM_MODEL;
   return { apiBase: apiBase.replace(/\/+$/, ''), apiKey, model };
 }
 
