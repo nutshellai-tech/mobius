@@ -35,6 +35,7 @@ from boot_utils import (
 
 
 KNOWN_SETTINGS = RUNTIME_SETTINGS
+BOOTSTRAP_USERS_FLAG_NAME = "bootstrap-users.json"
 
 
 def parse_args(description: str) -> argparse.Namespace:
@@ -204,6 +205,58 @@ def start_mobius(
     if only_update_frontend:
         argv.append("--only-update-frontend")
     run(argv)
+
+
+def bootstrap_flag_path(root: Path) -> Path:
+    data_root = os.environ.get("MOBIUS_DATA_PATH")
+    if not data_root:
+        raise ConfigError("MOBIUS_DATA_PATH is required for bootstrap flag")
+    return Path(data_root) / BOOTSTRAP_USERS_FLAG_NAME
+
+
+def read_bootstrap_flag(root: Path) -> dict | None:
+    path = bootstrap_flag_path(root)
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except json.JSONDecodeError:
+        print(f"=== [bootstrap] 初始化标记损坏，将重新检测: {path} ===", flush=True)
+        return None
+    if not isinstance(data, dict):
+        print(f"=== [bootstrap] 初始化标记格式异常，将重新检测: {path} ===", flush=True)
+        return None
+    return data
+
+
+def write_bootstrap_flag(root: Path, raw_users: str) -> None:
+    write_json_private(bootstrap_flag_path(root), {"IMAC_BOOTSTRAP_USERS": raw_users})
+
+
+def bootstrap_users(root: Path) -> None:
+    # 直接部署路径没有 docker-entrypoint.sh, 首次启动需要补跑用户 seed。
+    # 用 MOBIUS_DATA_PATH/bootstrap-users.json 做部署级标记, 避免每次启动都碰 users 表。
+    # start.py 只看文件标记, 不直接读写数据库；真正建用户交给幂等的 bootstrap-users.js。
+    raw_users = os.environ.get("IMAC_BOOTSTRAP_USERS") or ""
+    if not raw_users:
+        print("=== [bootstrap] IMAC_BOOTSTRAP_USERS 未设置，跳过用户初始化 ===", flush=True)
+        return
+    flag = read_bootstrap_flag(root)
+    if flag:
+        previous_users = flag.get("IMAC_BOOTSTRAP_USERS")
+        if previous_users == raw_users:
+            print(f"=== [bootstrap] 用户已初始化，跳过: {bootstrap_flag_path(root)} ===", flush=True)
+            return
+        print("=== [bootstrap] IMAC_BOOTSTRAP_USERS 已变化，补建缺失用户 ===", flush=True)
+
+    script = root / "mobius" / "scripts" / "bootstrap-users.js"
+    if not script.is_file():
+        raise ConfigError(f"missing bootstrap script: {script}")
+    print("=== [bootstrap] 初始化缺失用户 (IMAC_BOOTSTRAP_USERS) ===", flush=True)
+    run(["node", "scripts/bootstrap-users.js"], cwd=root / "mobius", env=dict(os.environ))
+    write_bootstrap_flag(root, raw_users)
+    print(f"=== [bootstrap] 已写初始化标记: {bootstrap_flag_path(root)} ===", flush=True)
 
 
 def code_server_is_healthy() -> bool:
@@ -419,6 +472,7 @@ def main(
         if args.only_update_frontend:
             print(f"=== [1/1] 更新 mobius 前端 (compile + replace :{os.environ['MOBIUS_PORT']}) ===")
         else:
+            bootstrap_users(root)
             print(f"=== [1/3] 起 mobius (compile + serve :{os.environ['MOBIUS_PORT']}) ===")
         # 显式 flush：start_mobius 内部 run 会阻塞编译，这里先确保步骤标题被打印出去再阻塞。
         sys.stdout.flush()

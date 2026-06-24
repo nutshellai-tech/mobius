@@ -380,12 +380,12 @@ export async function api(path: string, options?: RequestInit) {
     ...options,
     headers,
   })
-  if (res.status === 401) {
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 401 && path !== '/api/auth/login') {
     localStorage.removeItem('cc-token')
     window.location.href = '/'
-    throw new Error('Unauthorized')
+    throw new Error(data?.error || 'Unauthorized')
   }
-  const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
   return data
 }

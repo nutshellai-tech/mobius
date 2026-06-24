@@ -414,7 +414,12 @@ cp .env.example .env
 # 编辑 .env，填写 API Key、JWT_SECRET 和本机路径
 ```
 
-首次启动前初始化管理员（对应 `.env` / `.env.default` 中的 `IMAC_BOOTSTRAP_USERS`）：
+首次启动时，`python3 start.py` 会根据 `.env` / `.env.default` 中的
+`IMAC_BOOTSTRAP_USERS` 自动初始化缺失用户；已存在用户不会被覆盖。初始化成功后会在
+`MOBIUS_DATA_PATH/bootstrap-users.json` 写入仅包含 `IMAC_BOOTSTRAP_USERS` 的标记，
+后续启动若标记值一致会直接跳过。
+
+如需单独补跑用户初始化，可手动执行：
 
 ```bash
 cd mobius
@@ -424,7 +429,7 @@ IMAC_BOOTSTRAP_USERS="admin:your-strong-password:admin:Administrator" \
   node scripts/bootstrap-users.js
 ```
 
-> 该步骤在容器部署时由 `docker-entrypoint.sh` 自动执行；本地开发需手动运行一次。`IMAC_BOOTSTRAP_USERS` 格式为 `id:password:role:display_name`，多个用户用 `;` 分隔。
+> 容器部署时由 `docker-entrypoint.sh` 自动执行；直接部署时由 `python3 start.py` 自动执行。`IMAC_BOOTSTRAP_USERS` 格式为 `id:password:role:display_name`，多个用户用 `;` 分隔。
 
 回到仓库根目录启动开发环境：
 

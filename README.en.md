@@ -412,7 +412,13 @@ cp .env.example .env
 # Edit .env, fill in API Key, JWT_SECRET, and local paths
 ```
 
-Before first launch, initialize the admin user (corresponding to `IMAC_BOOTSTRAP_USERS` in `.env` / `.env.default`):
+On first launch, `python3 start.py` automatically initializes missing users from
+`IMAC_BOOTSTRAP_USERS` in `.env` / `.env.default`; existing users are not overwritten.
+After initialization it writes `MOBIUS_DATA_PATH/bootstrap-users.json` with only
+`IMAC_BOOTSTRAP_USERS`; subsequent starts skip the user bootstrap step when the
+flag value matches.
+
+To run user initialization separately, use:
 
 ```bash
 cd mobius
@@ -422,7 +428,7 @@ IMAC_BOOTSTRAP_USERS="admin:your-strong-password:admin:Administrator" \
   node scripts/bootstrap-users.js
 ```
 
-> This step runs automatically via `docker-entrypoint.sh` during container deployment; for local dev you need to run it manually once. The `IMAC_BOOTSTRAP_USERS` format is `id:password:role:display_name`, with multiple users separated by `;`.
+> Container deployments run this through `docker-entrypoint.sh`; direct deployments run it through `python3 start.py`. The `IMAC_BOOTSTRAP_USERS` format is `id:password:role:display_name`, with multiple users separated by `;`.
 
 Go back to the repo root and launch the dev environment:
 
