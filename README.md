@@ -1,34 +1,26 @@
 <a id="readme-top"></a>
 
-<p align="right">
-  <sub>
-    <b>简体中文</b> · <a href="./README.en.md">English</a>
-  </sub>
-</p>
-
 <h1 align="center">
   <a href="https://mobius.nutshellai.cn/">
     <img src="./mobius/extension/mobius-home/frontend/favicon.svg" width="56" alt="莫比乌斯 Logo" />
   </a>
   <br/>
-  莫比乌斯: 自生长的 Agent 操作系统
+  莫比乌斯: 可自进化的 Agent 操作系统
 </h1>
-
-
 
 <p align="center">
   <a href="https://mobius.nutshellai.cn/"><strong>官方网站</strong></a>
 </p>
 
----
 
-## 莫比乌斯 AI 是什么？
 
-> **按照您的需求持续重塑自己的 AI 忒修斯之船。**
+## 莫比乌斯：会生长、可进化的生产力系统
 
-莫比乌斯是一个面向真实项目协作的企业级 AgenticOS。系统把项目、任务、执行会话和上下文管理放在同一个 Web 应用里，让用户可以直接在平台中提出需求、创建 Issue、启动 Session，并让 Agent 在绑定目录里完成实现、验证和汇报。
+莫比乌斯是世界上第一个可根据任何自我迭代
 
-普通 Agent 的产物通常停留在对话之外；莫比乌斯会把代码、知识、Memory、Skill、Extension 和研究结论重新吸收为系统能力。它既在为你制造产品，也在用这些产品重造自己。
+
+
+莫比乌斯是一个面向真实项目协作的企业级 Agent 操作系统 （AgenticOS）。系统把项目、任务、执行会话和上下文管理放在同一个 Web 应用里，让用户可以直接在平台中提出需求、创建 Issue、启动 Session，并让 Agent 在绑定目录里完成实现、验证和汇报。
 
 
 
@@ -73,5 +65,4 @@ cd ./mobius && npm install && cd ./frontend && npm install && cd ../..
 
 # 6. 运行
 python3 start.py
-
 ```

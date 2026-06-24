@@ -1045,6 +1045,68 @@ function runGit(cwd, args, opts = {}) {
   }
 }
 
+const PROJECT_GIT_ACTIONS = Object.freeze({
+  pull: {
+    label: '拉取',
+    args: ['pull', '--ff-only'],
+    timeout: 60 * 1000,
+  },
+  push: {
+    label: '推送',
+    args: ['push'],
+    timeout: 60 * 1000,
+  },
+  stage: {
+    label: '暂存',
+    args: ['add', '-A'],
+    timeout: 30 * 1000,
+  },
+});
+
+function compactGitOutput(...parts) {
+  const text = parts.map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  if (!text) return '';
+  return text.length > 4000 ? `${text.slice(0, 4000)}\n...` : text;
+}
+
+function projectGitActionError(message, statusCode = 400) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+function runProjectGitAction(project, action) {
+  const spec = PROJECT_GIT_ACTIONS[action];
+  if (!spec) {
+    throw projectGitActionError('不支持的 Git 操作');
+  }
+
+  const discovered = discoverGitRepo(project.bind_path);
+  if (!discovered.available) {
+    throw projectGitActionError(discovered.reason || '绑定路径下未检测到 Git 仓库');
+  }
+
+  const result = runGit(discovered.repo_path, spec.args, {
+    timeout: spec.timeout,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const output = compactGitOutput(result.stdout, result.stderr);
+  if (!result.ok) {
+    throw projectGitActionError(
+      `${spec.label}失败${result.error ? `: ${result.error}` : ''}${output ? `\n${output}` : ''}`,
+      409,
+    );
+  }
+
+  return {
+    ok: true,
+    action,
+    label: spec.label,
+    repo_path: discovered.repo_path,
+    output,
+    message: output ? `${spec.label}完成` : `${spec.label}完成，没有额外输出`,
+    tracking: readProjectGitTracking(project, 12),
+  };
+}
+
 function hasGitMarker(dir) {
   try {
     return fs.existsSync(path.join(dir, '.git'));
@@ -1815,6 +1877,17 @@ router.get('/:id/git-tracking', auth, (req, res) => {
     res.json(readProjectGitTracking(project, req.query.limit));
   } catch (e) {
     res.status(500).json({ error: e.message || '读取 Git 追踪信息失败' });
+  }
+});
+
+router.post('/:id/git-action', auth, (req, res) => {
+  const project = loadManageableProject(req, res, req.params.id);
+  if (!project) return;
+  const action = String(req.body?.action || '').trim();
+  try {
+    res.json(runProjectGitAction(project, action));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message || '执行 Git 操作失败' });
   }
 });
 
