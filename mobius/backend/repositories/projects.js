@@ -91,12 +91,13 @@ function hydrate(row) {
     kind: row.kind || 'normal',
     extension_name: row.extension_name || null,
     disabled: !!row.disabled,
+    extension_default_hidden: !!row.extension_default_hidden,
     visibility: row.visibility || 'private',
     can_post_issue: !!row.can_post_issue,
     can_run_session: !!row.can_run_session,
     // 每用户隐藏标记 (仅 kind='extension' 真正用到): 由 findById/listAll 在 userId 路径下
     // LEFT JOIN project_user_hidden 注入; 前端据此过滤掉用户已隐藏的拓展卡片.
-    hidden: !!row.hidden,
+    hidden: !!row.hidden || !!row.extension_default_hidden,
     // 项目级默认模型偏好: 空字符串规范化为 null, 表示"未指定 (跟随系统全局默认)".
     // 前端新建 Session 时若该字段非空, 用作模型下拉的初始值; 否则回落到 DEFAULT_SESSION_MODEL.
     default_model: (typeof row.default_model === 'string' && row.default_model.trim())
@@ -187,7 +188,7 @@ const Projects = {
   listExtensions: () => db.prepare(
     "SELECT *, 0 AS starred FROM projects WHERE kind = 'extension'"
   ).all().map(hydrate),
-  upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName }) => {
+  upsertExtension: ({ id, name, description, createdBy, bindPath, extensionName, defaultHidden = false }) => {
     const existing = db.prepare('SELECT id FROM projects WHERE extension_name = ?').get(extensionName);
     if (existing) {
       // 已存在: 把可能漂移的字段同步回锁定值 (name/description 来自 manifest), 并清 disabled.
@@ -195,18 +196,18 @@ const Projects = {
         UPDATE projects SET
           name = ?, description = ?, bind_path = ?, bind_path_manual = 1,
           default_use_worktree = 0, research_enabled = 0,
-          kind = 'extension', disabled = 0
+          kind = 'extension', disabled = 0, extension_default_hidden = ?
         WHERE id = ?
-      `).run(name, description || '', bindPath, existing.id);
+      `).run(name, description || '', bindPath, defaultHidden ? 1 : 0, existing.id);
       return existing.id;
     }
     db.prepare(`
       INSERT INTO projects (
         id, name, description, created_by, bind_path, bind_path_manual,
         git_repos, default_use_worktree, research_enabled,
-        kind, extension_name, disabled
-      ) VALUES (?, ?, ?, ?, ?, 1, '[]', 0, 0, 'extension', ?, 0)
-    `).run(id, name, description || '', createdBy, bindPath, extensionName);
+        kind, extension_name, disabled, extension_default_hidden
+      ) VALUES (?, ?, ?, ?, ?, 1, '[]', 0, 0, 'extension', ?, 0, ?)
+    `).run(id, name, description || '', createdBy, bindPath, extensionName, defaultHidden ? 1 : 0);
     return id;
   },
   setExtensionDisabled: (extName, disabled) => db.prepare(

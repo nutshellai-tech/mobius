@@ -2,5 +2,9 @@
   "name": "pricing",
   "display_name": "莫比乌斯定价套餐",
   "description": "",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "project": {
+    "sync": true,
+    "default_hidden": true
+  }
 }

@@ -716,7 +716,7 @@ function migrateProjectsBindPathManual() {
 }
 migrateProjectsBindPathManual();
 
-// ===== 共享 projects 表轻量迁移: 拓展系统 (kind / extension_name / disabled) =====
+// ===== 共享 projects 表轻量迁移: 拓展系统 (kind / extension_name / disabled / default hidden) =====
 // kind='extension' 的项目由 mobius/extension/<name>/ 目录自动 upsert; bind_path 强制为 APP_DIR,
 // worktree/research 强制关闭. disabled=1 表示拓展目录已删除但 DB 行保留 (用户数据不丢).
 // 缺列才 ALTER, 幂等.
@@ -736,6 +736,10 @@ function migrateProjectsExtensionColumns() {
     if (!cols.includes('disabled')) {
       db.exec('ALTER TABLE projects ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
       console.log('[mobius/db] migrate: projects.disabled 已加 (默认 0)');
+    }
+    if (!cols.includes('extension_default_hidden')) {
+      db.exec('ALTER TABLE projects ADD COLUMN extension_default_hidden INTEGER NOT NULL DEFAULT 0');
+      console.log('[mobius/db] migrate: projects.extension_default_hidden 已加 (默认 0)');
     }
     db.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_extension_name ' +
