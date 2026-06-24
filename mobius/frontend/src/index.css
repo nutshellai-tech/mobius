@@ -5320,3 +5320,19 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   顶栏系统状态指示器组 (磁盘/内存/版本, data-tour="top-system-status"):
+   中等视口 (≤1213px) 提前隐藏, 避免与面包屑/其余按钮重叠.
+   背景: 该组在 ≥768px 即随 hidden md:flex 常显, 其中 VersionIndicator 最宽达
+   210px, 三件合计 ~200–326px, 是右侧操作区里最大的空间占用者. Issue/Research 等页
+   (断点 768) 在 ~1213px 视口下: 不显示汉堡 + 右侧按钮全显 + 面包屑里项目名(maxW180)
+   与 Issue/Research 标题(maxW270)两段均为 flex-shrink-0, 不可收缩, 与右侧 flex-shrink-0
+   操作区合计恰顶满/超出容器可用宽 → justify-between 失效, 面包屑被压截断、与右侧按钮
+   视觉重叠. 把这组纯展示性监控信息在 ≤1213px 提前隐藏 (比默认 md:768 更早), 释放最大
+   横向空间给核心按钮 (新建/主题/用户菜单) 与面包屑; 隐藏无功能损失 (纯只读指标).
+   桌面端 (≥1214px) 不命中此媒体查询, 仍由原 hidden md:flex 控制为常显, 零影响.
+   ====================================================================== */
+@media (max-width: 1213px) {
+  [data-tour="top-system-status"] { display: none !important; }
+}
+
