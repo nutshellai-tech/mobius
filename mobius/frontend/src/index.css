@@ -5277,8 +5277,20 @@ body.mobius-resizing .mobius-resizable-handle {
   .global-create-modal .gc-modal-footer button { min-height: 44px; }
   /* 模态卡片圆角略收, 视觉更贴合小屏. */
   .global-create-modal { border-radius: 16px; }
-  /* 顶栏新建下拉菜单: 拉宽到近全屏, 避免文字截断. */
-  [data-tour="top-create"] > div:last-child { min-width: calc(100vw - 32px); }
+  /* 顶栏「新建」下拉: 移动端改为 fixed 近全宽面板 (左右对称 12px gutter).
+     桌面端用 absolute right-0 锚定「+」按钮右缘即可; 但移动端顶栏操作区里「+」按钮
+     左侧还有主题/用户菜单等可见元素 (按钮不贴屏幕右缘), 近全宽面板若仍 right-0 锚在
+     按钮处会向左溢出视口左缘, 被 html/body 的 overflow-x:hidden 裁切 → 菜单项左侧
+     图标/文字被切 (即「左边不对」). 改 fixed + 对称 gutter (与顶栏 padding 对齐),
+     彻底不溢出; top 紧贴单行顶栏下方. 仅 ≤640px 生效, 桌面端保持右锚不动. */
+  [data-tour="top-create"] > div:last-child {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: calc(env(safe-area-inset-top) + 3.5rem + 4px);
+    width: auto;
+    min-width: 0;
+  }
   /* 新建下拉菜单项: 触摸热区增大到 40px, 底部提示放大至 11px 提升窄屏可读性.
      命中触发按钮的兄弟下拉面板 (div.relative > div:last-child), 不影响桌面端 (≥641px) 紧凑的 py-1.5. */
   [data-tour="top-create"] > div:last-child button { min-height: 40px; }
