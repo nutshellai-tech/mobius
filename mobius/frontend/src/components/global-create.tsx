@@ -337,6 +337,108 @@ function AttachmentZone({ attachments, setAttachments, projectId, dark }: {
   )
 }
 
+// 目的/描述 + 附件 融合输入框 — 对标系统原生 chat composer (单一边框容器内:
+// 附件芯片 + textarea + 上传工具条), 附件不再单独成块, 视觉与交互统一.
+function DescriptionWithAttachments({ value, onValueChange, placeholder, attachments, setAttachments, projectId, dark }: {
+  value: string
+  onValueChange: (v: string) => void
+  placeholder?: string
+  attachments: Attachment[]
+  setAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>
+  projectId?: string
+  dark: boolean
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files)
+    arr.forEach(file => {
+      const isImg = file.type.startsWith('image/')
+      const att: Attachment = {
+        id: newAttId(), name: file.name, size: file.size,
+        previewUrl: isImg ? URL.createObjectURL(file) : undefined,
+        kind: isImg ? 'image' : 'file', status: 'uploading',
+      }
+      setAttachments(prev => [...prev, att])
+      uploadAttachmentFile(file, projectId)
+        .then(res => setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: 'done', path: res.path } : a)))
+        .catch(e => setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: 'error', error: e?.message || '上传失败' } : a)))
+    })
+  }, [projectId, setAttachments])
+
+  // 全局粘贴: 仅图片 (与 AttachmentZone 一致)
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const imgs: File[] = []
+      for (let i = 0; i < items.length; i += 1) {
+        const f = items[i].getAsFile()
+        if (f && f.type.startsWith('image/')) imgs.push(f)
+      }
+      if (imgs.length > 0) { e.preventDefault(); addFiles(imgs) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [addFiles])
+
+  const remove = (id: string) => setAttachments(prev => {
+    const target = prev.find(a => a.id === id)
+    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+    return prev.filter(a => a.id !== id)
+  })
+
+  return (
+    <div>
+      <SectionLabel hint="Ctrl+V 粘贴 / 拖拽 / 点附件">目的 / 问题描述</SectionLabel>
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files) }}
+        className="relative rounded-xl transition-colors focus-within:border-blue-500/40"
+        style={{ background: 'var(--input-bg)', border: `1px solid ${dragOver ? 'rgba(59,130,246,0.6)' : 'var(--input-border)'}` }}>
+        <input ref={fileRef} type="file" multiple className="hidden" onChange={e => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = '' }} />
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap items-start gap-1.5 px-3 pt-2.5">
+            {attachments.map(a => (
+              <div key={a.id} className="relative group flex-shrink-0" title={`${a.name}${a.size ? ` · ${formatFileSize(a.size)}` : ''}`}>
+                {a.kind === 'image' && a.previewUrl ? (
+                  <div className="w-9 h-9 rounded-md overflow-hidden relative" style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)' }}>
+                    <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
+                    {a.status === 'uploading' && <div className="absolute inset-0 bg-black/40" />}
+                    {a.status === 'error' && <div className="absolute inset-0 bg-red-500/60 text-white text-[9px] flex items-center justify-center">失败</div>}
+                  </div>
+                ) : (
+                  <div className="h-9 px-2 rounded-md flex items-center gap-1 text-[10px]"
+                    style={{ background: dark ? '#111827' : '#fff', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}>
+                    <Paperclip className="w-3 h-3" /><span className="max-w-[80px] truncate">{a.name}</span>
+                  </div>
+                )}
+                <button type="button" onClick={() => remove(a.id)}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <X className="w-2.5 h-2.5" strokeWidth={3} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <textarea value={value} onChange={e => onValueChange(e.target.value)} placeholder={placeholder}
+          className="w-full bg-transparent resize-none border-0 px-3 py-2 text-[13px] leading-relaxed placeholder:!text-[var(--placeholder-color)] focus:outline-none"
+          style={{ minHeight: 72, color: dark ? '#f1f5f9' : '#1e293b' }} />
+        <div className="flex items-center gap-2 px-3 pb-2">
+          <button type="button" onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1.5 h-7 px-2 rounded-lg text-[12px] transition-colors hover:bg-[var(--bg-card-hover)]"
+            style={{ color: 'var(--text-secondary)' }}>
+            <Paperclip className="w-3.5 h-3.5" /> 附件
+          </button>
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{attachments.length > 0 ? `${attachments.filter(a => a.status === 'done').length}/${attachments.length} 已上传` : '可粘贴截图或拖入文件'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Skill / Memory 二级浮层选择器 (通用). 默认全集启用, 取消勾选 = excluded.
 // locked(id)  → 必选/主Skill, 强制勾选不可取消 (关联锁定)
 // mutex(id)   → 冲突类, 置灰不可选 (互斥禁用)
@@ -954,6 +1056,15 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           {researches.list.map((r: any) => <option key={r.id} value={r.id}>{r.title}</option>)}
         </NativeSelect>
       </SelectShell>
+      <div>
+        <SectionLabel>Agent 名称</SectionLabel>
+        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个 Agent 起个名字" autoFocus dark={dark} />
+      </div>
+      <DescriptionWithAttachments value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个 Agent 研究什么" attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
+      <div>
+        <SectionLabel hint="创建后不可更改">模型</SectionLabel>
+        <ModelSelect value={model} onChange={setModel} dark={dark} />
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <SectionLabel>角色</SectionLabel>
@@ -974,20 +1085,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           <SectionLabel hint="创建后不可更改">语言</SectionLabel>
           <LanguageSelect value={language} onChange={setLanguage} />
         </div>
-      </div>
-      <div>
-        <SectionLabel>Agent 名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="给这个 Agent 起个名字" autoFocus dark={dark} />
-      </div>
-      <div>
-        <SectionLabel hint="选填">目的 / 问题描述</SectionLabel>
-        <ExpandableTextarea value={desc} onValueChange={v => { setDesc(v); setErr('') }} placeholder="希望这个 Agent 研究什么" overlayTitle="编辑 Agent 目的"
-          className="w-full h-24 px-3 py-2 rounded-xl text-[13px] placeholder:!text-[var(--placeholder-color)] focus:outline-none focus:border-blue-500/40 resize-none"
-          style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }} />
-      </div>
-      <div>
-        <SectionLabel hint="创建后不可更改">模型</SectionLabel>
-        <ModelSelect value={model} onChange={setModel} dark={dark} />
       </div>
       {/* 主 Skill 强制联动: 选定主 → 关联自动勾选锁定, 冲突类置灰互斥 */}
       <div className="space-y-2 rounded-xl p-3" style={{ background: 'var(--bg-card)', border: '1px solid var(--input-border)' }}>
@@ -1020,7 +1117,6 @@ export function CreateResearchForm({ onClose, onDone, defaultProjectId }: { onCl
           lockedOf={isMainSkill} mutexOf={isMutexSkill} accentLabelOf={accentSkill} emptyText="无可用 Skill" dark={dark} />
         <PickerPopover title="Memory" items={availMemories} excluded={excludedMemories} onToggle={toggleMemory} emptyText="无可用 Memory" dark={dark} />
       </div>
-      <AttachmentZone attachments={attachments} setAttachments={setAttachments} projectId={projectId || undefined} dark={dark} />
       {err && <ErrBanner>{err}</ErrBanner>}
     </CreateModalShell>
   )
