@@ -57,8 +57,16 @@ function isAimuxBridgePath(req) {
   const p = req.path || '';
   return p === '/aimux_bridge' || p.startsWith('/aimux_bridge/');
 }
+function isMultipartPath(req) {
+  const p = req.path || '';
+  return p === '/api/upload'
+    || p === '/api/assistant/transcribe'
+    || p === '/api/voice/upload'
+    || p.startsWith('/api/upload/')
+    || p.startsWith('/api/files/upload');
+}
 app.use((req, res, next) => {
-  if (isMemoryApiPath(req) || isAimuxBridgePath(req)) return next();
+  if (isMemoryApiPath(req) || isAimuxBridgePath(req) || isMultipartPath(req)) return next();
   return defaultJsonParser(req, res, next);
 });
 
