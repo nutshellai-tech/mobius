@@ -392,11 +392,11 @@ flowchart LR
 git clone https://github.com/nutshellai-tech/mobius.git
 cd mobius
 
-# 2. 构建 base 镜像（仅环境，不含代码）
-docker build -t imac-mobius-base:latest -f deploy/Dockerfile .
+# 2. 生成配置（随机秘钥密码，可以手动配置跳过此步）
+python3 prepare_conf.py --docker && python3 check_conf.py --docker
 
-# 3. 构建执行镜像（拷贝代码到镜像）
-docker build -t imac-mobius-exe:latest .
+# 3. 构建 base 镜像（仅环境，不含代码）
+docker build -t imac-mobius-base:latest -f deploy/Dockerfile . && docker build -t imac-mobius-exe:latest .
 
 # 4. 启动
 docker compose up

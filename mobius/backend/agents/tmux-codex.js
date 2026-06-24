@@ -30,6 +30,7 @@ const {
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
 const { tmux } = require('./tmux-operation-log')
+const { take_tmux_window_text } = require('./tmux_utils')
 
 let Database = null
 try { Database = require('better-sqlite3') } catch {}
@@ -1067,12 +1068,11 @@ class TmuxCodexBackend extends AgentBackend {
     let lastUpdatePress = 0
     // 保留最后一次非空屏幕内容，超时报错时给调用方看。
     let lastScreen = ''
+    const target = `${HUB}:${sessionId}`
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
-      // 抓取窗口最近 200 行内容用于检测 TUI 状态。
-      const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-200'])
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = cap.status === 0 ? cap.stdout : ''
+      const screen = take_tmux_window_text(target, 100)
       // 如果当前屏幕非空，就保存为最新屏幕快照。
       lastScreen = screen || lastScreen
       // 看到所有 ready 哨兵文本就结束等待。

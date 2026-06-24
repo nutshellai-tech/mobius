@@ -42,6 +42,7 @@ const {
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
 const { tmux } = require('./tmux-operation-log')
+const { take_tmux_window_text } = require('./tmux_utils')
 
 // ── 常量 ────────────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -691,12 +692,11 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     let lastApiKeyPress = 0
     // 记录上次自动按 Bypass 警告确认的时间，用来限频。
     let lastBypassPress = 0
+    const target = `${HUB}:${sessionId}`
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
-      // 抓取窗口最近 200 行内容用于检测 TUI 状态。
-      const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-200'])
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = cap.status === 0 ? cap.stdout : ''
+      const screen = take_tmux_window_text(target, 100)
       // 看到 ready 哨兵文本就结束等待。
       if (screen.includes(READY_SENTINEL)) { ready = true; break }
       // 信任对话框: 默认已高亮 "❯ 1. Yes, I trust this folder", 回车即确认.
