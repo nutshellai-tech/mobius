@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Download, FolderOpen, Plus, Trash2, Upload, X } from 'lucide-react'
+import { Copy, Download, FolderOpen, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
@@ -457,6 +457,7 @@ export function ProjectSettingsPanel({
   const [importUploadConfirmBusy, setImportUploadConfirmBusy] = useState(false)
   const [importCleanupBusy, setImportCleanupBusy] = useState(false)
   const [importGuideMessage, setImportGuideMessage] = useState('')
+  const [bindPathCopied, setBindPathCopied] = useState(false)
   const importDemoState = readProjectImportDemoState()
   const contextDemoState = readContextSetupDemoState()
   const importDemoActiveForProject = !!importDemoState?.active && importDemoState.projectId === project?.id
@@ -836,10 +837,18 @@ export function ProjectSettingsPanel({
                     />
                   )}
                   {editBindPath && (
-                    <button type="button" disabled={!canManageProject} onClick={() => { setEditBindPath(''); setEditBindPathManual(false) }} title="清除绑定路径" aria-label="清除绑定路径"
-                      className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-red-500/10 hover:text-red-400 transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                      <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    <button type="button" onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(editBindPath)
+                        setBindPathCopied(true)
+                        setTimeout(() => setBindPathCopied(false), 1200)
+                      } catch {
+                        setBindPathCopied(false)
+                      }
+                    }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
+                      className={`h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
+                      style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      {bindPathCopied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
                     </button>
                   )}
                   {importDemoActiveForProject && uploadSampleDownloadUrl && (

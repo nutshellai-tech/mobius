@@ -406,7 +406,7 @@ docker compose up
 
 ```bash
 # 1. 安装 tmux git 等必要依赖
-sudo apt install tmux python3 git curl proxychains openssh-server
+sudo apt install tmux python3 git curl proxychains openssh-server build-essential
 
 # 2. 安装claude code和codex（其中之一即可，但建议都安装）
 npm install -g @anthropic-ai/claude-code @openai/codex
@@ -417,6 +417,13 @@ cd mobius
 
 # 4. 生成和配置秘钥（将会复制 .env.default 到 .env，并创建随机密码）
 python3 conf_prepare.py && python3 conf_check.py
+
+# 5. 安装项目依赖环境 （前端+后端）
+cd ./mobius && npm install && cd ./frontend && npm install && cd ../..
+
+# 6. 运行
+python3 start.py
+
 ```
 
 
@@ -429,57 +436,8 @@ python3 conf_prepare.py && python3 conf_check.py
 | `JWT_SECRET` | JWT 签名密钥，应使用随机长字符串 |
 | `APP_DIR`、`DB_PATH`、`WORKSPACE_ROOT` | 本机代码、数据库和工作区路径 |
 
-生成 `JWT_SECRET`：
+详细配置参见 [.env.example](.env.example)。
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-详细配置参见 [API Key 配置教程](docs/zhipu-key-setup.md) 和 [.env.example](.env.example)。
-
-### 常用命令
-
-| 操作 | 命令 |
-|---|---|
-| 前端构建 | `cd mobius/frontend && npm run build` |
-| 后端语法检查 | `node -c mobius/backend/routes/assistant.js` |
-| 生产模式重启 | `python3 start.py` |
-| 查看 tmux 面板 | `tmux attach -t imac-mobius` |
-
-### 项目结构
-
-```text
-mobius/
-├── mobius/
-│   ├── backend/              # API、Agent backend、路由与服务
-│   ├── extension/            # Mobius 扩展应用
-│   ├── frontend/             # React / Vite Web 前端
-│   ├── scripts/              # 用户初始化与维护脚本
-│   ├── tests/                # 后端与 Agent 测试
-│   ├── package.json          # Node.js 后端依赖
-│   └── server.js             # 后端入口
-├── deploy/                   # Podman / Compose 部署配置
-├── docs/                     # 设计、接口、路径与运维文档
-├── scripts/                  # code-server 与数据迁移脚本
-├── start.py                  # 本地开发启动入口
-└── Dockerfile
-```
-
-### 代码导航
-
-| 区域 | 入口 |
-|---|---|
-| 小莫前端面板 | `mobius/frontend/src/components/assistant-chat.tsx` |
-| 小莫后端接口 | `mobius/backend/routes/assistant.js` |
-| 引导控制器 | `mobius/frontend/src/components/tour-controller.tsx` |
-| Driver.js 引导逻辑 | `mobius/frontend/src/services/tour.ts` |
-| 通用引导 Demo 状态 | `mobius/frontend/src/services/guided-demo.ts` |
-| 生日 Demo 状态 | `mobius/frontend/src/services/birthday-demo.ts` |
-| 导入项目 Demo 状态 | `mobius/frontend/src/services/project-import-demo.ts` |
-| 上下文配置 Demo 状态 | `mobius/frontend/src/services/context-setup-demo.ts` |
-| Project / Issue / Session 表单预填 | `mobius/frontend/src/components/modals.tsx` |
-| Session 完成推进引导 | `mobius/frontend/src/pages/IssuePage.tsx` |
-| Python Agent Driver | [mobius/backend/agents_py/README.md](mobius/backend/agents_py/README.md) |
 
 ### 文档
 
@@ -491,50 +449,7 @@ mobius/
 | [接口说明](docs/endpoint.md) | 后端接口与端点 |
 | [部署说明](deploy/README.md) | Podman Compose 与持久化卷 |
 
-### 部署
 
-从 GitLab 拉取代码时，使用已授权账号或部署环境中配置好的凭据，不建议把密码直接写进命令或文档。
-
-**首次部署：**
-
-```bash
-git clone -b agent_smart_dev <gitlab-imac-repo-url> imac
-cd imac
-cp .env.default deploy/.env
-cd deploy
-podman compose build
-podman compose up
-```
-
-**更新部署：**
-
-```bash
-cd imac
-git pull
-cp .env.default deploy/.env
-cd deploy
-podman compose build
-podman compose down
-podman compose up
-```
-
-容器启动时，`docker-entrypoint.sh` 会根据 `IMAC_BOOTSTRAP_USERS` 自动初始化用户。数据卷和容器路径参见 [部署说明](deploy/README.md) 与 [路径配置](docs/path.md)。
-
-### 当前调研结论
-
-> 截至 2026-06-08，本项目介绍总文档需要更新，原因是现有 README 只覆盖了早期自举、鞭策、Memory/Skill 和部署片段，没有反映以下最新实现：
-
-- 小莫已经升级为用户级持久 Agent Session，并支持模型、Skill、Memory 配置。
-- 小莫前端会发送当前页面状态，后端会基于页面状态和工具调用执行搜索、创建和澄清。
-- 小莫已经支持自塑入口，能在自进化项目中创建 Issue 和 Session。
-- 引导系统已经从单一生日 Demo 扩展出三条路线的代码骨架和分段逻辑：生日邀请页、导入已有项目、上下文配置。
-- 引导系统已经支持跨路由/弹窗分段、表单预填、上下文快照说明、Session 完成状态推进和演示项目清理。
-- 当前只有生日邀请页 Demo 有首次登录自动入口；导入已有项目和上下文配置 Demo 还需要补显式启动入口。
-- 项目总能力还包括 Research、扩展项目和特殊应用，这些能力也应在总介绍中被记录。
-
-<p align="right"><a href="#readme-top">返回顶部 ↑</a></p>
-
----
 
 ## 许可证
 
@@ -543,7 +458,6 @@ podman compose up
 
 商业授权联系：`business@nutshellai.cn`
 
----
 
 <p align="center">
   <strong>所见即所得，所想可生长。</strong>
