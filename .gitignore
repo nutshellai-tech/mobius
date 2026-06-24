@@ -99,6 +99,7 @@ deploy/host-data
 projects/
 .deploy_data/
 host-data/
+host_data/
 docs/superpowers
 /docs/
 /assess_appearance/
