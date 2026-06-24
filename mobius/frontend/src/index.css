@@ -5205,7 +5205,7 @@ body.mobius-resizing .mobius-resizable-handle {
      skill/memory (flex-1 overflow-y-auto) 吃剩余空间并自滚动 → 输入框不会被裁切.
    仅 ≤768px 生效, 桌面端保持 68/32 横向不动 (!important 用以覆盖 inline width).
    ====================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .mobius-chat-body {
     flex-direction: column;
   }
@@ -5280,7 +5280,7 @@ body.mobius-resizing .mobius-resizable-handle {
    把横向空间让给项目名; 项目名段改可收缩 (覆盖 flex-shrink-0), 名称过长时
    干净截断加省略号, 不再被操作区压盖. 桌面端 (≥769px) 完整面包屑不动.
    ====================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .mobius-topnav .mobius-topnav-brandtext,
   .mobius-topnav .mobius-topnav-userlink,
   .mobius-topnav .mobius-topnav-sep-pre,
@@ -5321,18 +5321,13 @@ body.mobius-resizing .mobius-resizable-handle {
 }
 
 /* ======================================================================
-   顶栏系统状态指示器组 (磁盘/内存/版本, data-tour="top-system-status"):
-   中等视口 (≤1213px) 提前隐藏, 避免与面包屑/其余按钮重叠.
-   背景: 该组在 ≥768px 即随 hidden md:flex 常显, 其中 VersionIndicator 最宽达
-   210px, 三件合计 ~200–326px, 是右侧操作区里最大的空间占用者. Issue/Research 等页
-   (断点 768) 在 ~1213px 视口下: 不显示汉堡 + 右侧按钮全显 + 面包屑里项目名(maxW180)
-   与 Issue/Research 标题(maxW270)两段均为 flex-shrink-0, 不可收缩, 与右侧 flex-shrink-0
-   操作区合计恰顶满/超出容器可用宽 → justify-between 失效, 面包屑被压截断、与右侧按钮
-   视觉重叠. 把这组纯展示性监控信息在 ≤1213px 提前隐藏 (比默认 md:768 更早), 释放最大
-   横向空间给核心按钮 (新建/主题/用户菜单) 与面包屑; 隐藏无功能损失 (纯只读指标).
-   桌面端 (≥1214px) 不命中此媒体查询, 仍由原 hidden md:flex 控制为常显, 零影响.
+   最小移动端顶栏 (≤900px): 触控热区.
+   断点已统一提到 900 (resizable-panel DEFAULT_MOBILE_BREAKPOINT): 汉堡菜单 / 抽屉 /
+   顶栏次要按钮(帮助·系统状态·主题) / 新建与用户菜单的文字 均在 JS 侧 (useIsMobile)
+   按此断点联动显隐; 面包屑精简与 chat body 堆叠也在 ≤900px 触发 (见各自 @media 块).
+   这里补触控最小尺寸, 平板宽度下手点不误触. (手感层 ≤768 的同条规则保留, 互不冲突.)
    ====================================================================== */
-@media (max-width: 1213px) {
-  [data-tour="top-system-status"] { display: none !important; }
+@media (max-width: 900px) {
+  .mobius-topnav-actions button { min-height: 36px; min-width: 36px; }
 }
 

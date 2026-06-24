@@ -14,6 +14,7 @@
 // =====================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, api } from '../store'
+import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
 import { ErrBanner, PathPickerModal } from './modals'
 import { ExpandableTextarea } from './expandable-textarea'
@@ -1039,6 +1040,8 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
   open: boolean; onOpenChange: (v: boolean) => void; onPick: (kind: CreateKind) => void
   inProject: boolean; currentProject: any; researchEnabled: boolean
 }) {
+  // 移动端 (≤ 断点): 触发按钮只留 [+] 图标, 隐藏「新建」文字与下拉箭头, 极简化顶栏.
+  const isMobile = useIsMobile()
   useEffect(() => {
     if (!open) return
     const close = () => onOpenChange(false)
@@ -1063,8 +1066,8 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
         title="新建" aria-label="新建" aria-haspopup="menu" aria-expanded={open}
         className="mobius-create-trigger h-8 flex items-center gap-1 rounded-lg pl-2 pr-2">
         <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-        <span className="text-[12px] font-semibold hidden md:inline">新建</span>
-        <ChevronDown className={`w-3 h-3 hidden md:block transition-transform ${open ? 'rotate-180' : ''}`} />
+        {!isMobile && <span className="text-[12px] font-semibold">新建</span>}
+        {!isMobile && <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />}
       </button>
       {open && (
         <div className="absolute right-0 top-10 z-50 min-w-[200px] rounded-lg shadow-xl py-1"
