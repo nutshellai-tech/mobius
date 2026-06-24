@@ -11,7 +11,8 @@ Use this skill to create a reproducible Mobius self-evolution demo:
 2. Record the user requirement being typed into Xiao Mo.
 3. Implement the requirement.
 4. Record the changed UI.
-5. Concatenate the clips and convert the final video to MP4.
+5. Insert animated transition title cards between the clips.
+6. Concatenate the clips and convert the final video to MP4.
 
 ## Required Rules
 
@@ -172,6 +173,38 @@ the route is mounted without mutating the repository.
 Always deliver MP4. Keep WebM intermediates if useful, but the final shared
 artifact should be MP4.
 
+Always insert two animated transition title cards between the three recorded
+clips. The title cards must not be static black frames. Use a moving gradient or
+motion background, fading text, and slight text movement/scale so the transition
+feels deliberate:
+
+- Between clip 1 and clip 2:
+  `接下来，我们给小莫提出需求，提出需求`
+- Between clip 2 and clip 3:
+  `小莫会处理您的指令……等待享用一杯咖啡的时间后……`
+
+Prefer the bundled renderer because the local static `ffmpeg` may not include
+the `drawtext` filter, and `xfade` can fail when an input loses constant-frame-
+rate metadata. The renderer uses ASS subtitles for dynamic text effects,
+moving gradient backgrounds, internal fades, and normalized MP4 concatenation:
+
+```bash
+python3 skills/mobius-self-evo-demo/scripts/render_demo_video.py \
+  --work-dir /tmp/imac-demo-video \
+  --part1 /tmp/imac-demo-video/part1-before.webm \
+  --part2 /tmp/imac-demo-video/part2-request.webm \
+  --part3 /tmp/imac-demo-video/part3-after.webm \
+  --output .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4
+```
+
+The renderer creates:
+
+- `transition1-animated.mp4`
+- `transition2-animated.mp4`
+- the final `self-evolution-demo.mp4`
+
+Only fall back to manual concatenation when the renderer is unavailable.
+
 Create a concat list:
 
 ```text
@@ -241,6 +274,11 @@ after-state UI.
 - Browser display: `DISPLAY` can be empty while stale X11 sockets exist. A
   smoke test may pass once and later headful launch can hang. Prefer headless
   Playwright recording for reliability unless a visible browser is truly needed.
+- Video effects: the local static `ffmpeg` may have `ass`, `gradients`, and
+  `xfade` but no `drawtext`. Prefer ASS subtitle animation for Chinese title
+  cards. If `xfade` rejects inputs as non-constant-frame-rate, use animated
+  transition clips with normalized concat instead of installing another ffmpeg
+  build.
 - Service discovery: automated dev-server detection can miss Mobius production
   port. Trust `/api/v2/health`.
 - Selectors: aria labels are not body text. Wait for selectors such as
