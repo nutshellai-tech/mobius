@@ -909,7 +909,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
       {createKind && (
         <GlobalCreateRoot
           kind={createKind}
-          ctx={{ projectId: projectParam, issueId: issueParam }}
+          ctx={{ projectId: projectParam, issueId: issueParam, researchId: researchParam }}
           onClose={() => setCreateKind(null)}
         />
       )}

@@ -13,10 +13,11 @@
 // 不改动 modals.tsx 现有组件 (页面内创建流程零风险), 仅复用其底层 export.
 // =====================================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore, api } from '../store'
 import { useIsMobile } from './resizable-panel'
 import { draftLoad, draftSave, draftClear } from '../services/input-drafts'
-import { ErrBanner, PathPickerModal } from './modals'
+import { ErrBanner, PathPickerModal, NewProjectModal, NewIssueModal, NewSessionModal } from './modals'
 import { ExpandableTextarea } from './expandable-textarea'
 import {
   Plus, ChevronDown, FolderPlus, CircleDot, MessagesSquare, FlaskConical,
@@ -1191,25 +1192,99 @@ export function GlobalCreateMenu({ open, onOpenChange, onPick, inProject, curren
   )
 }
 
-// 根调度: 根据 kind 渲染对应表单; 创建成功 → 次级确认弹窗 (跳转详情新开 Tab)
+// 目标选择器 — 不在对应页面时, 先选项目(→Issue/Research)再打开系统标准弹窗.
+function TargetPicker({ need, onClose, onPicked }: {
+  need: 'issue' | 'session' | 'research'
+  onClose: () => void
+  onPicked: (ids: { projectId: string; issueId?: string; researchId?: string }) => void
+}) {
+  const dark = useStore(s => s.theme) !== 'light'
+  const [projectId, setProjectId] = useState('')
+  const [issueId, setIssueId] = useState('')
+  const [researchId, setResearchId] = useState('')
+  const projects = useAsyncList<any>(() => api('/api/projects').then((r: any) => Array.isArray(r) ? r : (r?.projects || [])), [])
+  const needIssue = need === 'session'
+  const needResearch = need === 'research'
+  const issues = useAsyncList<any>(() => (projectId && needIssue) ? api(`/api/projects/${projectId}/issues?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.issues || [])) : Promise.resolve([]), [projectId])
+  const researches = useAsyncList<any>(() => (projectId && needResearch) ? api(`/api/projects/${projectId}/researches?status=active`).then((r: any) => Array.isArray(r) ? r : (r?.researches || [])) : Promise.resolve([]), [projectId])
+  const canConfirm = !!projectId && (!needIssue || !!issueId) && (!needResearch || !!researchId)
+  const titleMap = { issue: '选择目标项目', session: '选择目标项目 / Issue', research: '选择目标项目 / Research' } as const
+  const selectCls = 'w-full h-10 px-2.5 rounded-xl text-[13px] focus:outline-none focus:border-blue-500/40'
+  const selectStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' } as React.CSSProperties
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[440px] max-w-[calc(100vw-24px)] rounded-2xl shadow-2xl flex flex-col" style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <h3 className="text-[15px] font-semibold" style={{ color: dark ? '#f1f5f9' : '#1e293b' }}>{titleMap[need]}</h3>
+          <button type="button" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-card-hover)]" style={{ color: 'var(--text-muted)' }}><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5">
+          <div>
+            <SectionLabel>项目</SectionLabel>
+            <select value={projectId} onChange={e => { setProjectId(e.target.value); setIssueId(''); setResearchId('') }} className={selectCls} style={selectStyle}>
+              <option value="">— 选择项目 —</option>
+              {projects.list.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          {needIssue && (
+            <div>
+              <SectionLabel>Issue</SectionLabel>
+              <select value={issueId} onChange={e => setIssueId(e.target.value)} className={selectCls} style={selectStyle}>
+                <option value="">— 选择 Issue —</option>
+                {issues.list.map((i: any) => <option key={i.id} value={i.id}>{i.title}</option>)}
+              </select>
+            </div>
+          )}
+          {needResearch && (
+            <div>
+              <SectionLabel>Research</SectionLabel>
+              <select value={researchId} onChange={e => setResearchId(e.target.value)} className={selectCls} style={selectStyle}>
+                <option value="">— 选择 Research —</option>
+                {researches.list.map((r: any) => <option key={r.id} value={r.id}>{r.title}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t flex gap-2" style={{ borderColor: 'var(--border-color)' }}>
+          <button onClick={onClose} className="flex-1 h-9 rounded-xl text-[13px] border transition-colors hover:bg-[var(--bg-card-hover)]" style={{ borderColor: 'var(--input-border)', color: 'var(--text-secondary)' }}>取消</button>
+          <button onClick={() => canConfirm && onPicked({ projectId, issueId: needIssue ? issueId : undefined, researchId: needResearch ? researchId : undefined })} disabled={!canConfirm} className="flex-1 h-9 rounded-xl text-[13px] btn-primary transition-colors disabled:opacity-40">下一步</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 根调度: 复用系统已有标准弹窗 (modals.tsx 的 NewProjectModal/NewIssueModal/NewSessionModal),
+// 与页面内「新建」完全一致. 有当前页上下文 → 直接开; 缺则先弹 TargetPicker 选目标, 再开同一个弹窗.
 export function GlobalCreateRoot({ kind, ctx, onClose }: {
   kind: CreateKind | null
-  ctx: { projectId?: string; issueId?: string }
+  ctx: { projectId?: string; issueId?: string; researchId?: string }
   onClose: () => void
 }) {
-  const [success, setSuccess] = useState<{ entity: any; detailUrl?: string; name: string } | null>(null)
-  const dark = useStore(s => s.theme) !== 'light'
+  const navigate = useNavigate()
+  const user = useStore(s => s.user)
+  const [target, setTarget] = useState<{ projectId?: string; issueId?: string; researchId?: string }>({})
+  const projectId = target.projectId || ctx.projectId
+  const issueId = target.issueId || ctx.issueId
+  const researchId = target.researchId || ctx.researchId
 
-  if (success) {
-    return <CreateSuccessDialog kind={kind || 'project'} name={success.name} detailUrl={success.detailUrl} onClose={() => { setSuccess(null); onClose() }} />
-  }
-  const handleDone = (entity: any, detailUrl?: string) => {
-    setSuccess({ entity, detailUrl, name: entity?.name || entity?.title || '' })
-  }
+  if (!kind) return null
 
-  if (kind === 'project') return <CreateProjectForm onClose={onClose} onDone={handleDone} />
-  if (kind === 'issue') return <CreateIssueForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
-  if (kind === 'session') return <CreateSessionForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} defaultIssueId={ctx.issueId} />
-  if (kind === 'research') return <CreateResearchForm onClose={onClose} onDone={handleDone} defaultProjectId={ctx.projectId} />
+  if (kind === 'project') {
+    return <NewProjectModal onClose={onClose} onCreated={(p: any) => { onClose(); if (p?.id && p?.created_by) navigate(`/u/${p.created_by}/p/${p.id}`) }} />
+  }
+  if (kind === 'issue') {
+    if (!projectId) return <TargetPicker need="issue" onClose={onClose} onPicked={setTarget} />
+    return <NewIssueModal projectId={projectId} onClose={onClose} onCreated={(iss: any) => { onClose(); if (iss?.id) navigate(`/u/${user?.id}/p/${projectId}/i/${iss.id}`) }} />
+  }
+  if (kind === 'session') {
+    if (!issueId) return <TargetPicker need="session" onClose={onClose} onPicked={setTarget} />
+    return <NewSessionModal issueId={issueId} onClose={onClose} onCreated={(s: any) => { onClose(); if (s?.session_id) navigate(`/u/${user?.id}/p/${projectId}/i/${issueId}?session=${s.session_id}`) }} />
+  }
+  if (kind === 'research') {
+    if (!researchId) return <TargetPicker need="research" onClose={onClose} onPicked={setTarget} />
+    return <NewSessionModal researchId={researchId} entityLabel="Research Agent" onClose={onClose} onCreated={(s: any) => { onClose(); if (s?.session_id) navigate(`/u/${user?.id}/p/${projectId}/r/${researchId}`) }} />
+  }
   return null
 }
