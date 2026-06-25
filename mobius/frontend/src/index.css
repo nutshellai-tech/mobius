@@ -1651,8 +1651,21 @@ body::after {
     0 24px 80px rgba(2, 6, 23, .45),
     0 0 0 1px rgba(14, 165, 233, .08),
     inset 0 1px 0 rgba(255, 255, 255, .08);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  /* 去掉毛玻璃：避免每次输入时都对面板背后整块区域重做 18px 高斯模糊；
+     面板本身已有 .92 不透明渐变底色，视觉无差别；contain 把重排/重绘锁在面板内部 */
+  contain: layout paint;
+}
+
+/* 面板内的小莫头像：禁用无限动画，避免持续重绘拖慢输入；
+   FAB 悬浮球（右下角圆球）的动画不受影响，仍会动 */
+.assistant-panel .mo-avatar__particle,
+.assistant-panel .mo-avatar__ring,
+.assistant-panel .mo-avatar__field,
+.assistant-panel .mo-avatar__core {
+  animation: none !important;
+}
+.assistant-panel .mo-avatar__particle {
+  box-shadow: none;
 }
 .light .assistant-panel {
   border-color: rgba(15, 23, 42, .12);
