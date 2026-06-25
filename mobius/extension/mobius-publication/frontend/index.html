@@ -1,0 +1,952 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>莫比乌斯 · Publication</title>
+  <meta name="description" content="莫比乌斯，一个自迭代、自生长，能把个人和团队组织成智能体工作面的 AgenticOS。" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <nav class="topnav" id="topnav">
+    <a href="#hero" class="topnav-brand" aria-label="莫比乌斯">
+      <svg viewBox="0 0 32 32" class="topnav-logo" aria-hidden="true">
+        <defs>
+          <linearGradient id="navgrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#22d3ee" />
+            <stop offset="0.5" stop-color="#a78bfa" />
+            <stop offset="1" stop-color="#f472b6" />
+          </linearGradient>
+        </defs>
+        <g transform="translate(16 16)">
+          <path d="M -10 0 C -10 -7, -3 -7, 0 0 C 3 7, 10 7, 10 0 C 10 -7, 3 -7, 0 0 C -3 7, -10 7, -10 0 Z"
+                fill="none" stroke="url(#navgrad)" stroke-width="1.6" />
+          <path d="M -10 0 C -10 7, -3 7, 0 0 C 3 -7, 10 -7, 10 0 C 10 7, 3 7, 0 0 C -3 -7, -10 -7, -10 0 Z"
+                fill="none" stroke="url(#navgrad)" stroke-width="1.6" opacity="0.45" />
+        </g>
+      </svg>
+      <span>莫比乌斯</span>
+    </a>
+    <ul class="topnav-links">
+      <li><a href="#prologue">核心判断</a></li>
+      <li><a href="#concept">工作面</a></li>
+      <li><a href="#features">七大亮点</a></li>
+      <li><a href="#feat-showcase">开源与案例</a></li>
+      <li><a href="#finale">立即开源</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero -->
+  <header class="hero section-dark" id="hero">
+    <canvas id="hero-canvas" aria-hidden="true"></canvas>
+    <div class="hero-inner">
+      <p class="hero-eyebrow reveal">Mobius · Agentic OS Publication</p>
+      <h1 class="hero-title reveal">
+        <span class="line">自迭代的</span>
+        <span class="line gradient-text">智能体操作系统</span>
+      </h1>
+      <p class="hero-sub reveal">
+        不是一个聊天框，不是一轮 Agent Loop。<br />
+        莫比乌斯把想法展开成智能体工作面，把团队组织进 AI 作战室。
+      </p>
+      <div class="hero-cta reveal">
+        <a class="btn btn-primary" href="#features">查看七大亮点</a>
+        <a class="btn btn-ghost" href="https://github.com/nutshellai-tech/mobius" target="_blank" rel="noreferrer">GitHub 开源代码</a>
+      </div>
+      <div class="hero-scroll-hint reveal" aria-hidden="true">
+        <span></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 写在前面 -->
+  <section class="section section-light section-padded" id="prologue">
+    <div class="container narrow">
+      <p class="kicker reveal">核心判断</p>
+      <h2 class="display reveal">
+        AI 产品的终点，<br />
+        <span class="gradient-text-dark">不是更聪明的聊天框。</span>
+      </h2>
+      <p class="lead reveal">
+        真正有价值的 AgenticOS，需要能自己吸收新信息、重塑自身能力，
+        也需要能把一个人的想法、一支团队的协作和一项复杂研究组织成可执行的系统。
+      </p>
+      <p class="lead reveal">
+        莫比乌斯的核心不是“替你回答”，而是持续生长：
+        自迭代、自协作、自组织，把每一次执行沉淀成下一次变强的材料。
+      </p>
+    </div>
+  </section>
+
+  <!-- 概念：点状问答 vs 智能体工作面 -->
+  <section class="section section-dark section-padded" id="concept">
+    <div class="container">
+      <p class="kicker light reveal">从点状问答，到智能体工作面</p>
+      <h2 class="display light reveal">
+        单点模型负责回答，<br />
+        <span class="gradient-text">莫比乌斯</span>负责组织生产。
+      </h2>
+
+      <div class="concept-grid">
+        <div class="concept-card reveal">
+          <div class="concept-3d" id="concept-torus" aria-hidden="true"></div>
+          <h3>普通 AI 助手</h3>
+          <p>一个输入，一个模型，一条输出。</p><p>问题被单线回答，过程结束后很难沉淀为系统能力。</p>
+          <div class="loop-flow" aria-label="普通 Agent Loop 流程">
+            <span class="node">输入</span>
+            <i class="arrow">→</i>
+            <span class="node">生成</span>
+            <i class="arrow">→</i>
+            <span class="node">输出</span>
+            <i class="arrow">→</i>
+            <span class="node">结束</span>
+            <span class="ellipsis" aria-label="省略若干循环">⋯</span>
+            <span class="node end">遗忘</span>
+          </div>
+        </div>
+
+        <div class="concept-card highlight reveal">
+          <div class="concept-3d" id="concept-mobius" aria-hidden="true"></div>
+          <h3>莫比乌斯 AgenticOS</h3>
+          <p>一个目标展开成一张智能体工作面。</p><p>执行、验证、交接和产物都会回流，成为系统继续生长的一部分。</p>
+          <div class="loop-flow mobius" aria-label="莫比乌斯环流程">
+            <span class="node">拆解</span>
+            <i class="arrow">→</i>
+            <span class="node">并行</span>
+            <i class="arrow">→</i>
+            <span class="node">验证</span>
+            <i class="arrow">→</i>
+            <span class="node">沉淀</span>
+            <i class="arrow circ">↻</i>
+            <span class="node ascend">继续生长</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="lead center light reveal" style="margin-top:5rem;">
+        它不只是在“完成任务”，也在让任务反过来塑造系统。<br />
+        这就是为什么莫比乌斯不是更聪明的聊天框，<br />
+        而是一个会自我生长的 <strong class="gradient-text">AgenticOS</strong>。
+      </p>
+
+      <div class="section-bridge reveal" aria-hidden="true"></div>
+
+      <h2 class="display light reveal" style="margin-top:1rem;">
+        这条没有尽头的<span class="gradient-text">莫比乌斯环</span>，<br />
+        刻画了莫比乌斯最底层的三种能力。
+      </h2>
+
+      <div class="trinity-grid">
+        <article class="trinity-card reveal">
+          <div class="trinity-num">01</div>
+          <div class="trinity-3d" id="trinity-1" data-mode="loop" aria-hidden="true"></div>
+          <h3>持续运行</h3>
+          <p>系统可以围绕长期目标<strong>连续推进</strong>。</p>
+        </article>
+
+        <article class="trinity-card reveal">
+          <div class="trinity-num">02</div>
+          <div class="trinity-3d" id="trinity-2" data-mode="dimension" aria-hidden="true"></div>
+          <h3>自我迭代</h3>
+          <p>每次执行都能成为下一轮能力升级的材料。</p>
+        </article>
+
+        <article class="trinity-card reveal">
+          <div class="trinity-num">03</div>
+          <div class="trinity-3d" id="trinity-3" data-mode="stars" aria-hidden="true"></div>
+          <h3>产物回流</h3>
+          <p>内容、工具、产品和科研成果都能沉淀进系统。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 七大亮点总览 -->
+  <section class="section section-light section-padded" id="features">
+    <div class="container">
+      <p class="kicker reveal">七大亮点</p>
+      <h2 class="display reveal">
+        从自生长系统，<br />
+        到团队级 <span class="gradient-text-dark">AI 作战室</span>。
+      </h2>
+
+      <ol class="feature-toc">
+        <li class="reveal"><a href="#feat-1">
+          <span class="toc-ghost" aria-hidden="true">01</span>
+          <span class="toc-body">
+            <span class="toc-title">自迭代，自生长</span>
+            <span class="toc-meta">绝对亮点 · 系统持续变强</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-2">
+          <span class="toc-ghost" aria-hidden="true">02</span>
+          <span class="toc-body">
+            <span class="toc-title">集群思考协作，从点到面</span>
+            <span class="toc-meta">7×24 · 多智能体工作面</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-3">
+          <span class="toc-ghost" aria-hidden="true">03</span>
+          <span class="toc-body">
+            <span class="toc-title">团队协作 max</span>
+            <span class="toc-meta">AI 作战室 · Boss 鸟瞰</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-4">
+          <span class="toc-ghost" aria-hidden="true">04</span>
+          <span class="toc-body">
+            <span class="toc-title">深度科研系统</span>
+            <span class="toc-meta">研究组 · GPU 集群 · 论文闭环</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-5">
+          <span class="toc-ghost" aria-hidden="true">05</span>
+          <span class="toc-body">
+            <span class="toc-title">灵活的拓展系统</span>
+            <span class="toc-meta">说出想法 · 即成应用</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-6">
+          <span class="toc-ghost" aria-hidden="true">06</span>
+          <span class="toc-body">
+            <span class="toc-title">智能小莫</span>
+            <span class="toc-meta">自然语言入口 · 便捷交互</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+        <li class="reveal"><a href="#feat-7">
+          <span class="toc-ghost" aria-hidden="true">07</span>
+          <span class="toc-body">
+            <span class="toc-title">任意模型，一键接入</span>
+            <span class="toc-meta">GLM · GPT · Claude · 更多模型</span>
+          </span>
+          <i class="toc-arrow" aria-hidden="true">→</i>
+        </a></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 分页标志：亮点总览 → 亮点一 -->
+  <div class="page-divider reveal" aria-hidden="true">
+    <span class="divider-rule"></span>
+    <span class="divider-dots"><i></i><i></i><i></i></span>
+    <span class="divider-rule"></span>
+  </div>
+
+  <!-- Highlight 1: 自迭代，自生长 -->
+  <section class="section section-light section-padded feature" id="feat-1">
+    <div class="container feature-grid">
+      <div class="feature-text">
+        <p class="kicker reveal">亮点一</p>
+        <h2 class="display small reveal">自迭代，<br /><span class="gradient-text-dark">自生长。</span></h2>
+        <p class="lead reveal">
+          这是莫比乌斯最重要的亮点：
+          它不是一次性交付的 AI 工具，而是能在真实使用中持续吸收、持续替换、持续变强的系统。
+        </p>
+        <p class="body reveal">
+          用户提出需求，系统会把改进组织成任务、执行、验证和沉淀；
+          外部信息、项目历史和用户偏好会继续进入系统，形成新的判断材料。
+        </p>
+        <p class="body reveal">
+          这就是 Mobius 的自生长闭环：
+          每一次使用都不只是完成一次任务，而是在替换这艘 AI 忒修斯之船上的一块新木板。
+        </p>
+      </div>
+      <figure class="feature-media reveal">
+        <div class="media-placeholder media-heatmap" aria-label="莫比乌斯自迭代时间线">
+          <div class="heatmap-card">
+            <div class="heatmap-head">
+              <div>
+                <div class="heatmap-title">自生长时间线</div>
+                <div class="heatmap-sub">需求 · 执行 · 验证 · 沉淀 · 下一轮迭代</div>
+              </div>
+              <div class="heatmap-badge">
+                <span class="badge-dot"></span>Self Growing
+              </div>
+            </div>
+            <div class="heatmap-axis-y">
+              <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+            </div>
+            <div class="heatmap-grid" id="heatmap-grid" aria-hidden="true"></div>
+            <div class="heatmap-axis-x">
+              <span>0</span><span>6</span><span>12</span><span>18</span><span>24</span>
+            </div>
+            <div class="heatmap-legend">
+              <span class="legend-item"><span class="legend-dot p1"></span>能力替换</span>
+              <span class="legend-item"><span class="legend-dot p2"></span>记忆沉淀</span>
+              <span class="legend-item"><span class="legend-dot p3"></span>工具孵化</span>
+              <span class="legend-item"><span class="legend-dot p4"></span>认知升级</span>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Highlight 2: 集群思考协作 -->
+  <section class="section section-dark section-padded feature" id="feat-2">
+    <div class="container feature-grid reverse">
+      <div class="feature-text">
+        <p class="kicker reveal light">亮点二</p>
+        <h2 class="display small reveal light">集群思考协作，<br /><span class="gradient-text">从点到面。</span></h2>
+        <p class="lead reveal light">
+          普通 AI 把问题交给一个模型回答。
+          莫比乌斯把一个目标展开成一张智能体工作面，让多个角色并行推进、互相补位、最终收敛。
+        </p>
+
+        <ul class="tier-list">
+          <li class="reveal">
+            <div class="tier-tag">展开 · 从一个点出发</div>
+            <p>一个需求进来，系统自动拆成研究、开发、测试、验证、撰写、复盘等多条可执行路径。</p>
+          </li>
+          <li class="reveal">
+            <div class="tier-tag">并行 · 多智能体工作面</div>
+            <p>多个智能体独立作业，通过共享黑板、任务记录和中间产物持续对齐，而不是各说各话。</p>
+          </li>
+          <li class="reveal">
+            <div class="tier-tag">持续 · 7×24 推进</div>
+            <p>这张工作面可以围绕多个项目长期运行，不只回答一轮，而是持续追踪、执行、验证和收敛。</p>
+          </li>
+        </ul>
+
+        <p class="body reveal light">
+          这里讲的是 AI 内部的工作方式：
+          Mobius 不是增加一个更会聊天的模型，而是把复杂目标组织成可执行、可追踪、可收敛的工作面。
+        </p>
+      </div>
+      <figure class="feature-media reveal">
+        <div class="media-placeholder media-evolve" aria-label="集群思考协作：从点到面">
+          <div class="evolve-orbit" aria-hidden="true">
+            <!-- 外环 · 收敛验证 -->
+            <div class="orbit-ring orbit-l3">
+              <div class="orbit-tracer-wrap"><span class="orbit-tracer"></span></div>
+            </div>
+            <!-- 中环 · 并行执行 -->
+            <div class="orbit-ring orbit-l2">
+              <div class="orbit-tracer-wrap"><span class="orbit-tracer"></span></div>
+            </div>
+            <!-- 内环 · 目标拆解 -->
+            <div class="orbit-ring orbit-l1">
+              <div class="orbit-tracer-wrap"><span class="orbit-tracer"></span></div>
+            </div>
+
+            <!-- 三层工作面节点：轮流高亮，拆解 → 并行 → 收敛循环 -->
+            <div class="orbit-node on-l3">
+              <span class="node-tag">收敛验证</span>
+              <span class="node-note">结论 · 交付 · 复盘</span>
+              <span class="node-pulse"></span>
+            </div>
+            <div class="orbit-node on-l2">
+              <span class="node-tag">并行执行</span>
+              <span class="node-note">检索 · 开发 · 实验</span>
+              <span class="node-pulse"></span>
+            </div>
+            <div class="orbit-node on-l1">
+              <span class="node-tag">目标拆解</span>
+              <span class="node-note">一个想法展开成面</span>
+              <span class="node-pulse"></span>
+            </div>
+
+            <!-- 核心：共享工作面 -->
+            <div class="orbit-core">
+              <div class="mo-avatar mo-avatar--sm">
+                <span class="mo-avatar__field"></span>
+                <span class="mo-avatar__ring mo-avatar__ring--outer"></span>
+                <span class="mo-avatar__ring mo-avatar__ring--inner"></span>
+                <span class="mo-avatar__core"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--1"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--2"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--3"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--4"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--5"></span>
+                <span class="mo-avatar__particle mo-avatar__particle--6"></span>
+              </div>
+              <div class="core-tag">共享工作面</div>
+            </div>
+
+            <!-- 外环粒子定期向核心坍缩（多路径结果回到共享工作面） -->
+            <span class="collapse-particle cp1"></span>
+            <span class="collapse-particle cp2"></span>
+            <span class="collapse-particle cp3"></span>
+            <span class="collapse-particle cp4"></span>
+          </div>
+          <div class="orbit-caption">
+            <span class="caption-pill"><i class="status-dot"></i>多智能体工作面</span>
+            <span class="caption-text">一个目标 · 多路并行 · 最终收敛</span>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Highlight 3: 团队协作 max -->
+  <section class="section section-light section-padded feature" id="feat-3">
+    <div class="container">
+      <div class="feature-head">
+        <p class="kicker reveal">亮点三</p>
+        <h2 class="display small reveal">团队协作<br /><span class="gradient-text-dark">max。</span></h2>
+        <p class="lead reveal" style="max-width:60ch;margin:0 auto;">
+          莫比乌斯不是让每个人各自打开一个 AI 聊天框，
+          而是把人、AI、项目、上下文、权限、进度和交付放进同一个团队作战室。
+        </p>
+      </div>
+
+      <div class="pillars-grid">
+        <article class="pillar reveal">
+          <div class="pillar-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M8 14 L24 8 L40 14 L40 32 L24 40 L8 32 Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 14 L24 20 L40 14 M24 20 L24 40" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          </div>
+          <h3>项目上下文自动注入</h3>
+          <p>每个任务、每个执行会话都带着项目背景、历史决策、团队记忆、技能和代码工作区启动。新智能体接手即懂全局，不必反复交代。</p>
+        </article>
+
+        <article class="pillar reveal">
+          <div class="pillar-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><circle cx="14" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="34" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="24" cy="34" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M18 17 L30 17 M16 20 L22 31 M32 20 L26 31" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+          </div>
+          <h3>交接自动沉淀</h3>
+          <p>会话进展会沉淀成结构化记录，交给下一个人或智能体继续推进。团队不再靠口头同步维持协作，而是靠系统保留上下文。</p>
+        </article>
+
+        <article class="pillar reveal">
+          <div class="pillar-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><rect x="6" y="10" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="28" y="10" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="6" y="28" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="28" y="28" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M20 17 L28 17" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"/></svg>
+          </div>
+          <h3>协同作战，不互相踩线</h3>
+          <p>多人和多个智能体可以围绕同一项目并行作业。任务、工作区、产物和验证记录被系统组织起来，协作不再变成混乱的聊天记录。</p>
+        </article>
+
+        <article class="pillar reveal">
+          <div class="pillar-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M24 6 L24 14 M24 34 L24 42 M6 24 L14 24 M34 24 L42 24 M11 11 L17 17 M31 31 L37 37 M11 37 L17 31 M31 17 L37 11" stroke="currentColor" stroke-width="1.6"/></svg>
+          </div>
+          <h3>Boss 鸟瞰项目进度</h3>
+          <p>谁是 AI coding 宗师，谁在原地打转，谁已经把任务推进到可验收，一目了然。项目进度、执行记录和团队资产不再藏在个人聊天里。</p>
+        </article>
+      </div>
+
+      <p class="lead center reveal" style="margin-top:5rem;">
+        这里讲的不是智能体内部怎么分工，<br />
+        而是人类团队如何一起驾驭 AI：<br />
+        每个人的想法、每个智能体的执行、每次交付的证据，都沉淀在同一个项目空间。
+      </p>
+    </div>
+  </section>
+
+  <!-- Highlight 4: 深度科研系统 -->
+  <section class="section section-dark section-padded feature" id="feat-4">
+    <div class="container">
+      <div class="feature-head">
+        <p class="kicker reveal light">亮点四</p>
+        <h2 class="display small reveal light">深度科研系统，<br /><span class="gradient-text">触手无处不可达。</span></h2>
+        <p class="lead reveal light" style="max-width:62ch;margin:0 auto;">
+          一句科研想法进入莫比乌斯，可以展开成一支研究组、一片算力集群和一条可追踪的科研流水线：
+          调研、推导、复现、验证、证伪或证实，最后沉淀成文章。
+        </p>
+      </div>
+
+      <div class="research-fleet reveal">
+        <div class="fleet-banner">
+          <span class="banner-tag">RESEARCH FLEET · GPU CLUSTER</span>
+          <span class="banner-title">科研编队 · 算力协同</span>
+          <span class="banner-meta">智能体负责研究链路，GPU 集群负责验证链路，结果回到研究图谱持续沉淀</span>
+        </div>
+
+        <div class="research-grid">
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Chief</span><span class="ic-cn">首席</span></div>
+            <div class="research-body">
+              <h4>首席研究员</h4>
+              <p>把一句猜想拆成文献、实验、复现和写作路径</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Graph</span><span class="ic-cn">图谱</span></div>
+            <div class="research-body">
+              <h4>研究图谱记录员</h4>
+              <p>沉淀“问题→证据→结论”的演化路径</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Draw</span><span class="ic-cn">绘图</span></div>
+            <div class="research-body">
+              <h4>实验绘图 Agent</h4>
+              <p>把复现实验、消融实验和结论转化为图表</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Survey</span><span class="ic-cn">调研</span></div>
+            <div class="research-body">
+              <h4>文献调研 Agent</h4>
+              <p>追踪最新论文、多源取证、建立研究背景</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Exp</span><span class="ic-cn">实验</span></div>
+            <div class="research-body">
+              <h4>GPU 实验 Agent</h4>
+              <p>调度远程算力，朝夕间验证猜想</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Write</span><span class="ic-cn">撰写</span></div>
+            <div class="research-body">
+              <h4>论文撰写 Agent</h4>
+              <p>把想法、证据、实验和结论组织成文章</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Check</span><span class="ic-cn">校验</span></div>
+            <div class="research-body">
+              <h4>证伪校验 Agent</h4>
+              <p>复算、找反例、判断论文主张是否站得住</p>
+            </div>
+          </article>
+          <article class="research-card">
+            <div class="research-icon"><span class="ic-en">Type</span><span class="ic-cn">排版</span></div>
+            <div class="research-body">
+              <h4>排版编译 Agent</h4>
+              <p>整理引用、排版编译，生成可交付论文</p>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <p class="lead center reveal light" style="margin-top:3rem;">
+        深度科研系统是莫比乌斯能力的旗舰证明：
+        它把多智能体工作面、团队作战室和算力群体协同压缩到一条科研链路里。
+      </p>
+      <p class="body center reveal light" style="opacity:.72;margin-top:.8rem;">
+        从一句话到实验，从猜想到证据，从复现到成文：
+        莫比乌斯让科研不再只是问答，而是可验证、可追踪、可沉淀的系统工程。
+      </p>
+    </div>
+  </section>
+
+  <!-- Highlight 5: 灵活的拓展系统 -->
+  <section class="section section-light section-padded feature" id="feat-5">
+    <div class="container feature-grid">
+      <div class="feature-text">
+        <p class="kicker reveal">亮点五</p>
+        <h2 class="display small reveal">灵活的<br /><span class="gradient-text-dark">拓展系统。</span></h2>
+        <p class="lead reveal">
+          莫比乌斯不把能力封死在出厂清单里。
+          它可以带着一堆拓展应用，也可以带着一堆你自己“说出来”的 App。
+        </p>
+        <p class="body reveal">
+          一个拓展可以是一面金融新闻墙、一个 PPT 生成器、一个科研工作台、
+          一个 3D 可视化空间，也可以是团队内部临时孵化的专用工具。
+        </p>
+        <p class="body reveal">
+          拓展系统让 Mobius 的边界不再由平台预设决定，
+          而是由用户的业务、数据、流程和想象力决定。
+        </p>
+        <p class="lead reveal" style="margin-top:2rem;">
+          说出想法，形成应用；<br />
+          应用继续被使用、迭代、组合，<br />
+          最终变成属于你的 <strong>AI 产品平台</strong>。
+        </p>
+      </div>
+      <figure class="feature-media reveal">
+        <div class="media-placeholder media-cluster" aria-label="灵活拓展系统：应用节点汇聚到 Mobius Core">
+          <svg viewBox="0 0 440 320" class="cluster-svg" aria-hidden="true">
+            <defs>
+              <linearGradient id="big-g" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#22d3ee"/>
+                <stop offset=".5" stop-color="#a78bfa"/>
+                <stop offset="1" stop-color="#f472b6"/>
+              </linearGradient>
+              <linearGradient id="agg-g" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#0d9488" stop-opacity=".45"/>
+                <stop offset=".33" stop-color="#4f46e5" stop-opacity=".6"/>
+                <stop offset=".66" stop-color="#be123c" stop-opacity=".6"/>
+                <stop offset="1" stop-color="#a16207" stop-opacity=".55"/>
+              </linearGradient>
+              <radialGradient id="agg-glow" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="#a78bfa" stop-opacity=".45"/>
+                <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <!-- 5 个拓展节点 -->
+            <!-- N1 · PPT Maker -->
+            <g transform="translate(60, 70)">
+              <rect x="-40" y="-28" width="80" height="56" rx="10" fill="#fff" stroke="#2dd4bf" stroke-width="2"/>
+              <text y="-7" text-anchor="middle" fill="#0f172a" font-size="11" font-weight="800">PPT Maker</text>
+              <text y="10" text-anchor="middle" fill="#64748b" font-size="9.5">拓展 · 01</text>
+              <circle cx="32" cy="-19" r="3" fill="#2dd4bf" class="node-pulse"/>
+            </g>
+            <!-- N2 · 科研图谱 -->
+            <g transform="translate(145, 70)">
+              <rect x="-30" y="-21" width="60" height="42" rx="8" fill="#fff" stroke="#818cf8" stroke-width="2"/>
+              <text y="-4" text-anchor="middle" fill="#0f172a" font-size="9.5" font-weight="800">科研图谱</text>
+              <text y="10" text-anchor="middle" fill="#64748b" font-size="8.5">拓展 · 02</text>
+              <circle cx="22" cy="-14" r="3" fill="#818cf8" class="node-pulse d1"/>
+            </g>
+            <!-- N3 · 金融新闻墙 -->
+            <g transform="translate(225, 70)">
+              <rect x="-40" y="-28" width="80" height="56" rx="10" fill="#fff" stroke="#fb7185" stroke-width="2"/>
+              <text y="-7" text-anchor="middle" fill="#0f172a" font-size="11" font-weight="800">金融新闻墙</text>
+              <text y="10" text-anchor="middle" fill="#64748b" font-size="9.5">拓展 · 03</text>
+              <circle cx="32" cy="-19" r="3" fill="#fb7185" class="node-pulse d2"/>
+            </g>
+            <!-- N4 · 3D 空间 -->
+            <g transform="translate(305, 70)">
+              <rect x="-30" y="-21" width="60" height="42" rx="8" fill="#fff" stroke="#facc15" stroke-width="2"/>
+              <text y="-4" text-anchor="middle" fill="#0f172a" font-size="9.5" font-weight="800">3D 空间</text>
+              <text y="10" text-anchor="middle" fill="#64748b" font-size="8.5">拓展 · 04</text>
+              <circle cx="22" cy="-14" r="3" fill="#facc15" class="node-pulse d3"/>
+            </g>
+            <!-- N5 · 自定义 App -->
+            <g transform="translate(385, 70)">
+              <rect x="-40" y="-28" width="80" height="56" rx="10" fill="#fff" stroke="#2dd4bf" stroke-width="2"/>
+              <text y="-7" text-anchor="middle" fill="#0f172a" font-size="11" font-weight="800">自定义 App</text>
+              <text y="10" text-anchor="middle" fill="#64748b" font-size="9.5">一句话生成</text>
+              <circle cx="32" cy="-19" r="3" fill="#2dd4bf" class="node-pulse d4"/>
+            </g>
+
+            <!-- 5 条汇聚线（从各拓展节点底部 → Mobius Core 顶部，不交叠） -->
+            <g fill="none" stroke-width="1.6" stroke-linecap="round">
+              <path d="M 60 100 C 60 150, 130 180, 180 208" stroke="#2dd4bf" stroke-opacity=".6" stroke-dasharray="4 5" class="flow-anim"/>
+              <path d="M 145 93 C 145 135, 175 175, 200 208" stroke="#818cf8" stroke-opacity=".6" stroke-dasharray="4 5" class="flow-anim d1"/>
+              <path d="M 225 100 C 225 140, 222 175, 220 208" stroke="#fb7185" stroke-opacity=".6" stroke-dasharray="4 5" class="flow-anim d2"/>
+              <path d="M 305 93 C 305 135, 275 175, 240 208" stroke="#facc15" stroke-opacity=".6" stroke-dasharray="4 5" class="flow-anim d3"/>
+              <path d="M 385 100 C 385 150, 310 180, 260 208" stroke="#2dd4bf" stroke-opacity=".6" stroke-dasharray="4 5" class="flow-anim d4"/>
+            </g>
+
+            <!-- 底部聚合体：Mobius Core -->
+            <ellipse cx="220" cy="245" rx="200" ry="42" fill="url(#agg-glow)"/>
+            <g transform="translate(220, 245)">
+              <rect x="-180" y="-32" width="360" height="64" rx="14" fill="url(#agg-g)" stroke="url(#big-g)" stroke-width="2"/>
+              <text y="-6" text-anchor="middle" fill="#fff" font-size="14" font-weight="800" letter-spacing="2">汇聚为产品平台</text>
+              <text y="14" text-anchor="middle" fill="rgba(255,255,255,.78)" font-size="10.5" letter-spacing="2">Extensions · Tools · Mobius Core</text>
+            </g>
+          </svg>
+          <div class="cluster-tag">
+            <span class="tag-pill"><i class="status-dot"></i>5 / 5 ready</span>
+            <span class="tag-pill">拓展应用 · 自定义工作流</span>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Highlight 6: 智能小莫 -->
+  <section class="section section-dark section-padded feature" id="feat-6">
+    <div class="container feature-grid reverse">
+      <div class="feature-text">
+        <p class="kicker reveal light">亮点六</p>
+        <h2 class="display small reveal light">智能<br /><span class="gradient-text">小莫。</span></h2>
+        <p class="lead reveal light">
+          莫比乌斯后台可以很复杂，但用户入口必须足够简单。
+          小莫就是这套 AgenticOS 的自然语言交互层。
+        </p>
+        <p class="body reveal light">
+          你不需要理解任务单、执行会话、拓展系统、上下文注入和智能体编队的全部细节。
+          你只需要告诉小莫目标，它负责帮你创建项目、拆任务、调度执行和解释进度。
+        </p>
+        <p class="lead reveal light" style="margin-top:2rem;">
+          从电脑到移动端，从文字到语音，<br />
+          小莫把复杂系统变成<strong>一句话可以唤起的生产入口</strong>。
+        </p>
+        <p class="body reveal light" style="opacity:.7;">
+          后台强大，前台自然。这是智能小莫存在的意义。
+        </p>
+      </div>
+      <figure class="feature-media reveal">
+        <div class="media-placeholder media-dialog" aria-label="小莫多端对话生成产品">
+          <div class="dialog-stage">
+            <div class="dialog-phone">
+              <div class="phone-notch"></div>
+              <div class="phone-screen">
+                <div class="phone-header">
+                  <div class="mo-avatar" aria-hidden="true">
+                    <span class="mo-avatar__field"></span>
+                    <span class="mo-avatar__ring mo-avatar__ring--outer"></span>
+                    <span class="mo-avatar__ring mo-avatar__ring--inner"></span>
+                    <span class="mo-avatar__core"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--1"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--2"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--3"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--4"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--5"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--6"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--7"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--8"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--9"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--10"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--11"></span>
+                    <span class="mo-avatar__particle mo-avatar__particle--12"></span>
+                  </div>
+                  <div class="mo-meta">
+                    <div class="mo-name">小莫</div>
+                    <div class="mo-status"><span class="status-dot"></span>语音中</div>
+                  </div>
+                </div>
+                <div class="phone-body">
+                  <div class="phone-msg user">
+                    <span class="msg-meta">你 · 语音</span>
+                    "做一个星座运势 App"
+                  </div>
+                  <div class="phone-msg mo">
+                    <div class="mo-wave"><span></span><span></span><span></span><span></span><span></span></div>
+                    <span>正在生成 · 已拆解 3 个子任务</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="dialog-flow" aria-hidden="true">
+              <div class="flow-line"></div>
+              <div class="flow-particle p1"></div>
+              <div class="flow-particle p2"></div>
+              <div class="flow-particle p3"></div>
+              <div class="flow-arrow">▶</div>
+            </div>
+
+            <div class="dialog-products">
+              <div class="product-card">
+                <div class="product-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 L14 9 L22 12 L14 15 L12 22 L10 15 L2 12 L10 9 Z" fill="currentColor"/></svg></div>
+                <div class="product-name">星座运势 App</div>
+                <div class="product-tag">网页</div>
+              </div>
+              <div class="product-card">
+                <div class="product-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 9 L21 9" stroke="currentColor" stroke-width="2"/></svg></div>
+                <div class="product-name">PPT 介绍</div>
+                <div class="product-tag">工具</div>
+              </div>
+              <div class="product-card">
+                <div class="product-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3 H15 L19 7 V21 H5 Z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 12 H16 M8 16 H13" stroke="currentColor" stroke-width="1.6"/></svg></div>
+                <div class="product-name">研究报告</div>
+                <div class="product-tag">研究</div>
+              </div>
+            </div>
+          </div>
+          <div class="dialog-caption">说出想法 · 小莫多端协作 · 即时沉淀为产品资产</div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Highlight 7: 任意模型，一键接入 -->
+  <section class="section section-light section-padded feature" id="feat-7">
+    <div class="container">
+      <div class="feature-head">
+        <p class="kicker reveal">亮点七</p>
+        <h2 class="display small reveal">任意模型，<br /><span class="gradient-text-dark">一键接入。</span></h2>
+        <p class="lead reveal" style="max-width:60ch;margin:0 auto;">
+          Mobius 不把自己绑定到单一模型。
+          GLM、GPT、Claude，以及未来更多模型，都可以成为同一套 AgenticOS 的执行引擎。
+        </p>
+      </div>
+
+      <div class="incubate-grid reveal">
+        <div class="ext-card">
+          <div class="ext-icon"><img src="/extension/threebody-sim/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>GLM 渠道</h4>
+          <p>面向中文复杂任务与本土模型生态，优先作为 publication 工作流的执行渠道之一。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon"><img src="/extension/dot-logo-3d/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>GPT-5.5 渠道</h4>
+          <p>适合大规模代码理解、复杂工程推进和长程 agentic coding，作为强力兜底执行引擎。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="fbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M8 16 q0 -6 6 -6 q5 0 6 4 l4 -2 l-1 4 l3 0 l-3 2 l1 3 l-4 -2 q-1 4 -6 4 q-6 0 -6 -7 Z" fill="url(#fbg)"/></svg>
+          </div>
+          <h4>Claude 渠道</h4>
+          <p>适合长文档理解、复杂推理和多轮产品规划，可按任务类型灵活调度。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="ylg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M16 5 L21 12 L29 13 L23 19 L25 27 L16 23 L7 27 L9 19 L3 13 L11 12 Z" fill="url(#ylg)"/></svg>
+          </div>
+          <h4>本地模型</h4>
+          <p>企业私有部署、离线环境和内部数据任务，可以通过统一接口接入本地模型能力。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon"><img src="/extension/finance-news-wall/favicon.svg" alt="" onerror="this.style.display='none'"></div>
+          <h4>按任务切换</h4>
+          <p>写代码、做科研、写文案、跑测试、做调研，不同任务可以调用不同模型组合。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="wcg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><path d="M11 8 H21 V13 C21 16 18.5 18 16 18 C13.5 18 11 16 11 13 Z" fill="none" stroke="url(#wcg)" stroke-width="1.6"/><path d="M16 18 V22 M12 22 H20 M16 22 V25 M12 25 H20" fill="none" stroke="url(#wcg)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </div>
+          <h4>统一工作流</h4>
+          <p>模型可以变化，但项目、任务、上下文、执行记录和交付链路保持一致。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="matchg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><circle cx="13" cy="16" r="6.5" fill="none" stroke="url(#matchg)" stroke-width="1.6" opacity=".55"/><circle cx="19" cy="16" r="6.5" fill="none" stroke="url(#matchg)" stroke-width="1.6" opacity=".95"/></svg>
+          </div>
+          <h4>成本与性能可控</h4>
+          <p>重任务用强模型，轻任务用快模型，团队可以在成本、速度和质量之间灵活调度。</p>
+        </div>
+        <div class="ext-card">
+          <div class="ext-icon">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="pptg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="0.5" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="#0a0a18"/><rect x="6" y="7" width="20" height="13" rx="1.5" fill="none" stroke="url(#pptg)" stroke-width="1.6"/><path d="M11 14 L14 11 L17 13 L21 9" fill="none" stroke="url(#pptg)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 20 L11 25 M20 20 L21 25 M9 25 H23" fill="none" stroke="url(#pptg)" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </div>
+          <h4>未来模型可扩展</h4>
+          <p>新的模型出现时，不必重做业务系统，只需把它接入 Mobius 的执行网络。</p>
+        </div>
+      </div>
+
+      <p class="body center reveal" style="margin-top:2.6rem;opacity:.72;">
+        模型只是引擎，Mobius 才是组织引擎工作的系统。<br />
+        任意模型接入后，都可以进入同一套项目、任务、上下文和交付流程。
+      </p>
+
+      <p class="lead center reveal" style="margin-top:3.4rem;">
+        不押注单个模型，<br />
+        而是让每个模型都成为 <strong>Mobius 作战体系</strong>的一部分。
+      </p>
+      <p class="body center reveal">
+        今天接入 GLM、GPT、Claude，<br />
+        明天接入更多模型，<br />
+        系统本身仍然保持同一条生产链路。
+      </p>
+    </div>
+  </section>
+
+  <!-- 开源与真实运行案例 -->
+  <section class="section section-dark section-padded feature" id="feat-showcase">
+    <div class="container">
+      <div class="feature-head">
+        <p class="kicker reveal light">开源与真实案例</p>
+        <h2 class="display small reveal light">从开源代码，走向真实生产。</h2>
+        <p class="lead reveal light" style="max-width:64ch;margin:0 auto;">
+          Mobius 的能力不只写在宣传页里。
+          它以开源仓库、拓展系统和真实案例的方式持续生长。
+        </p>
+        <p class="lead reveal light" style="max-width:64ch;margin:1.4rem auto 0;opacity:.82;">
+          GitHub 开源代码：<strong>github.com/nutshellai-tech/mobius</strong>
+        </p>
+      </div>
+
+      <div class="showcase-grid">
+        <article class="showcase-card reveal">
+          <div class="showcase-video placeholder" data-video-slot="json-track">
+            <video controls preload="metadata" playsinline></video>
+            <span class="showcase-badge">① JSON Track 拓展</span>
+          </div>
+          <h3>用小莫一键部署 GitHub 项目</h3>
+          <p>
+            跟小莫说一句话，它会把任意 GitHub 仓库克隆下来，自动跑起 <strong>JSON Track</strong> 拓展——
+            一边监听模型推理过程，一边把每一步函数调用、参数和结果结构化地落到时间轴上，
+            像给黑盒 Agent 装了一台行车记录仪。
+          </p>
+        </article>
+
+        <article class="showcase-card reveal">
+          <div class="showcase-video placeholder" data-video-slot="multi-agent">
+            <video controls preload="metadata" playsinline></video>
+            <span class="showcase-badge">② 多智能体 Research</span>
+          </div>
+          <h3>一支智能体编队跑完整项科研</h3>
+          <p>
+            一个研究问题进来，<strong>拆题 / 检索 / 分析 / 收敛</strong>多智能体并行上工，
+            通过共享黑板异步对齐，最终把"从问题到结论"的整条演化路径沉淀成可视研究图谱——
+            这是企业级的稳定链路，不是 demo。
+          </p>
+        </article>
+
+        <article class="showcase-card reveal">
+          <div class="showcase-video placeholder" data-video-slot="ppt">
+            <video controls preload="metadata" playsinline></video>
+            <span class="showcase-badge">③ PPT 制作</span>
+          </div>
+          <h3>一句话生成可演示的 PPT</h3>
+          <p>
+            告诉小莫你想讲什么、讲给谁听，它会自己起大纲、找素材、配版式，
+            <strong>不需要切工具、不需要写 prompt 模板</strong>，
+            最终给你一份能直接拉到投屏上演示的 PPT 文件。
+          </p>
+        </article>
+
+        <article class="showcase-card reveal">
+          <div class="showcase-video placeholder" data-video-slot="finance-wall">
+            <video controls preload="metadata" playsinline></video>
+            <span class="showcase-badge">④ 金融新闻墙</span>
+          </div>
+          <h3>金融信息墙：实时聚合 + 自动投研</h3>
+          <p>
+            <strong>金融新闻墙</strong>拓展把全网财经新闻实时聚合到一面墙上，
+            由 Agent 自动做影响评分、定时触发深度分析，
+            把"资讯流"直接转化成"可追溯的投研观点"——盯盘这件事，从此不用人盯。
+          </p>
+        </article>
+      </div>
+
+      <p class="lead center reveal light" style="margin-top:4rem;">
+        开源代码可以被查看、部署、审计和继续扩展。<br />
+        真正的 AgenticOS，应该能让用户看见系统如何工作，也能继续把系统变成自己的样子。
+      </p>
+    </div>
+  </section>
+
+  <!-- Finale -->
+  <section class="section section-dark section-padded finale" id="finale">
+    <canvas id="finale-canvas" aria-hidden="true"></canvas>
+    <div class="container narrow center">
+      <h2 class="display light xl reveal">
+        <span class="gradient-text">开源可见，</span><br />
+        <span class="gradient-text">所想可生长。</span>
+      </h2>
+      <p class="lead light reveal" style="margin-top:3rem;">
+        莫比乌斯，一个会自迭代、自组织、自扩展的 AgenticOS。<br />
+        GitHub: github.com/nutshellai-tech/mobius
+      </p>
+      <div class="hero-cta reveal" style="margin-top:3rem;">
+        <a class="btn btn-primary" href="https://github.com/nutshellai-tech/mobius" target="_blank" rel="noreferrer">查看 GitHub 开源代码</a>
+        <a class="btn btn-ghost" href="#hero">回到顶部</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <svg viewBox="0 0 32 32" class="footer-logo" aria-hidden="true">
+          <g transform="translate(16 16)">
+            <path d="M -10 0 C -10 -7, -3 -7, 0 0 C 3 7, 10 7, 10 0 C 10 -7, 3 -7, 0 0 C -3 7, -10 7, -10 0 Z"
+                  fill="none" stroke="url(#navgrad)" stroke-width="1.6" />
+          </g>
+        </svg>
+        <span>莫比乌斯</span>
+      </div>
+      <p class="footer-tagline">
+        <a href="#feat-1">自生长</a>
+        <span class="dot" aria-hidden="true">·</span>
+        <a href="#feat-2">工作面</a>
+        <span class="dot" aria-hidden="true">·</span>
+        <a href="#feat-3">团队作战室</a>
+        <span class="dot" aria-hidden="true">·</span>
+        <a href="#feat-7">模型接入</a>
+      </p>
+      <p class="footer-copy">莫比乌斯 AgenticOS · github.com/nutshellai-tech/mobius</p>
+      <p class="footer-contact">
+        联系我们：<a href="mailto:service@nutshellai.cn">service@nutshellai.cn</a>
+      </p>
+    </div>
+  </footer>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

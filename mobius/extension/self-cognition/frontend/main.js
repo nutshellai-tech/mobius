@@ -1,33 +1,8 @@
 import { extCall } from '/extension/_sdk/ext.js';
+import { initLogoBackdrop } from './mobius3d.js';
 
 const labels = {
-  statuses: {
-    new: '新条目',
-    candidate: '候选',
-    triaged: '已研判',
-    planned: '已计划',
-    applied: '已落地',
-    archived: '已归档',
-  },
-  sourceTypes: {
-    paper: '论文',
-    framework: '框架',
-    method: '方法',
-    note: '笔记',
-    scan: '扫描候选',
-  },
-  priorities: {
-    high: '高',
-    medium: '中',
-    low: '低',
-  },
-  directiveStatuses: {
-    open: '待处理',
-    planned: '已计划',
-    done: '已完成',
-    archived: '已归档',
-  },
-  productCategories: {
+  category: {
     'office-agent': '办公智能体',
     'coding-agent': '编码智能体',
     'general-agent': '通用智能体',
@@ -36,34 +11,67 @@ const labels = {
     'research-agent': '研究智能体',
     other: '其他',
   },
+  status: {
+    official: '已跟踪',
+    candidate: '候选',
+    archived: '归档',
+  },
 };
 
+const localKey = 'mobius-self-cognition-ui-state-v2';
+
 const state = {
-  ideas: [],
-  total: 0,
-  stats: null,
-  directives: [],
+  summary: {},
+  keywords: { paper: [], product: [] },
+  competitors: { official: [], candidate: [], archived: [] },
+  papers: { items: [], total: 0 },
+  paperClusters: [],
+  clusterPapers: {},
+  topPicks: [],
+  feedbacks: {},
+  feedbackPending: {},
+  mockClusters: null,
+  mockEvolution: null,
+  backendStatus: { clusters: 'unknown', feedbacks: 'unknown' },
+  evolution: {
+    level: 'L1',
+    projectId: '',
+    source: 'unknown',
+    feeds: { L1: [], L2: [], L3: [] },
+    offsets: { L1: 0, L2: 0, L3: 0 },
+    expanded: {},
+    pending: {},
+  },
+  products: { items: [], total: 0 },
   scanRuns: [],
-  products: [],
-  productScanRuns: [],
-  constants: {
-    default_scan_query: 'all:"Gödel Agent" OR all:"self-improving agents" OR all:"recursive self-improvement"',
-    statuses: Object.keys(labels.statuses),
-    source_types: Object.keys(labels.sourceTypes),
-    product_categories: Object.keys(labels.productCategories),
-  },
-  selectedId: '',
-  tab: 'library',
+  constants: {},
+  tab: 'papers',
+  scanning: { paper: false, product: false },
   filters: {
-    q: '',
-    status: '',
-    source_type: '',
-    tag: '',
+    paper: { q: '', keyword: '', status: '', favorite: '' },
+    competitor: { q: '', status: '', read: '' },
   },
-  loading: false,
+  local: loadLocalState(),
 };
 
 const $ = (id) => document.getElementById(id);
+document.documentElement.dataset.section = 'paper';
+
+function loadLocalState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localKey) || '{}');
+    return {
+      papers: parsed.papers && typeof parsed.papers === 'object' ? parsed.papers : {},
+      competitors: parsed.competitors && typeof parsed.competitors === 'object' ? parsed.competitors : {},
+    };
+  } catch {
+    return { papers: {}, competitors: {} };
+  }
+}
+
+function saveLocalState() {
+  localStorage.setItem(localKey, JSON.stringify(state.local));
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -74,8 +82,21 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function nl2br(value) {
-  return escapeHtml(value).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
+function shortText(value, max = 260) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function formatTime(value) {
+  if (!value) return '尚未运行';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function showToast(message, tone = 'ok') {
@@ -84,7 +105,7 @@ function showToast(message, tone = 'ok') {
   toast.dataset.tone = tone;
   toast.classList.add('is-visible');
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
+  showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 2800);
 }
 
 async function call(payload) {
@@ -93,681 +114,1126 @@ async function call(payload) {
   return result;
 }
 
-async function loadAll(extra = {}) {
-  state.loading = true;
-  renderLoading();
+async function loadMockClusters() {
+  if (state.mockClusters) return state.mockClusters;
+  const response = await fetch('mock_clusters.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`mock_clusters.json HTTP ${response.status}`);
+  state.mockClusters = await response.json();
+  return state.mockClusters;
+}
+
+async function loadMockEvolution() {
+  if (state.mockEvolution) return state.mockEvolution;
+  const response = await fetch('mock_evolution.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`mock_evolution.json HTTP ${response.status}`);
+  state.mockEvolution = await response.json();
+  return state.mockEvolution;
+}
+
+function eventId(item, fallback = '') {
+  return item?.id || item?.event_id || item?.commit_sha || fallback;
+}
+
+function normalizeEvolutionEvent(item, level, index = 0) {
+  const id = eventId(item, `${level}-${index}`);
+  return {
+    ...item,
+    id,
+    level,
+    commit_sha: item.commit_sha || item.sha || '',
+    summary: item.summary || item.title || '未命名自进化事件',
+    diff_summary: item.diff_summary || item.description || '',
+    created_at: item.created_at || item.timestamp || item.time || '',
+    project_id: item.project_id || item.project || 'self-cognition',
+    actor: item.actor || item.operator || item.created_by || 'Mobius',
+    files_changed: Array.isArray(item.files_changed) ? item.files_changed : [],
+    status: item.status || (level === 'L2' ? 'pending' : 'recorded'),
+  };
+}
+
+function paperId(item) {
+  return item?.paper_id || item?.id || item?.source_id || item?.source_url || '';
+}
+
+function scoreOf(item) {
+  return Number(item?.priority_score ?? item?.relevance ?? item?.score ?? 0) || 0;
+}
+
+function normalizeKeywords(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  return String(value).split(/[,，;；\s]+/).map((x) => x.trim()).filter(Boolean);
+}
+
+function normalizePaper(item, clusterLabel = '') {
+  const id = paperId(item);
+  return {
+    ...item,
+    id,
+    paper_id: id,
+    cluster_label: item.cluster_label || item.cluster || clusterLabel,
+    title: item.title || 'Untitled paper',
+    abstract: item.abstract || item.summary || '',
+    priority_score: scoreOf(item),
+    relevance: Number(item.relevance ?? item.priority_score ?? 0) || 0,
+    matched_keywords: normalizeKeywords(item.matched_keywords || item.keywords || item.cluster_keywords),
+    tags: normalizeKeywords(item.tags),
+  };
+}
+
+function clusterTitle(label) {
+  const known = {
+    'agent-harness': 'Agent Harness 与执行框架',
+    'recursive-self-reference': '递归自指与自我改进',
+    'godel-agents': '哥德尔智能体',
+    'self-evolution': '自进化系统',
+  };
+  if (known[label]) return known[label];
+  return String(label || '未命名 cluster')
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function normalizeCluster(item) {
+  const label = item.label || item.cluster_label || item.title || '未命名 cluster';
+  return {
+    ...item,
+    label,
+    title: item.title || clusterTitle(label),
+    keywords: normalizeKeywords(item.keywords || item.cluster_keywords || item.matched_keywords),
+    paper_count: Number(item.paper_count ?? item.count ?? 0) || 0,
+    max_score: Number(item.max_score ?? item.priority_score ?? item.score ?? 0) || 0,
+    loaded: false,
+    expanded: !!item.expanded,
+    offset: 0,
+    has_more: true,
+  };
+}
+
+function feedbackFromRows(rows) {
+  const out = {};
+  for (const row of rows || []) {
+    const id = row.paper_id || row.id;
+    const verdict = row.verdict || row.feedback;
+    if (id && verdict) out[id] = verdict;
+  }
+  return out;
+}
+
+function clusterDomId(label) {
+  return `cluster-${encodeURIComponent(label).replace(/%/g, '')}`;
+}
+
+function paperLocal(id) {
+  if (!state.local.papers[id]) state.local.papers[id] = { read: false, favorite: false, archived: false };
+  return state.local.papers[id];
+}
+
+function competitorLocal(id) {
+  if (!state.local.competitors[id]) state.local.competitors[id] = { read: false };
+  return state.local.competitors[id];
+}
+
+function keywordLine(item) {
+  return item.query && item.query !== item.keyword ? `${item.keyword} | ${item.query}` : item.keyword;
+}
+
+function parseKeywordTextarea(value) {
+  return String(value || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [keyword, ...rest] = line.split('|');
+      const cleanKeyword = keyword.trim();
+      return {
+        keyword: cleanKeyword,
+        query: rest.join('|').trim() || cleanKeyword,
+        enabled: true,
+        sort_order: index,
+      };
+    });
+}
+
+function allCompetitors() {
+  return [
+    ...(state.competitors.official || []),
+    ...(state.competitors.candidate || []),
+    ...(state.competitors.archived || []),
+  ];
+}
+
+function latestRun(scanType) {
+  return (state.scanRuns || []).find((run) => run.scan_type === scanType) || null;
+}
+
+function nextScanTime() {
+  const interval = Number(state.constants.daily_interval_minutes || 1440);
+  const latest = latestRun('arxiv') || latestRun('product');
+  const base = latest?.created_at ? new Date(latest.created_at).getTime() : Date.now();
+  return new Date(base + interval * 60_000).toISOString();
+}
+
+async function loadMyFeedbacks() {
   try {
-    const data = await call({ action: 'bootstrap', ...state.filters, ...extra });
-    state.ideas = data.ideas || [];
-    state.total = data.total || 0;
-    state.stats = data.stats || null;
-    state.directives = data.directives || [];
-    state.scanRuns = data.scan_runs || [];
-    state.products = data.product_research || [];
-    state.productScanRuns = data.product_scan_runs || [];
-    state.constants = { ...state.constants, ...(data.constants || {}) };
-    if (!state.selectedId || !state.ideas.some((item) => item.id === state.selectedId)) {
-      state.selectedId = state.ideas[0]?.id || '';
-    }
-    render();
-  } catch (e) {
-    showToast(e.message || '加载失败', 'bad');
-    $('ideaDetail').innerHTML = `<div class="detail-empty">加载失败: ${escapeHtml(e.message)}</div>`;
-  } finally {
-    state.loading = false;
+    const result = await call({ action: 'list_my_feedbacks' });
+    state.feedbacks = feedbackFromRows(result.feedbacks || result.items || []);
+    state.backendStatus.feedbacks = 'connected';
+  } catch {
+    state.feedbacks = {};
+    state.backendStatus.feedbacks = 'missing';
   }
 }
 
-function selectedIdea() {
-  return state.ideas.find((item) => item.id === state.selectedId) || null;
+async function loadPaperClusters() {
+  try {
+    const result = await call({ action: 'get_paper_clusters' });
+    const clusters = result.clusters || result.items || [];
+    state.paperClusters = clusters.map(normalizeCluster).sort((a, b) => b.max_score - a.max_score);
+    state.clusterPapers = {};
+    state.backendStatus.clusters = 'connected';
+    await preloadClusterLeaders();
+  } catch {
+    const mock = await loadMockClusters();
+    state.paperClusters = (mock.clusters || []).map(normalizeCluster).sort((a, b) => b.max_score - a.max_score);
+    state.clusterPapers = {};
+    for (const [label, papers] of Object.entries(mock.papers_by_cluster || {})) {
+      state.clusterPapers[label] = papers.map((item) => normalizePaper(item, label)).sort((a, b) => b.priority_score - a.priority_score);
+    }
+    state.feedbacks = { ...feedbackFromRows(mock.feedbacks || []), ...state.feedbacks };
+    state.backendStatus.clusters = 'mock';
+    await preloadClusterLeaders();
+  }
 }
 
-function statusBadge(status) {
-  const label = labels.statuses[status] || status || '未知';
-  return `<span class="status-badge" data-status="${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+async function preloadClusterLeaders() {
+  const leaders = state.paperClusters.slice(0, 12);
+  for (const cluster of leaders) {
+    if (!state.clusterPapers[cluster.label]?.length) {
+      await ensureClusterPapers(cluster.label, { silent: true });
+    }
+  }
+  computeTopPicks();
 }
 
-function typeBadge(type) {
-  return `<span class="type-badge">${escapeHtml(labels.sourceTypes[type] || type || '未知')}</span>`;
+async function ensureClusterPapers(label, options = {}) {
+  const cluster = state.paperClusters.find((item) => item.label === label);
+  if (!cluster) return [];
+  if (state.clusterPapers[label]?.length && !options.force) return state.clusterPapers[label];
+
+  if (state.backendStatus.clusters === 'mock') {
+    const mock = await loadMockClusters();
+    const papers = (mock.papers_by_cluster?.[label] || [])
+      .map((item) => normalizePaper(item, label))
+      .sort((a, b) => b.priority_score - a.priority_score);
+    state.clusterPapers[label] = papers;
+    cluster.loaded = true;
+    cluster.offset = papers.length;
+    cluster.has_more = false;
+    return papers;
+  }
+
+  try {
+    const result = await call({
+      action: 'get_papers_by_cluster',
+      label,
+      limit: options.limit || 20,
+      offset: options.offset || 0,
+    });
+    const papers = (result.papers || result.items || [])
+      .map((item) => normalizePaper(item, label))
+      .sort((a, b) => b.priority_score - a.priority_score);
+    const existing = options.offset ? (state.clusterPapers[label] || []) : [];
+    state.clusterPapers[label] = [...existing, ...papers].sort((a, b) => b.priority_score - a.priority_score);
+    if (!cluster.keywords.length && state.clusterPapers[label][0]?.cluster_keywords) {
+      cluster.keywords = normalizeKeywords(state.clusterPapers[label][0].cluster_keywords);
+    }
+    cluster.loaded = true;
+    cluster.offset = state.clusterPapers[label].length;
+    cluster.has_more = papers.length >= (options.limit || 20);
+    return state.clusterPapers[label];
+  } catch (error) {
+    if (!options.silent) showToast(error.message || 'cluster 论文加载失败', 'bad');
+    return state.clusterPapers[label] || [];
+  }
 }
 
-function relevanceDots(value) {
-  const n = Math.max(1, Math.min(5, Number(value) || 3));
-  return Array.from({ length: 5 }, (_, index) => `<span class="${index < n ? 'on' : ''}"></span>`).join('');
+function computeTopPicks() {
+  const seen = new Set();
+  const papers = [];
+  for (const cluster of state.paperClusters) {
+    for (const paper of state.clusterPapers[cluster.label] || []) {
+      const id = paperId(paper);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      papers.push({ ...paper, cluster_label: paper.cluster_label || cluster.label });
+    }
+  }
+  state.topPicks = papers.sort((a, b) => b.priority_score - a.priority_score).slice(0, 5);
 }
 
-function renderLoading() {
-  $('ideaList').innerHTML = '<div class="skeleton-list"><span></span><span></span><span></span></div>';
+async function loadEvolutionLevel(level, options = {}) {
+  if (level === 'L3') return loadL3Placeholder();
+  try {
+    const result = await call({
+      action: 'get_evolution_feed',
+      level,
+      limit: options.limit || 20,
+      offset: options.offset || 0,
+      project_id: state.evolution.projectId || undefined,
+    });
+    const items = (result.items || result.events || result.feed || [])
+      .map((item, index) => normalizeEvolutionEvent(item, level, index));
+    state.evolution.feeds[level] = options.offset
+      ? [...state.evolution.feeds[level], ...items]
+      : items;
+    state.evolution.offsets[level] = state.evolution.feeds[level].length;
+    state.evolution.source = 'backend';
+  } catch {
+    const mock = await loadMockEvolution();
+    const source = level === 'L1' ? mock.L1 : mock.L2;
+    state.evolution.feeds[level] = (source || []).map((item, index) => normalizeEvolutionEvent(item, level, index));
+    state.evolution.offsets[level] = state.evolution.feeds[level].length;
+    state.evolution.source = 'mock';
+  }
+}
+
+async function loadL3Placeholder() {
+  try {
+    const result = await call({ action: 'get_L3_placeholder' });
+    const items = result.items || result.placeholders || [result.placeholder].filter(Boolean);
+    state.evolution.feeds.L3 = items.map((item, index) => normalizeEvolutionEvent(item, 'L3', index));
+    state.evolution.source = 'backend';
+  } catch {
+    const mock = await loadMockEvolution();
+    state.evolution.feeds.L3 = (mock.L3 || []).map((item, index) => normalizeEvolutionEvent(item, 'L3', index));
+    state.evolution.source = 'mock';
+  }
+}
+
+async function loadEvolutionAll() {
+  await loadEvolutionLevel('L1');
+  await loadEvolutionLevel('L2');
+  await loadEvolutionLevel('L3');
+}
+
+function evolutionProjects() {
+  const ids = new Set();
+  for (const item of [...state.evolution.feeds.L1, ...state.evolution.feeds.L2]) {
+    if (item.project_id) ids.add(item.project_id);
+  }
+  return [...ids].sort();
+}
+
+async function loadAll() {
+  try {
+    const data = await call({ action: 'bootstrap', skip_first_scan: true, limit: 200 });
+    state.summary = data.summary || {};
+    state.keywords = data.keywords || state.keywords;
+    state.competitors = data.competitors || state.competitors;
+    state.papers = data.arxiv || { items: [], total: 0 };
+    state.products = data.products || { items: [], total: 0 };
+    state.scanRuns = data.scan_runs || [];
+    state.constants = data.constants || {};
+    await loadMyFeedbacks();
+    await loadPaperClusters();
+    await loadEvolutionAll();
+    render();
+  } catch (error) {
+    showToast(error.message || '加载失败', 'bad');
+  }
 }
 
 function render() {
-  renderMetrics();
-  renderFilterOptions();
-  renderList();
-  renderDetail();
-  renderRoadmap();
-  renderScanRuns();
-  renderProducts();
-  renderDirectives();
+  renderSchedule();
+  renderKeywordControls();
+  renderPapers();
+  renderCompetitors();
+  renderEvolution();
   setTab(state.tab);
 }
 
-function renderMetrics() {
-  const stats = state.stats || {};
-  const byStatus = stats.by_status || {};
-  const bySource = stats.by_source_type || {};
-  const items = [
-    ['研究条目', stats.total || 0, '已入库'],
-    ['已研判', (byStatus.triaged || 0) + (byStatus.planned || 0) + (byStatus.applied || 0), '可进入路线图'],
-    ['扫描候选', byStatus.candidate || 0, '待提炼'],
-    ['开发指示', stats.directive_open || 0, '开放'],
-    ['相似产品', stats.product_total || 0, `${stats.product_triaged || 0} 已研判`],
-  ];
-  $('metrics').innerHTML = items.map(([label, value, suffix]) => `
-    <div class="metric">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      <em>${escapeHtml(suffix)}</em>
+function renderSchedule() {
+  const lastArxiv = latestRun('arxiv') || state.summary.last_arxiv;
+  const lastProduct = latestRun('product') || state.summary.last_product;
+  const scanning = state.scanning.paper || state.scanning.product;
+  const next = nextScanTime();
+  const statusText = scanning ? '扫描中' : '等待下一次定时扫描';
+  const statusHtml = `
+    <div class="schedule-card">
+      <strong>${statusText}</strong>
+      <span>上次论文扫描: ${escapeHtml(formatTime(lastArxiv?.created_at))}</span>
+      <span>上次竞品扫描: ${escapeHtml(formatTime(lastProduct?.created_at))}</span>
+      <em>下次扫描时间: ${escapeHtml(formatTime(next))}</em>
     </div>
-  `).join('');
+  `;
+  $('scheduleStatus').innerHTML = statusHtml;
+  $('paperScheduleMini').innerHTML = `
+    <div>上次: ${escapeHtml(formatTime(lastArxiv?.created_at))}</div>
+    <div>下次: ${escapeHtml(formatTime(next))}</div>
+  `;
+  $('paperScanPill').textContent = scanning ? '扫描中' : '空闲';
 }
 
-function renderFilterOptions() {
-  const statusValue = state.filters.status;
-  const typeValue = state.filters.source_type;
-  const tagValue = state.filters.tag;
-  $('statusFilter').innerHTML = [
-    '<option value="">全部状态</option>',
-    ...state.constants.statuses.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(labels.statuses[status] || status)}</option>`),
+function renderKeywordControls() {
+  $('paperKeywords').value = (state.keywords.paper || []).map(keywordLine).join('\n');
+  $('productKeywords').value = (state.keywords.product || []).map(keywordLine).join('\n');
+  const current = state.filters.paper.keyword;
+  $('paperKeyword').innerHTML = [
+    '<option value="">全部关键词</option>',
+    ...(state.keywords.paper || []).map((item) => `<option value="${escapeHtml(item.keyword)}">${escapeHtml(item.keyword)}</option>`),
   ].join('');
-  $('typeFilter').innerHTML = [
-    '<option value="">全部类型</option>',
-    ...state.constants.source_types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(labels.sourceTypes[type] || type)}</option>`),
-  ].join('');
-  const tags = state.stats?.by_tag || [];
-  $('tagFilter').innerHTML = [
-    '<option value="">全部标签</option>',
-    ...tags.map((item) => `<option value="${escapeHtml(item.tag)}">${escapeHtml(item.tag)} (${item.count})</option>`),
-  ].join('');
-  $('statusFilter').value = statusValue;
-  $('typeFilter').value = typeValue;
-  $('tagFilter').value = tagValue;
-  $('searchInput').value = state.filters.q;
+  $('paperKeyword').value = current;
 }
 
-function renderList() {
-  $('listCount').textContent = `${state.total} 条`;
-  if (!state.ideas.length) {
-    $('ideaList').innerHTML = `
-      <div class="empty-list">
-        <strong>没有匹配条目</strong>
-        <span>调整筛选或新增一条启发。</span>
-      </div>
-    `;
-    return;
-  }
-  $('ideaList').innerHTML = state.ideas.map((idea) => `
-    <button class="idea-row ${idea.id === state.selectedId ? 'is-active' : ''}" type="button" data-id="${escapeHtml(idea.id)}">
-      <span class="idea-row-title">${escapeHtml(idea.title)}</span>
-      <span class="idea-row-meta">
-        ${statusBadge(idea.status)}
-        ${typeBadge(idea.source_type)}
-        <span class="dots" aria-label="相关度">${relevanceDots(idea.relevance)}</span>
-      </span>
-      <span class="idea-row-tags">${(idea.tags || []).slice(0, 4).map((tag) => `<em>${escapeHtml(tag)}</em>`).join('')}</span>
-    </button>
-  `).join('');
+function filteredPapers() {
+  const q = state.filters.paper.q.toLowerCase();
+  const papers = Object.values(state.clusterPapers).flat();
+  return papers.filter((item) => {
+    const local = paperLocal(item.id);
+    if (state.filters.paper.status === 'read' && !local.read) return false;
+    if (state.filters.paper.status === 'unread' && local.read) return false;
+    if (state.filters.paper.status === 'archived' && !local.archived) return false;
+    if (state.filters.paper.status !== 'archived' && local.archived) return false;
+    if (state.filters.paper.favorite === 'favorite' && !local.favorite) return false;
+    if (state.filters.paper.keyword) {
+      const needle = state.filters.paper.keyword;
+      const tags = [...(item.matched_keywords || []), ...(item.tags || [])];
+      if (!tags.includes(needle)) return false;
+    }
+    if (q) {
+      const haystack = `${item.title} ${item.authors} ${item.abstract}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
 }
 
-function renderDetail() {
-  const idea = selectedIdea();
-  if (!idea) {
-    $('ideaDetail').innerHTML = '<div class="detail-empty">选择一条研究启发。</div>';
-    return;
-  }
-  $('ideaDetail').innerHTML = `
-    <article class="detail">
-      <div class="detail-head">
+function feedbackLabel(verdict) {
+  if (verdict === 'boost') return '加紧调研';
+  if (verdict === 'neutral') return '中立';
+  if (verdict === 'exclude') return '以后排除';
+  return '';
+}
+
+function feedbackButtons(item) {
+  const id = paperId(item);
+  const selected = state.feedbacks[id] || '';
+  const pending = !!state.feedbackPending[id];
+  const options = [
+    ['boost', '加紧调研'],
+    ['neutral', '中立'],
+    ['exclude', '以后排除'],
+  ];
+  return `
+    <div class="feedback-actions" aria-label="论文反馈">
+      ${options.map(([verdict, label]) => {
+        const active = selected === verdict;
+        const disabled = pending || (!!selected && !active);
+        return `<button type="button" data-feedback="${verdict}" data-paper-feedback="${escapeHtml(id)}" class="feedback-button ${active ? 'is-active' : ''}" data-verdict="${verdict}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+      }).join('')}
+      ${selected ? `<span class="feedback-note">${pending ? '提交中' : `已反馈: ${feedbackLabel(selected)}`}</span>` : ''}
+    </div>
+  `;
+}
+
+function renderPaperCard(item, options = {}) {
+  const local = paperLocal(item.id);
+  const tags = [...(item.matched_keywords || []), ...(item.tags || []).slice(0, 3)];
+  const score = item.priority_score ?? item.relevance ?? 0;
+  const clusterLine = item.cluster_label ? ` · ${item.cluster_label}` : '';
+  return `
+    <article class="paper-card ${options.compact ? 'is-compact' : ''}" data-archived="${local.archived ? 'true' : 'false'}">
+      <div class="card-head">
         <div>
-          <div class="detail-badges">
-            ${statusBadge(idea.status)}
-            ${typeBadge(idea.source_type)}
-            ${idea.auto_fetched ? '<span class="type-badge">自动扫描</span>' : ''}
-          </div>
-          <h2>${escapeHtml(idea.title)}</h2>
-          <p class="detail-meta">${escapeHtml(idea.authors || '作者待补充')} · ${escapeHtml(idea.published_at || '日期待补充')} · 相关度 ${escapeHtml(idea.relevance)}/5</p>
+          <div class="card-meta">Priority ${escapeHtml(score)} · ${escapeHtml(item.published_at || '日期未知')}${clusterLine} · ${local.read ? '已读' : '未读'}${local.favorite ? ' · 已收藏' : ''}</div>
+          <h3 class="${options.gradient ? 'gradient-text' : ''}">${escapeHtml(item.title)}</h3>
         </div>
-        <div class="detail-actions">
-          <a class="ghost-button" href="${escapeHtml(idea.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>
-          <button class="ghost-button" type="button" data-edit-idea="${escapeHtml(idea.id)}">编辑</button>
+        <span class="status-pill">${local.archived ? '归档' : (local.read ? '已读' : '未读')}</span>
+      </div>
+      <p>${escapeHtml(shortText(item.abstract, options.compact ? 150 : 360))}</p>
+      <div class="tag-row">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      <div class="paper-bottom-row">
+        <div class="card-actions">
+          <button type="button" data-paper-detail="${escapeHtml(item.id)}">查看详情</button>
+          <button type="button" data-paper-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
+          <button type="button" data-paper-favorite="${escapeHtml(item.id)}">${local.favorite ? '取消收藏' : '收藏'}</button>
+          <button type="button" data-paper-archive="${escapeHtml(item.id)}">${local.archived ? '取消归档' : '归档'}</button>
+          ${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ''}
         </div>
-      </div>
-
-      <section class="focus-block">
-        <span>关键启发</span>
-        <p>${nl2br(idea.key_inspiration || '')}</p>
-      </section>
-
-      <div class="detail-grid">
-        <section>
-          <h3>用于莫比乌斯</h3>
-          <p>${nl2br(idea.mobius_use || '待补充')}</p>
-        </section>
-        <section>
-          <h3>限制与风险</h3>
-          <p>${nl2br(idea.limitations || '待补充')}</p>
-        </section>
-      </div>
-
-      <section class="text-section">
-        <h3>摘要</h3>
-        <p>${nl2br(idea.abstract || '待补充')}</p>
-      </section>
-
-      <div class="tag-row">
-        ${(idea.tags || []).map((tag) => `<button type="button" data-filter-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}
-      </div>
-
-      <div class="status-actions">
-        ${['candidate', 'triaged', 'planned', 'applied', 'archived'].map((status) => `
-          <button type="button" data-set-status="${status}" ${idea.status === status ? 'disabled' : ''}>${escapeHtml(labels.statuses[status])}</button>
-        `).join('')}
-        <button class="danger-link" type="button" data-delete-idea="${escapeHtml(idea.id)}">删除</button>
+        ${feedbackButtons(item)}
       </div>
     </article>
   `;
 }
 
-function renderRoadmap() {
-  const stats = state.stats?.by_status || {};
-  const steps = [
-    {
-      title: '1. 研究吸收',
-      tag: 'Gödel Agent / DGM / Polaris',
-      body: '把外部论文压缩成 key_inspiration, 只保留能改变莫比乌斯迭代方式的内容。',
-      metric: `${state.stats?.total || 0} 条入库`,
-    },
-    {
-      title: '2. 经验抽象',
-      tag: 'failure_pattern / repair_rule',
-      body: '把失败日志提炼成可复用策略, 对重复失败生成最小补丁。',
-      metric: `${stats.triaged || 0} 条已研判`,
-    },
-    {
-      title: '3. 候选档案',
-      tag: 'archive / lineage',
-      body: '保留成功、失败和被放弃的方案, 形成可回放的演化树。',
-      metric: `${stats.candidate || 0} 条候选`,
-    },
-    {
-      title: '4. 适应度评估',
-      tag: 'tests / review / rollback',
-      body: '每次自改动都绑定验证命令、用户收益、风险等级和回滚条件。',
-      metric: `${stats.planned || 0} 条已计划`,
-    },
-    {
-      title: '5. 反向闭环',
-      tag: 'idea -> issue -> patch',
-      body: '把高价值启发转成自迭代 issue, 完成后回写 applied 和效果证据。',
-      metric: `${stats.applied || 0} 条已落地`,
-    },
-  ];
-  $('roadmap').innerHTML = steps.map((step) => `
-    <div class="roadmap-item">
-      <span>${escapeHtml(step.tag)}</span>
-      <h2>${escapeHtml(step.title)}</h2>
-      <p>${escapeHtml(step.body)}</p>
-      <strong>${escapeHtml(step.metric)}</strong>
-    </div>
-  `).join('');
+function renderTopPicks() {
+  const picks = state.topPicks || [];
+  $('topPicksList').innerHTML = picks.length
+    ? picks.map((item, index) => `
+      <article class="top-pick-card">
+        <div class="top-rank">${String(index + 1).padStart(2, '0')}</div>
+        <div class="top-pick-main">
+          <h3 class="gradient-text">${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(shortText(item.abstract, 150))}</p>
+          <div class="tag-row">${[...(item.matched_keywords || []), ...(item.tags || []).slice(0, 2)].map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+        </div>
+        <button type="button" class="see-all-button" data-open-cluster="${escapeHtml(item.cluster_label || '')}">See all →</button>
+      </article>
+    `).join('')
+    : '<div class="quiet-empty">暂无 Top Picks，等待 cluster 数据</div>';
 }
 
-function renderScanRuns() {
-  const runs = state.scanRuns || [];
-  $('scanQuery').value = $('scanQuery').value || state.constants.default_scan_query || '';
-  if (!runs.length) {
-    $('scanRuns').innerHTML = '<div class="quiet-empty">暂无扫描记录</div>';
+function renderPapers() {
+  computeTopPicks();
+  renderTopPicks();
+  const all = Object.values(state.clusterPapers).flat();
+  const items = filteredPapers();
+  const readCount = all.filter((item) => paperLocal(item.id).read).length;
+  const favoriteCount = all.filter((item) => paperLocal(item.id).favorite).length;
+  const archivedCount = all.filter((item) => paperLocal(item.id).archived).length;
+  const feedbackCount = Object.keys(state.feedbacks).length;
+  const totalPapers = state.paperClusters.reduce((sum, item) => sum + (item.paper_count || 0), 0) || all.length || state.papers.total || 0;
+  $('paperClusterPill').textContent = state.backendStatus.clusters === 'connected'
+    ? '后端 cluster'
+    : state.backendStatus.clusters === 'mock'
+      ? 'Mock cluster'
+      : '聚类加载中';
+  $('paperMetrics').innerHTML = [
+    ['Cluster', state.paperClusters.length],
+    ['论文总数', totalPapers],
+    ['已读', readCount],
+    ['反馈', feedbackCount || favoriteCount],
+  ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+  if (!state.paperClusters.length) {
+    $('clusterList').innerHTML = '<div class="quiet-empty">暂无 cluster 数据</div>';
     return;
   }
-  $('scanRuns').innerHTML = runs.map((run) => `
-    <div class="run-row" data-status="${escapeHtml(run.status)}">
-      <div>
-        <strong>${escapeHtml(run.status === 'ok' ? '完成' : '失败')}</strong>
-        <span>${escapeHtml(run.created_at)}</span>
-      </div>
-      <p>${escapeHtml(run.query)}</p>
-      <em>新增 ${escapeHtml(run.inserted)} · 跳过 ${escapeHtml(run.skipped)}${run.error ? ` · ${escapeHtml(run.error)}` : ''}</em>
-    </div>
-  `).join('');
-}
 
-function renderProducts() {
-  const products = state.products || [];
-  if (!products.length) {
-    $('productList').innerHTML = '<div class="quiet-empty">暂无相似产品调研</div>';
-  } else {
-    $('productList').innerHTML = products.map((item) => `
-      <article class="product-card" data-status="${escapeHtml(item.status)}">
-        <div class="product-card-head">
+  $('clusterList').innerHTML = state.paperClusters.map((cluster) => {
+    const papers = filteredClusterPapers(cluster.label);
+    const expanded = !!cluster.expanded;
+    const keywords = cluster.keywords || [];
+    return `
+      <article class="cluster-card" id="${escapeHtml(clusterDomId(cluster.label))}" data-expanded="${expanded ? 'true' : 'false'}">
+        <button type="button" class="cluster-head" data-toggle-cluster="${escapeHtml(cluster.label)}" aria-expanded="${expanded ? 'true' : 'false'}">
           <div>
-            <span>${escapeHtml(labels.productCategories[item.category] || item.category || '其他')} · ${escapeHtml(labels.statuses[item.status] || item.status || '候选')} · 相关度 ${escapeHtml(item.relevance)}/5</span>
-            <h2>${escapeHtml(item.name)}</h2>
+            <h3>${escapeHtml(cluster.title)}</h3>
+            <div class="tag-row">${keywords.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
           </div>
-          <a class="ghost-button" href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">来源</a>
-        </div>
-        <p class="product-positioning">${nl2br(item.positioning || item.fetched_description || '待补充定位')}</p>
-        <div class="product-sections">
-          <section>
-            <h3>能力观察</h3>
-            <p>${nl2br(item.observed_capabilities || '待补充')}</p>
-          </section>
-          <section>
-            <h3>关键启发</h3>
-            <p>${nl2br(item.key_inspiration || '待提炼')}</p>
-          </section>
-          <section>
-            <h3>用于莫比乌斯</h3>
-            <p>${nl2br(item.mobius_use || '待补充')}</p>
-          </section>
-          <section>
-            <h3>风险/不该学的点</h3>
-            <p>${nl2br(item.risks || '待补充')}</p>
-          </section>
-        </div>
-        <div class="tag-row">
-          ${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}
-        </div>
-        <div class="status-actions">
-          ${['candidate', 'triaged', 'planned', 'applied', 'archived'].map((status) => `
-            <button type="button" data-product-status="${status}" data-id="${escapeHtml(item.id)}" ${item.status === status ? 'disabled' : ''}>${escapeHtml(labels.statuses[status])}</button>
-          `).join('')}
-          <button class="danger-link" type="button" data-delete-product="${escapeHtml(item.id)}">删除</button>
+          <span class="cluster-stats">${escapeHtml(cluster.paper_count)} papers · max ${escapeHtml(cluster.max_score)}</span>
+        </button>
+        <div class="cluster-body">
+          <div class="cluster-body-inner">
+            ${expanded
+              ? (papers.length ? papers.map((paper) => renderPaperCard(paper)).join('') : `<div class="quiet-empty">暂无匹配论文${archivedCount ? `，已归档 ${archivedCount} 篇` : ''}</div>`)
+              : ''}
+            ${expanded && cluster.has_more ? `<button type="button" class="glass-button" data-load-more-cluster="${escapeHtml(cluster.label)}">加载更多</button>` : ''}
+          </div>
         </div>
       </article>
-    `).join('');
-  }
-
-  const runs = state.productScanRuns || [];
-  if (!runs.length) {
-    $('productScanRuns').innerHTML = '<div class="quiet-empty">暂无产品抓取记录</div>';
-  } else {
-    $('productScanRuns').innerHTML = runs.map((run) => `
-      <div class="run-row" data-status="${escapeHtml(run.status)}">
-        <div>
-          <strong>${escapeHtml(run.status === 'ok' ? '完成' : '失败')}</strong>
-          <span>${escapeHtml(run.created_at)}</span>
-        </div>
-        <p>${escapeHtml(run.source_url)}</p>
-        <em>${run.error ? escapeHtml(run.error) : '已入库'}</em>
-      </div>
-    `).join('');
-  }
+    `;
+  }).join('');
 }
 
-function renderDirectives() {
-  const list = state.directives || [];
-  if (!list.length) {
-    $('directiveList').innerHTML = '<div class="quiet-empty">暂无开发者指示</div>';
-    return;
-  }
-  $('directiveList').innerHTML = list.map((item) => `
-    <article class="directive-row" data-priority="${escapeHtml(item.priority)}">
-      <div>
-        <span>${escapeHtml(labels.priorities[item.priority] || item.priority)}优先级 · ${escapeHtml(labels.directiveStatuses[item.status] || item.status)}</span>
-        <h2>${escapeHtml(item.title)}</h2>
-        <p>${nl2br(item.body)}</p>
-        <em>${escapeHtml(item.created_by)} · ${escapeHtml(item.created_at)}</em>
+function filteredClusterPapers(label) {
+  return (state.clusterPapers[label] || [])
+    .filter((item) => filteredPapers().some((paper) => paper.id === item.id))
+    .sort((a, b) => b.priority_score - a.priority_score);
+}
+
+function filteredCompetitors() {
+  const q = state.filters.competitor.q.toLowerCase();
+  return allCompetitors().filter((item) => {
+    const local = competitorLocal(item.id);
+    if (state.filters.competitor.status && item.status !== state.filters.competitor.status) return false;
+    if (state.filters.competitor.read === 'read' && !local.read) return false;
+    if (state.filters.competitor.read === 'unread' && local.read) return false;
+    if (q) {
+      const haystack = `${item.name} ${item.reason} ${item.fetched_title} ${item.fetched_description}`.toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function productCard(item) {
+  const local = competitorLocal(item.id);
+  const snapshot = item.fetched_description || item.reason || '暂无产品页摘要，建议重扫产品页。';
+  return `
+    <article class="product-card" data-archived="${item.status === 'archived' ? 'true' : 'false'}">
+      <div class="card-head">
+        <div>
+          <div class="card-meta">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · 相关度 ${escapeHtml(item.relevance)}/10 · ${local.read ? '已读' : '未读'}</div>
+          <h3>${escapeHtml(item.name)}</h3>
+        </div>
+        <span class="status-pill">${escapeHtml(labels.status[item.status] || item.status)}</span>
       </div>
-      <div class="mini-actions">
-        ${['open', 'planned', 'done', 'archived'].map((status) => `
-          <button type="button" data-directive-status="${status}" data-id="${escapeHtml(item.id)}" ${item.status === status ? 'disabled' : ''}>
-            ${escapeHtml(labels.directiveStatuses[status])}
-          </button>
-        `).join('')}
-        <button class="danger-link" type="button" data-delete-directive="${escapeHtml(item.id)}">删除</button>
+      <p>${escapeHtml(shortText(snapshot, 300))}</p>
+      <div class="tag-row">${(item.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+      <div class="card-actions">
+        ${item.status === 'candidate' ? `<button type="button" data-promote="${escapeHtml(item.id)}">一键晋升为正式</button>` : ''}
+        <button type="button" data-product-detail="${escapeHtml(item.id)}">产品页快照</button>
+        <button type="button" data-product-read="${escapeHtml(item.id)}">${local.read ? '标记未读' : '标记已读'}</button>
+        ${item.status !== 'archived' ? `<button type="button" data-archive="${escapeHtml(item.id)}">归档</button>` : ''}
+        <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开页面</a>
       </div>
     </article>
-  `).join('');
+  `;
 }
 
-function setTab(tab) {
-  state.tab = tab;
-  document.querySelectorAll('.tab').forEach((button) => {
-    button.classList.toggle('is-active', button.dataset.tab === tab);
+function renderCompetitors() {
+  const filtered = filteredCompetitors();
+  const official = filtered.filter((item) => item.status === 'official');
+  const candidate = filtered.filter((item) => item.status === 'candidate');
+  const archived = filtered.filter((item) => item.status === 'archived');
+  const readCount = allCompetitors().filter((item) => competitorLocal(item.id).read).length;
+
+  $('competitorMetrics').innerHTML = [
+    ['已跟踪', state.competitors.official?.length || 0],
+    ['候选', state.competitors.candidate?.length || 0],
+    ['已读', readCount],
+    ['归档', state.competitors.archived?.length || 0],
+  ].map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+  $('officialCount').textContent = official.length;
+  $('candidateCount').textContent = candidate.length;
+  $('officialCompetitors').innerHTML = official.length
+    ? official.map(productCard).join('')
+    : '<div class="quiet-empty">暂无匹配的已跟踪竞品</div>';
+  $('candidateCompetitors').innerHTML = candidate.length
+    ? candidate.map(productCard).join('')
+    : `<div class="quiet-empty">暂无匹配候选${archived.length ? `，当前筛选中另有归档 ${archived.length} 个` : ''}</div>`;
+}
+
+function renderEvolution() {
+  const active = state.evolution.level;
+  document.querySelectorAll('.evo-tab').forEach((button) => {
+    const isActive = button.dataset.evoLevel === active;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
-  document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('is-active', panel.id === `panel-${tab}`);
-  });
-  const sidebar = $('librarySidebar');
-  const workspace = document.querySelector('.workspace');
-  sidebar.hidden = tab !== 'library';
-  workspace.classList.toggle('is-full', tab !== 'library');
+  $('evolutionPanel').dataset.level = active;
+  $('evolutionSourcePill').textContent = state.evolution.source === 'backend' ? '真后端' : 'Mock feed';
+  renderEvolutionProjectFilter();
+  if (active === 'L1') renderEvolutionL1();
+  if (active === 'L2') renderEvolutionL2();
+  if (active === 'L3') renderEvolutionL3();
 }
 
-function openIdeaModal(idea = null) {
-  $('modalTitle').textContent = idea ? '编辑启发' : '新增启发';
-  $('ideaId').value = idea?.id || '';
-  $('ideaTitle').value = idea?.title || '';
-  $('ideaUrl').value = idea?.source_url || '';
-  $('ideaType').value = idea?.source_type || 'note';
-  $('ideaStatus').value = idea?.status || 'new';
-  $('ideaRelevance').value = idea?.relevance || 3;
-  $('ideaPublishedAt').value = idea?.published_at || '';
-  $('ideaAuthors').value = idea?.authors || '';
-  $('ideaTags').value = (idea?.tags || []).join(', ');
-  $('ideaKey').value = idea?.key_inspiration || '';
-  $('ideaUse').value = idea?.mobius_use || '';
-  $('ideaAbstract').value = idea?.abstract || '';
-  $('ideaLimitations').value = idea?.limitations || '';
-  const modal = $('ideaModal');
-  modal.classList.add('is-open');
-  modal.setAttribute('aria-hidden', 'false');
-  $('ideaTitle').focus();
+function renderEvolutionProjectFilter() {
+  const projects = evolutionProjects();
+  const current = state.evolution.projectId;
+  $('evolutionProjectFilter').innerHTML = [
+    '<option value="">全部项目</option>',
+    ...projects.map((project) => `<option value="${escapeHtml(project)}">${escapeHtml(project)}</option>`),
+  ].join('');
+  $('evolutionProjectFilter').value = current;
+  $('evolutionProjectFilterWrap').style.display = state.evolution.level === 'L1' ? 'grid' : 'none';
 }
 
-function closeIdeaModal() {
-  const modal = $('ideaModal');
-  modal.classList.remove('is-open');
-  modal.setAttribute('aria-hidden', 'true');
+function evolutionItems(level) {
+  const items = state.evolution.feeds[level] || [];
+  if (level !== 'L1' || !state.evolution.projectId) return items;
+  return items.filter((item) => item.project_id === state.evolution.projectId);
 }
 
-function ideaPayloadFromForm() {
-  return {
-    id: $('ideaId').value,
-    title: $('ideaTitle').value,
-    source_url: $('ideaUrl').value,
-    source_type: $('ideaType').value,
-    status: $('ideaStatus').value,
-    relevance: Number($('ideaRelevance').value || 3),
-    published_at: $('ideaPublishedAt').value,
-    authors: $('ideaAuthors').value,
-    tags: $('ideaTags').value,
-    key_inspiration: $('ideaKey').value,
-    mobius_use: $('ideaUse').value,
-    abstract: $('ideaAbstract').value,
-    limitations: $('ideaLimitations').value,
+function renderEvolutionL1() {
+  const items = evolutionItems('L1');
+  $('evolutionContent').innerHTML = items.length
+    ? `<div class="evolution-list">${items.map((item) => renderL1Card(item)).join('')}</div>`
+    : '<div class="quiet-empty">暂无 L1 实际修改</div>';
+}
+
+function renderL1Card(item) {
+  const expanded = !!state.evolution.expanded[item.id];
+  const sha = item.commit_sha ? item.commit_sha.slice(0, 7) : 'pending';
+  return `
+    <article class="evo-card l1-card" data-expanded="${expanded ? 'true' : 'false'}">
+      <button type="button" class="evo-card-head" data-toggle-evolution="${escapeHtml(item.id)}">
+        <span class="evo-sha">${escapeHtml(sha)}</span>
+        <span>
+          <strong>${escapeHtml(item.summary)}</strong>
+          <em>${escapeHtml(shortText(item.diff_summary, 180))}</em>
+        </span>
+      </button>
+      <div class="evo-meta">${escapeHtml(formatTime(item.created_at))} · ${escapeHtml(item.project_id)} · ${escapeHtml(item.actor)}</div>
+      <div class="evo-expand">
+        <div class="tag-row">${(item.files_changed || []).map((file) => `<span>${escapeHtml(file)}</span>`).join('')}</div>
+        <p>${escapeHtml(item.diff_summary || '暂无 diff 摘要')}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderEvolutionL2() {
+  const items = evolutionItems('L2');
+  const pending = items.filter((item) => !['approved', 'promoted_to_L1', 'rejected'].includes(item.status));
+  const approved = items.filter((item) => ['approved', 'promoted_to_L1'].includes(item.status));
+  $('evolutionContent').innerHTML = `
+    <div class="evolution-columns">
+      <section>
+        <div class="column-head"><h3>待审</h3><span>${pending.length}</span></div>
+        <div class="evolution-list">${pending.length ? pending.map((item) => renderL2Card(item, false)).join('') : '<div class="quiet-empty">暂无待审候选</div>'}</div>
+      </section>
+      <section>
+        <div class="column-head"><h3>已批准</h3><span>${approved.length}</span></div>
+        <div class="evolution-list">${approved.length ? approved.map((item) => renderL2Card(item, true)).join('') : '<div class="quiet-empty">暂无已批准事件</div>'}</div>
+      </section>
+    </div>
+  `;
+}
+
+function renderL2Card(item, approved) {
+  const pending = !!state.evolution.pending[item.id];
+  return `
+    <article class="evo-card l2-card">
+      <div class="card-head">
+        <div>
+          <div class="card-meta">${escapeHtml(formatTime(item.created_at))} · ${escapeHtml(item.project_id)} · ${escapeHtml(item.actor)}</div>
+          <h3>${escapeHtml(item.summary)}</h3>
+        </div>
+        <span class="status-pill">${escapeHtml(item.status)}</span>
+      </div>
+      <p>${escapeHtml(shortText(item.diff_summary, 260))}</p>
+      ${approved ? '' : `
+        <div class="card-actions">
+          <button type="button" class="promote-button" data-promote-l2="${escapeHtml(item.id)}" ${pending ? 'disabled' : ''}>批准并升级 L1</button>
+          <button type="button" data-reject-l2="${escapeHtml(item.id)}" ${pending ? 'disabled' : ''}>拒绝</button>
+        </div>
+      `}
+    </article>
+  `;
+}
+
+function renderEvolutionL3() {
+  const item = (state.evolution.feeds.L3 || [])[0] || {
+    summary: 'L3 自进化：莫比乌斯修改莫比乌斯 · 暂未启用 · 预留接口',
+    diff_summary: '接口预留中，等待后端开放。',
   };
+  $('evolutionContent').innerHTML = `
+    <article class="evo-card l3-placeholder" aria-disabled="true">
+      <div class="disabled-icon" aria-hidden="true">L3</div>
+      <h3>${escapeHtml(item.summary || 'L3 自进化：莫比乌斯修改莫比乌斯 · 暂未启用 · 预留接口')}</h3>
+      <p>${escapeHtml(item.diff_summary || '预留接口')}</p>
+      <span class="status-pill">disabled</span>
+    </article>
+  `;
 }
 
-async function saveIdea(event) {
-  event.preventDefault();
-  const payload = ideaPayloadFromForm();
-  const action = payload.id ? 'update' : 'create';
-  try {
-    const result = await call({ action, ...payload });
-    const idea = result.idea;
-    state.selectedId = idea.id;
-    closeIdeaModal();
-    showToast('已保存启发');
-    await loadAll();
-  } catch (e) {
-    showToast(e.message || '保存失败', 'bad');
-  }
+async function refreshPapersFromServer() {
+  if (!state.paperClusters.length) await loadPaperClusters();
+  renderPapers();
 }
 
-async function setIdeaStatus(status) {
-  const idea = selectedIdea();
-  if (!idea) return;
-  try {
-    const result = await call({ action: 'set_status', id: idea.id, status });
-    const index = state.ideas.findIndex((item) => item.id === idea.id);
-    if (index >= 0) state.ideas[index] = result.idea;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast(`状态已更新为 ${labels.statuses[status] || status}`);
-  } catch (e) {
-    showToast(e.message || '状态更新失败', 'bad');
-  }
-}
-
-async function deleteSelectedIdea(id) {
-  const idea = state.ideas.find((item) => item.id === id);
-  if (!idea) return;
-  if (!confirm(`删除「${idea.title}」？`)) return;
-  try {
-    await call({ action: 'delete', id });
-    state.selectedId = '';
-    showToast('已删除');
-    await loadAll();
-  } catch (e) {
-    showToast(e.message || '删除失败', 'bad');
-  }
-}
-
-async function runScan(event) {
+async function runArxivScan(event) {
   event.preventDefault();
   const button = event.submitter;
+  state.scanning.paper = true;
   button.disabled = true;
   button.textContent = '扫描中...';
+  renderSchedule();
   try {
     const result = await call({
       action: 'scan_arxiv',
-      query: $('scanQuery').value,
-      max_results: Number($('scanMax').value || 8),
+      query: $('arxivQuery').value,
+      max_results: Number($('arxivMax').value || 100),
+      scan_competitors: $('scanCompetitorsAfterArxiv').checked,
     });
-    state.ideas = result.ideas || state.ideas;
-    state.total = result.total || state.total;
-    state.stats = result.stats || state.stats;
+    state.summary = result.summary || state.summary;
+    state.papers = result.arxiv || state.papers;
     state.scanRuns = result.scan_runs || state.scanRuns;
-    if (!state.selectedId && state.ideas[0]) state.selectedId = state.ideas[0].id;
+    await loadMyFeedbacks();
+    await loadPaperClusters();
+    if (result.product_scans?.length) {
+      const competitors = await call({ action: 'get_competitors' });
+      state.competitors = competitors.competitors || state.competitors;
+    }
     render();
-    showToast(`扫描完成: 新增 ${result.scan.inserted}, 跳过 ${result.scan.skipped}`);
-  } catch (e) {
-    showToast(e.message || '扫描失败', 'bad');
+    showToast(`论文扫描完成: 新增 ${result.scan.inserted}, 更新 ${result.scan.updated}`);
+  } catch (error) {
+    showToast(error.message || '扫描失败', 'bad');
   } finally {
+    state.scanning.paper = false;
     button.disabled = false;
-    button.innerHTML = '<span>⌕</span> 扫描并入库';
-  }
-}
-
-async function refreshProducts() {
-  try {
-    const result = await call({ action: 'list_products' });
-    state.products = result.products || [];
-    state.productScanRuns = result.product_scan_runs || state.productScanRuns;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast('产品调研已刷新');
-  } catch (e) {
-    showToast(e.message || '刷新失败', 'bad');
+    button.textContent = '立即扫描论文';
+    renderSchedule();
   }
 }
 
 async function runProductScan(event) {
   event.preventDefault();
   const button = event.submitter;
+  state.scanning.product = true;
   button.disabled = true;
-  button.textContent = '抓取中...';
+  button.textContent = '扫描中...';
+  renderSchedule();
   try {
     const result = await call({
       action: 'scan_product_url',
       source_url: $('productUrl').value,
       name: $('productName').value,
       category: $('productCategory').value,
-      relevance: Number($('productRelevance').value || 3),
+      status: $('productStatus').value,
+      as_official: $('productStatus').value === 'official',
     });
+    state.competitors = result.competitors || state.competitors;
     state.products = result.products || state.products;
-    state.productScanRuns = result.product_scan_runs || state.productScanRuns;
-    state.stats = result.stats || state.stats;
+    state.scanRuns = result.scan_runs || state.scanRuns;
+    state.summary = result.summary || state.summary;
     $('productUrl').value = '';
     $('productName').value = '';
     render();
-    showToast(`已入库: ${result.product_scan.product.name}`);
-  } catch (e) {
-    showToast(e.message || '抓取失败', 'bad');
+    showToast(`竞品扫描完成: 新候选 ${result.product_scan.candidates_added || 0}`);
+  } catch (error) {
+    showToast(error.message || '扫描失败', 'bad');
   } finally {
+    state.scanning.product = false;
     button.disabled = false;
-    button.innerHTML = '<span>⌕</span> 抓取并入库';
+    button.textContent = '扫描并入库';
+    renderSchedule();
   }
 }
 
-async function updateProductStatus(id, status) {
+async function saveKeywords(scope, textareaId) {
   try {
-    const result = await call({ action: 'update_product', id, status });
+    const keywords = parseKeywordTextarea($(textareaId).value);
+    const result = await call({ action: 'update_keywords', scope, keywords });
+    state.keywords[scope] = result.keywords[scope] || [];
+    renderKeywordControls();
+    showToast('关键词已保存');
+  } catch (error) {
+    showToast(error.message || '保存失败', 'bad');
+  }
+}
+
+async function updateCompetitor(payload) {
+  try {
+    const result = await call({ action: 'update_competitors', ...payload });
+    state.competitors = result.competitors || state.competitors;
     state.products = result.products || state.products;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast(`产品状态已更新为 ${labels.statuses[status] || status}`);
-  } catch (e) {
-    showToast(e.message || '更新失败', 'bad');
+    state.summary = result.summary || state.summary;
+    renderCompetitors();
+    showToast('竞品状态已更新');
+  } catch (error) {
+    showToast(error.message || '更新失败', 'bad');
   }
 }
 
-async function deleteProduct(id) {
-  const product = state.products.find((item) => item.id === id);
-  if (!product) return;
-  if (!confirm(`删除「${product.name}」？`)) return;
-  try {
-    const result = await call({ action: 'delete_product', id });
-    state.products = result.products || state.products;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast('已删除产品调研');
-  } catch (e) {
-    showToast(e.message || '删除失败', 'bad');
+function setTab(tab, shouldScroll = false) {
+  state.tab = tab;
+  document.querySelectorAll('.tab').forEach((button) => {
+    const active = button.dataset.tab === tab;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    panel.classList.toggle('is-active', panel.id === `panel-${tab}`);
+  });
+  if (shouldScroll && tab === 'papers') $('paper-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  if (shouldScroll && tab === 'competitors') $('competitor-section').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function openPaperDetail(id) {
+  const item = Object.values(state.clusterPapers).flat().find((paper) => paper.id === id)
+    || (state.papers.items || []).find((paper) => paper.id === id);
+  if (!item) return;
+  const local = paperLocal(id);
+  local.read = true;
+  saveLocalState();
+  $('dialogBody').innerHTML = `
+    <p class="eyebrow">Paper detail</p>
+    <h2>${escapeHtml(item.title)}</h2>
+    <p class="muted">${escapeHtml(item.authors || '作者未知')} · ${escapeHtml(item.published_at || '日期未知')} · 相关度 ${escapeHtml(item.relevance)}</p>
+    <p>${escapeHtml(item.abstract || '暂无摘要')}</p>
+    <div class="tag-row">${[...(item.matched_keywords || []), ...(item.tags || [])].map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div>
+    <div class="card-actions"><a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开 arXiv</a></div>
+  `;
+  $('detailDialog').showModal();
+  renderPapers();
+}
+
+function openProductDetail(id) {
+  const item = allCompetitors().find((product) => product.id === id);
+  if (!item) return;
+  const local = competitorLocal(id);
+  local.read = true;
+  saveLocalState();
+  $('dialogBody').innerHTML = `
+    <p class="eyebrow">Product snapshot</p>
+    <h2>${escapeHtml(item.name)}</h2>
+    <p class="muted">${escapeHtml(labels.category[item.category] || item.category || '其他')} · ${escapeHtml(labels.status[item.status] || item.status)} · last scanned ${escapeHtml(formatTime(item.last_scanned_at))}</p>
+    <p><strong>页面标题</strong><br>${escapeHtml(item.fetched_title || '暂无标题快照')}</p>
+    <p><strong>页面描述</strong><br>${escapeHtml(item.fetched_description || '暂无描述快照')}</p>
+    <p><strong>入库理由</strong><br>${escapeHtml(item.reason || '暂无理由')}</p>
+    <p class="muted">发现逻辑: ${escapeHtml(item.discovery_logic || 'manual')} ${item.discovered_from_url ? ` · 来源 ${escapeHtml(item.discovered_from_url)}` : ''}</p>
+    <div class="card-actions"><a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener noreferrer">打开产品页</a></div>
+  `;
+  $('detailDialog').showModal();
+  renderCompetitors();
+}
+
+async function toggleCluster(label) {
+  const cluster = state.paperClusters.find((item) => item.label === label);
+  if (!cluster) return;
+  cluster.expanded = !cluster.expanded;
+  if (cluster.expanded) await ensureClusterPapers(label);
+  renderPapers();
+  if (cluster.expanded) {
+    requestAnimationFrame(() => document.getElementById(clusterDomId(label))?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
 }
 
-async function saveDirective(event) {
-  event.preventDefault();
+async function loadMoreCluster(label) {
+  const cluster = state.paperClusters.find((item) => item.label === label);
+  if (!cluster) return;
+  await ensureClusterPapers(label, { offset: cluster.offset || 0, limit: 20, force: true });
+  renderPapers();
+}
+
+async function submitPaperFeedback(paperIdValue, verdict) {
+  const previous = state.feedbacks[paperIdValue];
+  state.feedbacks[paperIdValue] = verdict;
+  state.feedbackPending[paperIdValue] = verdict;
+  renderPapers();
   try {
-    const result = await call({
-      action: 'create_directive',
-      title: $('directiveTitle').value,
-      body: $('directiveBody').value,
-      priority: $('directivePriority').value,
-      status: $('directiveStatus').value,
+    await call({ action: 'submit_feedback', paper_id: paperIdValue, verdict });
+    delete state.feedbackPending[paperIdValue];
+    state.backendStatus.feedbacks = 'connected';
+    renderPapers();
+    showToast(`反馈已提交: ${feedbackLabel(verdict)}`);
+  } catch (error) {
+    if (previous) state.feedbacks[paperIdValue] = previous;
+    else delete state.feedbacks[paperIdValue];
+    delete state.feedbackPending[paperIdValue];
+    state.backendStatus.feedbacks = 'missing';
+    renderPapers();
+    showToast(error.message || '反馈提交失败，已回滚', 'bad');
+  }
+}
+
+async function setEvolutionLevel(level) {
+  state.evolution.level = level;
+  if (!state.evolution.feeds[level]?.length) await loadEvolutionLevel(level);
+  renderEvolution();
+}
+
+async function promoteL2ToL1(id) {
+  const item = state.evolution.feeds.L2.find((event) => event.id === id);
+  if (!item) return;
+  const previous = item.status;
+  item.status = 'promoted_to_L1';
+  state.evolution.pending[id] = true;
+  renderEvolution();
+  try {
+    await call({ action: 'promote_L2_to_L1', id, event_id: id });
+    delete state.evolution.pending[id];
+    showToast('L2 已批准并升级 L1');
+    await loadEvolutionLevel('L1');
+    renderEvolution();
+  } catch (error) {
+    item.status = previous;
+    delete state.evolution.pending[id];
+    renderEvolution();
+    showToast(error.message || 'promote 失败，已回滚', 'bad');
+  }
+}
+
+async function rejectL2(id) {
+  const item = state.evolution.feeds.L2.find((event) => event.id === id);
+  if (!item) return;
+  const previous = item.status;
+  item.status = 'rejected';
+  state.evolution.pending[id] = true;
+  renderEvolution();
+  try {
+    await call({ action: 'reject_L2', id, event_id: id });
+    delete state.evolution.pending[id];
+    showToast('L2 已拒绝');
+  } catch {
+    item.status = previous;
+    delete state.evolution.pending[id];
+    renderEvolution();
+    showToast('拒绝接口未连通，已回滚', 'bad');
+  }
+}
+
+function bindScrollEffects() {
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) entry.target.classList.add('is-visible');
     });
-    state.directives = result.directives || state.directives;
-    state.stats = result.stats || state.stats;
-    $('directiveTitle').value = '';
-    $('directiveBody').value = '';
-    render();
-    showToast('已保存指示');
-  } catch (e) {
-    showToast(e.message || '保存失败', 'bad');
-  }
-}
+  }, { threshold: 0.15, rootMargin: '0px 0px -80px 0px' });
+  document.querySelectorAll('.reveal').forEach((node) => revealObserver.observe(node));
 
-async function updateDirectiveStatus(id, status) {
-  try {
-    const result = await call({ action: 'update_directive', id, status });
-    state.directives = result.directives || state.directives;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast('指示状态已更新');
-  } catch (e) {
-    showToast(e.message || '更新失败', 'bad');
-  }
-}
+  const nav = $('topNav');
+  const themeObserver = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) {
+      nav.dataset.theme = visible.target.dataset.navTheme || 'light';
+      document.documentElement.dataset.section = visible.target.dataset.section || 'paper';
+    }
+  }, { threshold: [0.35, 0.55, 0.75] });
+  document.querySelectorAll('[data-nav-theme]').forEach((section) => themeObserver.observe(section));
 
-async function deleteDirective(id) {
-  if (!confirm('删除这条开发者指示？')) return;
-  try {
-    const result = await call({ action: 'delete_directive', id });
-    state.directives = result.directives || state.directives;
-    state.stats = result.stats || state.stats;
-    render();
-    showToast('已删除指示');
-  } catch (e) {
-    showToast(e.message || '删除失败', 'bad');
-  }
+  const hero = initLogoBackdrop($('heroCanvas'), 'hero');
+  const finale = initLogoBackdrop($('finaleCanvas'), 'finale');
+  const sceneObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const api = entry.target.id === 'heroCanvas' ? hero : finale;
+      if (!api) return;
+      if (entry.isIntersecting) api.start();
+      else api.pause();
+    });
+  }, { threshold: 0.05 });
+  sceneObserver.observe($('heroCanvas'));
+  sceneObserver.observe($('finaleCanvas'));
 }
 
 function bindEvents() {
-  $('refreshBtn').addEventListener('click', () => loadAll());
-  $('newIdeaBtn').addEventListener('click', () => openIdeaModal());
-  $('ideaForm').addEventListener('submit', saveIdea);
-  $('scanForm').addEventListener('submit', runScan);
+  $('refreshBtn').addEventListener('click', loadAll);
+  $('arxivScanForm').addEventListener('submit', runArxivScan);
   $('productScanForm').addEventListener('submit', runProductScan);
-  $('refreshProductsBtn').addEventListener('click', refreshProducts);
-  $('directiveForm').addEventListener('submit', saveDirective);
-
-  document.querySelectorAll('[data-close-modal]').forEach((node) => {
-    node.addEventListener('click', closeIdeaModal);
+  $('paperKeywordsForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveKeywords('paper', 'paperKeywords');
+  });
+  $('productKeywordsForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveKeywords('product', 'productKeywords');
+  });
+  $('refreshCompetitorsBtn').addEventListener('click', async () => {
+    const result = await call({ action: 'get_competitors' });
+    state.competitors = result.competitors || state.competitors;
+    renderCompetitors();
+    showToast('竞品清单已刷新');
+  });
+  $('paperSearch').addEventListener('input', (event) => {
+    state.filters.paper.q = event.target.value.trim();
+    clearTimeout(bindEvents.paperTimer);
+    bindEvents.paperTimer = setTimeout(() => refreshPapersFromServer().catch((error) => showToast(error.message, 'bad')), 220);
+  });
+  $('paperKeyword').addEventListener('change', (event) => {
+    state.filters.paper.keyword = event.target.value;
+    refreshPapersFromServer().catch((error) => showToast(error.message, 'bad'));
+  });
+  $('paperStatusFilter').addEventListener('change', (event) => {
+    state.filters.paper.status = event.target.value;
+    renderPapers();
+  });
+  $('paperFavoriteFilter').addEventListener('change', (event) => {
+    state.filters.paper.favorite = event.target.value;
+    renderPapers();
+  });
+  $('competitorStatusFilter').addEventListener('change', (event) => {
+    state.filters.competitor.status = event.target.value;
+    renderCompetitors();
+  });
+  $('competitorReadFilter').addEventListener('change', (event) => {
+    state.filters.competitor.read = event.target.value;
+    renderCompetitors();
+  });
+  $('competitorSearch').addEventListener('input', (event) => {
+    state.filters.competitor.q = event.target.value.trim();
+    renderCompetitors();
   });
   document.querySelectorAll('.tab').forEach((button) => {
-    button.addEventListener('click', () => setTab(button.dataset.tab));
+    button.addEventListener('click', () => setTab(button.dataset.tab, true));
   });
-
-  let searchTimer = 0;
-  $('searchInput').addEventListener('input', (event) => {
-    state.filters.q = event.target.value.trim();
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => loadAll(), 220);
+  document.querySelectorAll('.evo-tab').forEach((button) => {
+    button.addEventListener('click', () => setEvolutionLevel(button.dataset.evoLevel));
   });
-  $('statusFilter').addEventListener('change', (event) => {
-    state.filters.status = event.target.value;
-    loadAll();
+  $('evolutionProjectFilter').addEventListener('change', async (event) => {
+    state.evolution.projectId = event.target.value;
+    await loadEvolutionLevel('L1');
+    renderEvolution();
   });
-  $('typeFilter').addEventListener('change', (event) => {
-    state.filters.source_type = event.target.value;
-    loadAll();
+  $('dialogClose').addEventListener('click', () => $('detailDialog').close());
+  $('detailDialog').addEventListener('click', (event) => {
+    if (event.target === $('detailDialog')) $('detailDialog').close();
   });
-  $('tagFilter').addEventListener('change', (event) => {
-    state.filters.tag = event.target.value;
-    loadAll();
-  });
-  $('clearFiltersBtn').addEventListener('click', () => {
-    state.filters = { q: '', status: '', source_type: '', tag: '' };
-    loadAll();
-  });
-
-  $('ideaList').addEventListener('click', (event) => {
-    const row = event.target.closest('[data-id]');
-    if (!row) return;
-    state.selectedId = row.dataset.id;
-    renderList();
-    renderDetail();
-  });
-
-  $('ideaDetail').addEventListener('click', (event) => {
-    const editId = event.target.closest('[data-edit-idea]')?.dataset.editIdea;
-    if (editId) {
-      openIdeaModal(state.ideas.find((item) => item.id === editId));
-      return;
+  document.body.addEventListener('click', (event) => {
+    const openCluster = event.target.closest('[data-open-cluster]');
+    if (openCluster) {
+      const label = openCluster.dataset.openCluster;
+      const cluster = state.paperClusters.find((item) => item.label === label);
+      if (cluster && !cluster.expanded) toggleCluster(label);
+      document.getElementById(clusterDomId(label))?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
-    const status = event.target.closest('[data-set-status]')?.dataset.setStatus;
-    if (status) {
-      setIdeaStatus(status);
-      return;
-    }
-    const deleteId = event.target.closest('[data-delete-idea]')?.dataset.deleteIdea;
-    if (deleteId) {
-      deleteSelectedIdea(deleteId);
-      return;
-    }
-    const tag = event.target.closest('[data-filter-tag]')?.dataset.filterTag;
-    if (tag) {
-      state.filters.tag = tag;
-      loadAll();
-    }
-  });
 
-  $('directiveList').addEventListener('click', (event) => {
-    const statusButton = event.target.closest('[data-directive-status]');
-    if (statusButton) {
-      updateDirectiveStatus(statusButton.dataset.id, statusButton.dataset.directiveStatus);
-      return;
-    }
-    const deleteButton = event.target.closest('[data-delete-directive]');
-    if (deleteButton) deleteDirective(deleteButton.dataset.deleteDirective);
-  });
+    const toggle = event.target.closest('[data-toggle-cluster]');
+    if (toggle) toggleCluster(toggle.dataset.toggleCluster);
 
-  $('productList').addEventListener('click', (event) => {
-    const statusButton = event.target.closest('[data-product-status]');
-    if (statusButton) {
-      updateProductStatus(statusButton.dataset.id, statusButton.dataset.productStatus);
-      return;
-    }
-    const deleteButton = event.target.closest('[data-delete-product]');
-    if (deleteButton) deleteProduct(deleteButton.dataset.deleteProduct);
-  });
+    const loadMore = event.target.closest('[data-load-more-cluster]');
+    if (loadMore) loadMoreCluster(loadMore.dataset.loadMoreCluster);
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeIdeaModal();
+    const feedback = event.target.closest('[data-paper-feedback]');
+    if (feedback) submitPaperFeedback(feedback.dataset.paperFeedback, feedback.dataset.feedback);
+
+    const evoToggle = event.target.closest('[data-toggle-evolution]');
+    if (evoToggle) {
+      const id = evoToggle.dataset.toggleEvolution;
+      state.evolution.expanded[id] = !state.evolution.expanded[id];
+      renderEvolution();
+    }
+
+    const promoteL2 = event.target.closest('[data-promote-l2]');
+    if (promoteL2) promoteL2ToL1(promoteL2.dataset.promoteL2);
+
+    const reject = event.target.closest('[data-reject-l2]');
+    if (reject) rejectL2(reject.dataset.rejectL2);
+
+    const paperDetail = event.target.closest('[data-paper-detail]');
+    if (paperDetail) openPaperDetail(paperDetail.dataset.paperDetail);
+
+    const paperRead = event.target.closest('[data-paper-read]');
+    if (paperRead) {
+      const local = paperLocal(paperRead.dataset.paperRead);
+      local.read = !local.read;
+      saveLocalState();
+      renderPapers();
+    }
+
+    const paperFavorite = event.target.closest('[data-paper-favorite]');
+    if (paperFavorite) {
+      const local = paperLocal(paperFavorite.dataset.paperFavorite);
+      local.favorite = !local.favorite;
+      saveLocalState();
+      renderPapers();
+    }
+
+    const paperArchive = event.target.closest('[data-paper-archive]');
+    if (paperArchive) {
+      const local = paperLocal(paperArchive.dataset.paperArchive);
+      local.archived = !local.archived;
+      saveLocalState();
+      renderPapers();
+    }
+
+    const productDetail = event.target.closest('[data-product-detail]');
+    if (productDetail) openProductDetail(productDetail.dataset.productDetail);
+
+    const productRead = event.target.closest('[data-product-read]');
+    if (productRead) {
+      const local = competitorLocal(productRead.dataset.productRead);
+      local.read = !local.read;
+      saveLocalState();
+      renderCompetitors();
+    }
+
+    const promote = event.target.closest('[data-promote]');
+    if (promote) updateCompetitor({ mode: 'promote', id: promote.dataset.promote });
+
+    const archive = event.target.closest('[data-archive]');
+    if (archive) updateCompetitor({ mode: 'archive', id: archive.dataset.archive });
   });
 }
 
+bindScrollEffects();
 bindEvents();
 loadAll();

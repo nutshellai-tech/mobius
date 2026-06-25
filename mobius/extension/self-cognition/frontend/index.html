@@ -3,258 +3,302 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark light">
   <title>莫比乌斯的自我认知和迭代</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.164.1"
+      }
+    }
+  </script>
   <script type="module" src="main.js"></script>
 </head>
 <body>
-  <div id="app" class="app-shell">
-    <header class="topbar">
-      <div>
-        <div class="kicker">Mobius Self-Cognition Lab</div>
-        <h1>莫比乌斯的自我认知和迭代</h1>
-      </div>
-      <div class="top-actions">
-        <button class="icon-button" id="refreshBtn" type="button" title="刷新">↻</button>
-        <button class="primary-button" id="newIdeaBtn" type="button"><span>＋</span> 新增启发</button>
-      </div>
-    </header>
+  <nav class="nav" id="topNav" aria-label="页面导航">
+    <a class="brand" href="#hero" aria-label="回到顶部">
+      <span class="brand-mark"></span>
+      <span>Self-Cognition</span>
+    </a>
+    <div class="nav-links" aria-label="主要区域">
+      <a href="#paper-section">论文</a>
+      <a href="#competitor-section">竞品</a>
+      <a href="#evolution-section">自进化</a>
+    </div>
+    <button class="nav-refresh" id="refreshBtn" type="button">刷新</button>
+  </nav>
 
-    <nav class="tabs" aria-label="工作区">
-      <button class="tab is-active" type="button" data-tab="library">研究库</button>
-      <button class="tab" type="button" data-tab="roadmap">借鉴路径</button>
-      <button class="tab" type="button" data-tab="scanner">网络扫描</button>
-      <button class="tab wide-tab" type="button" data-tab="products">相似产品的可借鉴调研</button>
-      <button class="tab" type="button" data-tab="directives">开发者指示</button>
-    </nav>
-
-    <section class="metrics" id="metrics"></section>
-
-    <main class="workspace">
-      <aside class="sidebar" id="librarySidebar">
-        <div class="filter-box">
-          <label>
-            <span>搜索</span>
-            <input id="searchInput" type="search" placeholder="论文、启发、标签">
-          </label>
-          <div class="filter-grid">
-            <label>
-              <span>状态</span>
-              <select id="statusFilter"></select>
-            </label>
-            <label>
-              <span>类型</span>
-              <select id="typeFilter"></select>
-            </label>
-          </div>
-          <label>
-            <span>标签</span>
-            <select id="tagFilter"></select>
-          </label>
+  <main>
+    <section class="hero section-light" id="hero" data-nav-theme="light" data-section="paper">
+      <canvas class="hero-canvas" id="heroCanvas" aria-hidden="true"></canvas>
+      <div class="hero-content reveal">
+        <p class="eyebrow">Mobius Research Radar</p>
+        <h1>让自我认知系统，持续追踪<span class="gradient-text">论文</span>与<span class="gradient-text">竞品</span>。</h1>
+        <p class="hero-copy">只保留两个工作台：论文跟踪与竞品跟踪。每日扫描、人工筛选、收藏归档和候选晋升，都在同一条克制的研究流里完成。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="#paper-section">查看论文跟踪</a>
+          <a class="glass-button" href="#competitor-section">查看竞品跟踪</a>
         </div>
-        <div class="list-heading">
-          <span id="listCount">0 条</span>
-          <button id="clearFiltersBtn" type="button">清除筛选</button>
+      </div>
+      <div class="hero-status reveal" id="scheduleStatus" aria-live="polite"></div>
+    </section>
+
+    <section class="section-light workspace-section paper-tone" id="paper-section" data-nav-theme="light" data-section="paper">
+      <div class="section-inner">
+        <div class="section-heading reveal">
+          <p class="eyebrow">核心能力一</p>
+          <h2>论文跟踪</h2>
+          <p>按关键词、状态、收藏筛选 arXiv 结果；查看摘要详情；用本地轻量状态完成已读、收藏、归档。</p>
         </div>
-        <div class="idea-list" id="ideaList"></div>
-      </aside>
 
-      <section class="content-pane">
-        <section class="tab-panel is-active" id="panel-library">
-          <div id="ideaDetail" class="detail-empty">正在加载研究库...</div>
-        </section>
+        <div class="tab-strip reveal" role="tablist" aria-label="工作台">
+          <button class="tab is-active" id="tab-papers" type="button" role="tab" aria-selected="true" aria-controls="panel-papers" data-tab="papers">论文跟踪</button>
+          <button class="tab" id="tab-competitors" type="button" role="tab" aria-selected="false" aria-controls="panel-competitors" data-tab="competitors">竞品跟踪</button>
+        </div>
 
-        <section class="tab-panel" id="panel-roadmap">
-          <div class="roadmap-grid" id="roadmap"></div>
-        </section>
-
-        <section class="tab-panel" id="panel-scanner">
-          <div class="scanner-layout">
-            <form id="scanForm" class="tool-panel">
-              <h2>arXiv 扫描</h2>
-              <p>按关键词拉取候选论文, 自动保存为“candidate”。保存后仍需要人工或 agent 提炼成可落地启发。</p>
-              <label>
-                <span>查询语句</span>
-                <textarea id="scanQuery" rows="4"></textarea>
-              </label>
-              <label>
-                <span>最大条数</span>
-                <input id="scanMax" type="number" min="1" max="20" value="8">
-              </label>
-              <button class="primary-button" type="submit"><span>⌕</span> 扫描并入库</button>
-            </form>
-            <div class="tool-panel">
-              <h2>扫描记录</h2>
-              <div id="scanRuns" class="run-list"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="tab-panel" id="panel-products">
-          <div class="product-layout">
-            <form id="productScanForm" class="tool-panel">
-              <h2>相似产品的可借鉴调研</h2>
-              <p>这里收录论文之外的市场产品、开源项目和相似工作台。先把竞品能力转成“对莫比乌斯有什么用”, 后续再讨论 AI 追问和真实落实权限。</p>
-              <label>
-                <span>产品页面 URL</span>
-                <input id="productUrl" type="url" placeholder="https://example.com/product" required>
-              </label>
-              <label>
-                <span>产品名称（可选）</span>
-                <input id="productName" type="text" maxlength="180" placeholder="自动抓取标题, 也可手动覆盖">
-              </label>
-              <div class="filter-grid">
-                <label>
-                  <span>类别</span>
-                  <select id="productCategory">
-                    <option value="office-agent">办公智能体</option>
-                    <option value="coding-agent">编码智能体</option>
-                    <option value="general-agent">通用智能体</option>
-                    <option value="workflow-agent">工作流智能体</option>
-                    <option value="personal-agent">个人助理</option>
-                    <option value="research-agent">研究智能体</option>
-                    <option value="other">其他</option>
-                  </select>
-                </label>
-                <label>
-                  <span>相关度</span>
-                  <input id="productRelevance" type="number" min="1" max="5" value="3">
-                </label>
+        <section class="tab-panel is-active reveal" id="panel-papers" role="tabpanel" aria-labelledby="tab-papers">
+          <div class="work-grid">
+            <aside class="control-rail">
+              <div class="panel">
+                <div class="panel-head">
+                  <div>
+                    <p class="micro">Daily scan</p>
+                    <h3>扫描状态</h3>
+                  </div>
+                  <span class="status-pill" id="paperScanPill">待加载</span>
+                </div>
+                <div class="schedule-mini" id="paperScheduleMini"></div>
+                <form id="arxivScanForm" class="stack-form">
+                  <label>
+                    <span>查询语句</span>
+                    <textarea id="arxivQuery" rows="4" placeholder="留空使用已启用论文关键词"></textarea>
+                  </label>
+                  <label>
+                    <span>拉取条数</span>
+                    <input id="arxivMax" type="number" min="1" max="500" value="100">
+                  </label>
+                  <label class="check-row">
+                    <input id="scanCompetitorsAfterArxiv" type="checkbox">
+                    <span>扫描后同步刷新正式竞品</span>
+                  </label>
+                  <button class="primary-button full" type="submit">立即扫描论文</button>
+                </form>
               </div>
-              <button class="primary-button" type="submit"><span>⌕</span> 抓取并入库</button>
-            </form>
-            <div class="tool-panel">
-              <div class="panel-head">
-                <h2>产品卡片</h2>
-                <button id="refreshProductsBtn" class="ghost-button" type="button">刷新</button>
-              </div>
-              <div id="productList" class="product-list"></div>
-              <h3 class="subhead">抓取记录</h3>
-              <div id="productScanRuns" class="run-list"></div>
-            </div>
-          </div>
-        </section>
 
-        <section class="tab-panel" id="panel-directives">
-          <div class="directive-layout">
-            <form id="directiveForm" class="tool-panel">
-              <h2>新增开发者指示</h2>
-              <label>
-                <span>标题</span>
-                <input id="directiveTitle" type="text" maxlength="180" placeholder="例如: 优先实现自迭代 lineage 视图">
-              </label>
-              <label>
-                <span>内容</span>
-                <textarea id="directiveBody" rows="6" placeholder="写清楚约束、验收标准、禁止事项或下一步要观察的指标"></textarea>
-              </label>
-              <div class="filter-grid">
+              <form class="panel" id="paperKeywordsForm">
+                <div class="panel-head">
+                  <div>
+                    <p class="micro">Keyword desk</p>
+                    <h3>关键词管理</h3>
+                  </div>
+                  <button class="text-button" type="submit">保存</button>
+                </div>
+                <textarea id="paperKeywords" rows="8" placeholder="关键词 | arXiv 查询表达式"></textarea>
+              </form>
+            </aside>
+
+            <section class="results-panel">
+              <div class="filters-row">
                 <label>
-                  <span>优先级</span>
-                  <select id="directivePriority">
-                    <option value="high">高</option>
-                    <option value="medium" selected>中</option>
-                    <option value="low">低</option>
-                  </select>
+                  <span>关键词</span>
+                  <select id="paperKeyword"></select>
                 </label>
                 <label>
                   <span>状态</span>
-                  <select id="directiveStatus">
-                    <option value="open">待处理</option>
-                    <option value="planned">已计划</option>
-                    <option value="done">已完成</option>
-                    <option value="archived">已归档</option>
+                  <select id="paperStatusFilter">
+                    <option value="">全部状态</option>
+                    <option value="unread">未读</option>
+                    <option value="read">已读</option>
+                    <option value="archived">归档</option>
                   </select>
                 </label>
+                <label>
+                  <span>收藏</span>
+                  <select id="paperFavoriteFilter">
+                    <option value="">全部</option>
+                    <option value="favorite">仅收藏</option>
+                  </select>
+                </label>
+                <label class="search-label">
+                  <span>搜索</span>
+                  <input id="paperSearch" type="search" placeholder="标题、作者、摘要">
+                </label>
               </div>
-              <button class="primary-button" type="submit"><span>＋</span> 保存指示</button>
-            </form>
-            <div id="directiveList" class="directive-list"></div>
+              <section class="top-picks" id="topPicksWrap">
+                <div class="panel-head">
+                  <div>
+                    <p class="micro">Top Picks</p>
+                    <h3>跨 cluster 优先调研</h3>
+                  </div>
+                  <span class="status-pill" id="paperClusterPill">聚类加载中</span>
+                </div>
+                <div class="top-pick-list" id="topPicksList"></div>
+              </section>
+              <div class="metric-grid" id="paperMetrics"></div>
+              <div class="cluster-list" id="clusterList"></div>
+            </section>
           </div>
         </section>
-      </section>
-    </main>
-  </div>
+      </div>
+    </section>
+
+    <section class="section-dark workspace-section product-tone" id="competitor-section" data-nav-theme="dark" data-section="product">
+      <div class="section-inner">
+        <div class="section-heading reveal">
+          <p class="eyebrow">核心能力二</p>
+          <h2>竞品跟踪</h2>
+          <p>候选与已跟踪竞品并排呈现。候选项可以一键晋升，正式竞品可随时重扫产品页快照并标记已读。</p>
+        </div>
+
+        <section class="tab-panel competitor-panel reveal" id="panel-competitors" role="tabpanel" aria-labelledby="tab-competitors">
+          <div class="work-grid">
+            <aside class="control-rail">
+              <form class="panel" id="productScanForm">
+                <div class="panel-head">
+                  <div>
+                    <p class="micro">Product page</p>
+                    <h3>竞品清单管理</h3>
+                  </div>
+                </div>
+                <label>
+                  <span>产品页 URL</span>
+                  <input id="productUrl" type="url" placeholder="https://example.com/" required>
+                </label>
+                <label>
+                  <span>名称</span>
+                  <input id="productName" type="text" maxlength="180" placeholder="留空读取页面标题">
+                </label>
+                <div class="form-grid">
+                  <label>
+                    <span>类别</span>
+                    <select id="productCategory">
+                      <option value="office-agent">办公智能体</option>
+                      <option value="coding-agent">编码智能体</option>
+                      <option value="general-agent">通用智能体</option>
+                      <option value="workflow-agent">工作流智能体</option>
+                      <option value="personal-agent">个人助理</option>
+                      <option value="research-agent">研究智能体</option>
+                      <option value="other">其他</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>状态</span>
+                    <select id="productStatus">
+                      <option value="candidate">候选</option>
+                      <option value="official">已跟踪</option>
+                    </select>
+                  </label>
+                </div>
+                <button class="primary-button full" type="submit">扫描并入库</button>
+              </form>
+
+              <form class="panel" id="productKeywordsForm">
+                <div class="panel-head">
+                  <div>
+                    <p class="micro">Discovery</p>
+                    <h3>竞品关键词</h3>
+                  </div>
+                  <button class="text-button" type="submit">保存</button>
+                </div>
+                <textarea id="productKeywords" rows="8" placeholder="关键词 | 判断查询"></textarea>
+              </form>
+            </aside>
+
+            <section class="results-panel">
+              <div class="filters-row compact">
+                <label>
+                  <span>竞品状态</span>
+                  <select id="competitorStatusFilter">
+                    <option value="">全部</option>
+                    <option value="official">已跟踪</option>
+                    <option value="candidate">候选</option>
+                    <option value="archived">归档</option>
+                  </select>
+                </label>
+                <label>
+                  <span>阅读状态</span>
+                  <select id="competitorReadFilter">
+                    <option value="">全部</option>
+                    <option value="unread">未读</option>
+                    <option value="read">已读</option>
+                  </select>
+                </label>
+                <label class="search-label">
+                  <span>搜索</span>
+                  <input id="competitorSearch" type="search" placeholder="名称、理由、快照">
+                </label>
+                <button class="glass-button light" id="refreshCompetitorsBtn" type="button">刷新竞品</button>
+              </div>
+              <div class="metric-grid" id="competitorMetrics"></div>
+              <div class="competitor-columns">
+                <section>
+                  <div class="column-head">
+                    <h3>已跟踪竞品</h3>
+                    <span id="officialCount">0</span>
+                  </div>
+                  <div class="product-list" id="officialCompetitors"></div>
+                </section>
+                <section>
+                  <div class="column-head">
+                    <h3>候选竞品区</h3>
+                    <span id="candidateCount">0</span>
+                  </div>
+                  <div class="product-list" id="candidateCompetitors"></div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="section-light evolution-section" id="evolution-section" data-nav-theme="light" data-section="evolution">
+      <div class="section-inner">
+        <div class="section-heading reveal">
+          <p class="eyebrow">自进化</p>
+          <h2>三层反馈，把改动从观察推进到落实。</h2>
+          <p>L1 是已经发生的真实修改，L2 是待审批的候选升级，L3 预留给莫比乌斯修改莫比乌斯。</p>
+        </div>
+
+        <div class="evolution-tabs reveal" role="tablist" aria-label="自进化层级">
+          <button class="evo-tab is-active" type="button" role="tab" aria-selected="true" data-evo-level="L1">L1</button>
+          <button class="evo-tab" type="button" role="tab" aria-selected="false" data-evo-level="L2">L2</button>
+          <button class="evo-tab" type="button" role="tab" aria-selected="false" data-evo-level="L3">L3</button>
+          <span class="evo-indicator" id="evoIndicator" aria-hidden="true"></span>
+        </div>
+
+        <section class="evolution-panel reveal" id="evolutionPanel">
+          <div class="evolution-toolbar">
+            <label id="evolutionProjectFilterWrap">
+              <span>Project</span>
+              <select id="evolutionProjectFilter">
+                <option value="">全部项目</option>
+              </select>
+            </label>
+            <span class="status-pill" id="evolutionSourcePill">加载中</span>
+          </div>
+          <div id="evolutionContent" class="evolution-content"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="finale section-light" data-nav-theme="light" data-section="paper">
+      <canvas class="finale-canvas" id="finaleCanvas" aria-hidden="true"></canvas>
+      <div class="section-inner narrow reveal">
+        <p class="eyebrow">Finale</p>
+        <h2>留下最必要的两个入口，让系统继续生长。</h2>
+        <p>入口路由保持为 <code>/extension/self-cognition/</code>。页面只渲染论文跟踪和竞品跟踪两个 tab，所有数据来自精简后的 handler。</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="detail-dialog" id="detailDialog">
+    <button class="dialog-close" id="dialogClose" type="button" aria-label="关闭">×</button>
+    <div id="dialogBody"></div>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <div class="modal" id="ideaModal" aria-hidden="true">
-    <div class="modal-backdrop" data-close-modal></div>
-    <form class="modal-sheet" id="ideaForm">
-      <div class="modal-head">
-        <h2 id="modalTitle">新增启发</h2>
-        <button class="icon-button" type="button" data-close-modal title="关闭">×</button>
-      </div>
-      <input type="hidden" id="ideaId">
-      <div class="form-grid">
-        <label class="span-2">
-          <span>标题</span>
-          <input id="ideaTitle" type="text" maxlength="260" required>
-        </label>
-        <label class="span-2">
-          <span>来源 URL</span>
-          <input id="ideaUrl" type="url" required>
-        </label>
-        <label>
-          <span>类型</span>
-          <select id="ideaType">
-            <option value="paper">论文</option>
-            <option value="framework">框架</option>
-            <option value="method">方法</option>
-            <option value="note">笔记</option>
-            <option value="scan">扫描候选</option>
-          </select>
-        </label>
-        <label>
-          <span>状态</span>
-          <select id="ideaStatus">
-            <option value="new">新条目</option>
-            <option value="candidate">候选</option>
-            <option value="triaged">已研判</option>
-            <option value="planned">已计划</option>
-            <option value="applied">已落地</option>
-            <option value="archived">已归档</option>
-          </select>
-        </label>
-        <label>
-          <span>相关度 1-5</span>
-          <input id="ideaRelevance" type="number" min="1" max="5" value="3">
-        </label>
-        <label>
-          <span>发布日期</span>
-          <input id="ideaPublishedAt" type="text" placeholder="2026-03-24">
-        </label>
-        <label class="span-2">
-          <span>作者</span>
-          <input id="ideaAuthors" type="text">
-        </label>
-        <label class="span-2">
-          <span>标签</span>
-          <input id="ideaTags" type="text" placeholder="逗号分隔">
-        </label>
-        <label class="span-2">
-          <span>关键启发</span>
-          <textarea id="ideaKey" rows="5" required></textarea>
-        </label>
-        <label class="span-2">
-          <span>可用于莫比乌斯</span>
-          <textarea id="ideaUse" rows="4"></textarea>
-        </label>
-        <label class="span-2">
-          <span>摘要</span>
-          <textarea id="ideaAbstract" rows="4"></textarea>
-        </label>
-        <label class="span-2">
-          <span>限制与风险</span>
-          <textarea id="ideaLimitations" rows="3"></textarea>
-        </label>
-      </div>
-      <div class="modal-actions">
-        <button class="ghost-button" type="button" data-close-modal>取消</button>
-        <button class="primary-button" type="submit"><span>✓</span> 保存</button>
-      </div>
-    </form>
-  </div>
 </body>
 </html>
