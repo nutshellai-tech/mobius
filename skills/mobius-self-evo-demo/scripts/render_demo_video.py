@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Render a Mobius self-evolution demo with animated transition title cards."""
+"""Render a Mobius self-evolution demo with typewriter transition title cards."""
 
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 from pathlib import Path
 
@@ -12,11 +11,12 @@ from pathlib import Path
 WIDTH = 1440
 HEIGHT = 900
 FPS = 25
-XF_DURATION = 0.45
 TRANSITION_1_SECONDS = 3.0
 TRANSITION_2_SECONDS = 3.8
 DEFAULT_TRANSITION_1 = "接下来，我们给小莫提出需求，提出需求"
 DEFAULT_TRANSITION_2 = "小莫会处理您的指令……|等待享用一杯咖啡的时间后……"
+TYPE_SECONDS_PER_CHAR = 0.075
+CURSOR_SECONDS = 0.32
 
 
 def run(cmd: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -39,22 +39,6 @@ def run(cmd: list[str], *, capture: bool = False) -> subprocess.CompletedProcess
     return result
 
 
-def video_duration(path: Path) -> float:
-    result = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-i", str(path)],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    text = (result.stdout or "") + (result.stderr or "")
-    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", text)
-    if not match:
-        raise SystemExit(f"Could not read duration from {path}")
-    hours, minutes, seconds = match.groups()
-    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-
-
 def ass_time(seconds: float) -> str:
     total_centis = int(round(seconds * 100))
     hours, rem = divmod(total_centis, 3600 * 100)
@@ -67,39 +51,44 @@ def ass_escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
-def write_ass(path: Path, lines: list[str], duration: float, *, variant: int) -> None:
-    if len(lines) == 1:
-        events = [
-            (
-                "0:00:00.00",
-                ass_time(duration),
-                "Title",
-                r"{\fad(280,340)\move(720,462,720,430,0,720)"
-                r"\t(0,720,\fscx106\fscy106)\t(2300,3000,\fscx98\fscy98)}"
-                + ass_escape(lines[0]),
-            )
-        ]
-    else:
-        events = [
-            (
-                "0:00:00.00",
-                ass_time(duration),
-                "Title",
-                r"{\fad(280,360)\move(720,420,720,384,0,780)"
-                r"\t(0,780,\fscx105\fscy105)\t(3000,3800,\fscx98\fscy98)}"
-                + ass_escape(lines[0]),
-            ),
-            (
-                "0:00:00.25",
-                ass_time(duration),
-                "Subtitle",
-                r"{\fad(320,360)\move(720,514,720,478,250,980)"
-                r"\t(250,980,\fscx104\fscy104)\t(3000,3800,\fscx98\fscy98)}"
-                + ass_escape(lines[1]),
-            ),
-        ]
+def join_ass_lines(lines: list[str]) -> str:
+    return r"\N".join(ass_escape(line) for line in lines)
 
-    accent = "&H0000E8FF" if variant == 1 else "&H004FD6FF"
+
+def typewriter_states(lines: list[str], duration: float) -> list[tuple[float, float, list[str]]]:
+    if not lines:
+        lines = [""]
+    states: list[tuple[float, float, list[str]]] = []
+    current = 0.28
+    visible = [""] * len(lines)
+
+    for line_index, line in enumerate(lines):
+        for char_index in range(1, len(line) + 1):
+            next_time = min(current + TYPE_SECONDS_PER_CHAR, duration - 0.28)
+            visible[line_index] = line[:char_index]
+            cursor_lines = visible.copy()
+            cursor_lines[line_index] += "|"
+            states.append((current, max(next_time, current + 0.04), cursor_lines.copy()))
+            current = next_time
+        current = min(current + 0.22, duration - 0.28)
+
+    if not states:
+        states.append((0, duration, ""))
+
+    final_text = lines.copy()
+    while current < duration - 0.24:
+        cursor_on_end = min(current + CURSOR_SECONDS, duration - 0.24)
+        states.append((current, cursor_on_end, [*final_text[:-1], final_text[-1] + "|"]))
+        current = cursor_on_end
+        cursor_off_end = min(current + CURSOR_SECONDS, duration - 0.24)
+        states.append((current, cursor_off_end, final_text))
+        current = cursor_off_end
+
+    states.append((max(duration - 0.24, 0), duration, final_text))
+    return [(start, end, text) for start, end, text in states if end > start]
+
+
+def write_ass(path: Path, lines: list[str], duration: float) -> None:
     body = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {WIDTH}
@@ -109,32 +98,26 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Title,Noto Sans CJK SC,58,&H00FFFFFF,&H00FFFFFF,&H8010182C,&H90000000,1,0,0,0,100,100,0,0,1,1.8,3.5,5,80,80,80,1
-Style: Subtitle,Noto Sans CJK SC,50,{accent},&H00FFFFFF,&H8010182C,&H90000000,1,0,0,0,100,100,0,0,1,1.6,3,5,80,80,80,1
+Style: Title,Noto Sans CJK SC,52,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,90,90,80,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    for layer, (start, end, style, text) in enumerate(events):
-        body += f"Dialogue: {layer},{start},{end},{style},,0,0,0,,{text}\n"
+    for start, end, text_lines in typewriter_states(lines, duration):
+        body += (
+            "Dialogue: 0,"
+            f"{ass_time(start)},{ass_time(end)},Title,,0,0,0,,"
+            f"{join_ass_lines(text_lines)}\n"
+        )
     path.write_text(body, encoding="utf-8")
 
 
-def render_transition(ass_path: Path, output: Path, duration: float, *, variant: int) -> None:
-    if variant == 1:
-        gradient = (
-            f"gradients=s={WIDTH}x{HEIGHT}:r={FPS}:d={duration}:"
-            "c0=0x08111F:c1=0x1D4ED8:c2=0x0F766E:n=3:type=radial:speed=0.08"
-        )
-    else:
-        gradient = (
-            f"gradients=s={WIDTH}x{HEIGHT}:r={FPS}:d={duration}:"
-            "c0=0x0A1020:c1=0x5B21B6:c2=0x92400E:n=3:type=spiral:speed=0.06"
-        )
+def render_transition(ass_path: Path, output: Path, duration: float) -> None:
+    source = f"color=c=black:s={WIDTH}x{HEIGHT}:r={FPS}:d={duration}"
     video_filter = (
         f"format=yuv420p,ass=filename={ass_path},"
-        "fade=t=in:st=0:d=0.28,"
-        f"fade=t=out:st={max(duration - 0.36, 0):.2f}:d=0.36"
+        "fade=t=in:st=0:d=0.16,"
+        f"fade=t=out:st={max(duration - 0.20, 0):.2f}:d=0.20"
     )
     run(
         [
@@ -143,7 +126,7 @@ def render_transition(ass_path: Path, output: Path, duration: float, *, variant:
             "-f",
             "lavfi",
             "-i",
-            gradient,
+            source,
             "-vf",
             video_filter,
             "-t",
@@ -226,15 +209,14 @@ def main() -> None:
     transition1_video = work_dir / "transition1-animated.mp4"
     transition2_video = work_dir / "transition2-animated.mp4"
 
-    write_ass(transition1_ass, [args.transition1], TRANSITION_1_SECONDS, variant=1)
+    write_ass(transition1_ass, [args.transition1], TRANSITION_1_SECONDS)
     write_ass(
         transition2_ass,
         [line for line in args.transition2.split("|") if line],
         TRANSITION_2_SECONDS,
-        variant=2,
     )
-    render_transition(transition1_ass, transition1_video, TRANSITION_1_SECONDS, variant=1)
-    render_transition(transition2_ass, transition2_video, TRANSITION_2_SECONDS, variant=2)
+    render_transition(transition1_ass, transition1_video, TRANSITION_1_SECONDS)
+    render_transition(transition2_ass, transition2_video, TRANSITION_2_SECONDS)
 
     inputs = [part1, transition1_video, part2, transition2_video, part3]
     render_final(inputs, output)

@@ -173,10 +173,10 @@ the route is mounted without mutating the repository.
 Always deliver MP4. Keep WebM intermediates if useful, but the final shared
 artifact should be MP4.
 
-Always insert two animated transition title cards between the three recorded
-clips. The title cards must not be static black frames. Use a moving gradient or
-motion background, fading text, and slight text movement/scale so the transition
-feels deliberate:
+Always insert two transition title cards between the three recorded clips. Keep
+them plain: black background, white text, and a typewriter effect that reveals
+the text character by character. Avoid colorful gradients or decorative motion
+unless the user explicitly asks for a stylized transition.
 
 - Between clip 1 and clip 2:
   `接下来，我们给小莫提出需求，提出需求`
@@ -185,8 +185,8 @@ feels deliberate:
 
 Prefer the bundled renderer because the local static `ffmpeg` may not include
 the `drawtext` filter, and `xfade` can fail when an input loses constant-frame-
-rate metadata. The renderer uses ASS subtitles for dynamic text effects,
-moving gradient backgrounds, internal fades, and normalized MP4 concatenation:
+rate metadata. The renderer uses ASS subtitles for Chinese typewriter text,
+black `color` video sources, internal fades, and normalized MP4 concatenation:
 
 ```bash
 python3 skills/mobius-self-evo-demo/scripts/render_demo_video.py \
@@ -274,11 +274,11 @@ after-state UI.
 - Browser display: `DISPLAY` can be empty while stale X11 sockets exist. A
   smoke test may pass once and later headful launch can hang. Prefer headless
   Playwright recording for reliability unless a visible browser is truly needed.
-- Video effects: the local static `ffmpeg` may have `ass`, `gradients`, and
-  `xfade` but no `drawtext`. Prefer ASS subtitle animation for Chinese title
-  cards. If `xfade` rejects inputs as non-constant-frame-rate, use animated
-  transition clips with normalized concat instead of installing another ffmpeg
-  build.
+- Video effects: the local static `ffmpeg` may have `ass` and `xfade` but no
+  `drawtext`. Prefer ASS subtitle animation for Chinese title cards. Keep the
+  default transition plain: black background, white text, and typewriter reveal.
+  If `xfade` rejects inputs as non-constant-frame-rate, use transition clips
+  with normalized concat instead of installing another ffmpeg build.
 - Service discovery: automated dev-server detection can miss Mobius production
   port. Trust `/api/v2/health`.
 - Selectors: aria labels are not body text. Wait for selectors such as
