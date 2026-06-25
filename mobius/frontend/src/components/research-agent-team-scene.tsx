@@ -65,6 +65,8 @@ type SceneProps = {
   theme: ThemeName
   sceneKind?: SceneKind
   avatarKind?: AvatarKind
+  canAdd?: boolean
+  onAdd?: () => void
 }
 
 type SceneTarget = {
@@ -546,7 +548,88 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   return { group, clickable }
 }
 
-export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot' }: SceneProps) {
+function makeAddLabelTexture(theme: SceneProps['theme']) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')!
+  const palette = paletteForTheme(theme)
+  const accent = '#10b981'
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.shadowColor = theme === 'light' ? 'rgba(15,23,42,0.16)' : 'rgba(0,0,0,0.42)'
+  ctx.shadowBlur = 16
+  ctx.shadowOffsetY = 8
+  roundRect(ctx, 18, 14, 476, 100, 18)
+  ctx.fillStyle = palette.labelBg
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.lineWidth = 3
+  ctx.setLineDash([12, 9])
+  ctx.strokeStyle = accent
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  ctx.font = '700 30px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  ctx.fillStyle = accent
+  ctx.textAlign = 'center'
+  ctx.fillText('＋  添加 Agent', canvas.width / 2, 76)
+  ctx.textAlign = 'left'
+
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
+}
+
+// "+" 占位槽: emerald 光圈/虚线感圆环 + 3D 十字(立在 xy 平面, 从相机侧 +z 看是完整加号). 点击触发 onAdd.
+function makeAddNode(theme: SceneProps['theme']) {
+  const emerald = 0x10b981
+  const glowMat = new MeshBasicMaterial({
+    color: emerald,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  })
+  const ringMat = new MeshBasicMaterial({
+    color: emerald,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  })
+  const barMat = new MeshStandardMaterial({
+    color: emerald,
+    roughness: 0.42,
+    metalness: 0.3,
+    emissive: new Color(emerald).multiplyScalar(theme === 'light' ? 0.06 : 0.14),
+    transparent: true,
+    opacity: 0.9,
+  })
+
+  const group = new Group()
+  const pad = new Mesh(new CircleGeometry(0.74, 56), glowMat)
+  pad.rotation.x = -Math.PI / 2
+  pad.scale.z = 0.48
+  pad.position.y = 0.012
+
+  const ring = new Mesh(new TorusGeometry(0.58, 0.014, 8, 96), ringMat.clone())
+  ring.rotation.x = Math.PI / 2
+  ring.scale.z = 0.6
+  ring.position.y = 0.055
+
+  const barH = new Mesh(new BoxGeometry(0.72, 0.16, 0.16), barMat)
+  barH.position.y = 0.78
+  const barV = new Mesh(new BoxGeometry(0.16, 0.72, 0.16), barMat.clone())
+  barV.position.y = 0.78
+  group.add(pad, ring, barH, barV)
+
+  const clickable: Object3D[] = [barH, barV]
+  group.traverse((child) => { child.userData.addNode = true })
+  return { group, clickable }
+}
+
+export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sceneKind, avatarKind = 'robot', canAdd = false, onAdd }: SceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const sceneRef = useRef<Scene | null>(null)
@@ -559,13 +642,16 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
   const clickableRef = useRef<Object3D[]>([])
   const frameRef = useRef<number | null>(null)
   const onSelectRef = useRef(onSelect)
+  const onAddRef = useRef(onAdd)
   const lastLayoutKeyRef = useRef('')
 
-  const positions = useMemo(() => layoutAgents(agents.length), [agents.length])
+  const slotCount = agents.length + (canAdd ? 1 : 0)
+  const positions = useMemo(() => layoutAgents(slotCount), [slotCount])
 
   useEffect(() => {
     onSelectRef.current = onSelect
-  }, [onSelect])
+    onAddRef.current = onAdd
+  }, [onSelect, onAdd])
 
   useEffect(() => {
     const host = hostRef.current
@@ -647,6 +733,8 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
       pointerRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
       raycasterRef.current.setFromCamera(pointerRef.current, camera)
       const hits = raycasterRef.current.intersectObjects(clickableRef.current, true)
+      const addHit = hits.find(item => item.object.userData.addNode)
+      if (addHit) { onAddRef.current?.(); return }
       const hit = hits.find(item => item.object.userData.agentId)
       const id = hit?.object?.userData?.agentId
       if (id) onSelectRef.current(String(id))
@@ -735,7 +823,30 @@ export function ResearchAgentTeamScene({ agents, selectedId, onSelect, theme, sc
       pieceRoot.add(group)
       clickableRef.current.push(...clickable)
     })
-  }, [agents, positions, selectedId, theme, sceneKind, avatarKind])
+
+    if (canAdd) {
+      const position = positions[agents.length] || new Vector3()
+      const { group, clickable } = makeAddNode(theme)
+      const depthScale = clamp(1.02 + (position.z - target.center.z) * 0.035, 0.9, 1.14)
+      group.position.copy(position)
+      group.scale.setScalar(depthScale)
+
+      const texture = makeAddLabelTexture(theme)
+      const sprite = new Sprite(new SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      }))
+      sprite.renderOrder = 4
+      sprite.position.set(0, 2.05, 0.08)
+      sprite.scale.set(2.4, 0.6, 1)
+      group.add(sprite)
+
+      pieceRoot.add(group)
+      clickableRef.current.push(...clickable)
+    }
+  }, [agents, positions, selectedId, theme, sceneKind, avatarKind, canAdd])
 
   return (
     <div className="relative h-full min-h-[360px] overflow-hidden rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
