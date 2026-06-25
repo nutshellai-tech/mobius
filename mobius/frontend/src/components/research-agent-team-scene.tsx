@@ -55,9 +55,9 @@ export type ResearchTeamSceneAgent = {
 // 九个截然不同的场景 (灵感取自 threejs.org 经典示例: 城市天际线 / 研究实验室 / 深空星港 /
 // 霓虹合成波网格 / 螺旋粒子星河 / 镜面海面 / 极光山谷 / 机械机库 / 全息训练场).
 export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora' | 'hangar' | 'grid'
-// 十一个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
-// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人.
-export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid'
+// 十六个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
+// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人 / 飞碟 / 火箭 / 水母 / 原子 / 花朵.
+export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid' | 'ufo' | 'rocket' | 'jellyfish' | 'atom' | 'flower'
 
 export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'city', label: '城市天际线' },
@@ -82,6 +82,11 @@ export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'mech', label: '人形机甲' },
   { value: 'rover', label: '探测车' },
   { value: 'droid', label: '宇航机器人' },
+  { value: 'ufo', label: '飞碟' },
+  { value: 'rocket', label: '火箭' },
+  { value: 'jellyfish', label: '水母' },
+  { value: 'atom', label: '原子' },
+  { value: 'flower', label: '花朵' },
 ]
 
 type SceneProps = {
@@ -1368,6 +1373,105 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     clickable.push(ball, dome)
     spin(bodySpin, 0.4)
     updaters.push((t) => { head.rotation.z = Math.sin(t * 0.8 + phase) * 0.06; head.position.x = Math.sin(t * 0.8 + phase) * 0.03 })
+  } else if (avatarKind === 'ufo') {
+    // 飞碟: 扁球碟身 + 顶部圆顶 + 旋转闪烁的舷灯环 + 底部反向旋转光圈 (悬浮).
+    const saucer = new Mesh(new SphereGeometry(0.58, 32, 24), bodyMat); saucer.scale.set(1, 0.34, 1); saucer.position.y = 0.72
+    const dome = new Mesh(new SphereGeometry(0.26, 24, 18), topMat); dome.scale.set(1, 0.85, 1); dome.position.y = 0.96
+    const domeRing = new Mesh(new TorusGeometry(0.27, 0.02, 8, 32), glowMat.clone()); domeRing.rotation.x = Math.PI / 2; domeRing.position.y = 0.86
+    const rim = new Group(); rim.position.y = 0.66
+    const ledMats: MeshBasicMaterial[] = []
+    for (let i = 0; i < 8; i += 1) {
+      const a = i / 8 * Math.PI * 2
+      const mat = glowMat.clone()
+      const led = new Mesh(new SphereGeometry(0.04, 10, 10), mat); led.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5)
+      rim.add(led); ledMats.push(mat)
+    }
+    const under = new Mesh(new TorusGeometry(0.4, 0.03, 8, 40), glowMat.clone()); under.rotation.x = Math.PI / 2; under.position.y = 0.5
+    pivot.add(saucer, dome, domeRing, rim, under)
+    clickable.push(saucer, dome)
+    spin(rim, 0.8); spin(under, -1.3)
+    updaters.push((t) => { ledMats.forEach((m, i) => { m.opacity = 0.3 + Math.abs(Math.sin(t * 3 + i * 0.6)) * 0.6 }) })
+  } else if (avatarKind === 'rocket') {
+    // 火箭: 圆柱箭体 + 锥形头 + 舷窗 + 3 尾翼 + 尾焰(外橙内黄, 闪烁抖动). 微摆如待发射.
+    const hull = new Mesh(new CylinderGeometry(0.22, 0.24, 0.9, 20), bodyMat); hull.position.y = 0.82
+    const nose = new Mesh(new ConeGeometry(0.22, 0.42, 20), bodyMat); nose.position.y = 1.48
+    const belt = new Mesh(new TorusGeometry(0.245, 0.03, 8, 24), topMat); belt.rotation.x = Math.PI / 2; belt.position.y = 1.0
+    const port = new Mesh(new CircleGeometry(0.085, 20), visorMat); port.position.set(0, 1.05, 0.235)
+    const finGeo = new BoxGeometry(0.04, 0.32, 0.24)
+    for (let i = 0; i < 3; i += 1) {
+      const a = i / 3 * Math.PI * 2
+      const fin = new Mesh(finGeo, topMat); fin.position.set(Math.cos(a) * 0.26, 0.55, Math.sin(a) * 0.26); fin.rotation.y = -a
+      pivot.add(fin); clickable.push(fin)
+    }
+    const flameOutMat = new MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.7, blending: AdditiveBlending, depthWrite: false })
+    const flameInMat = new MeshBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false })
+    const flameOut = new Mesh(new ConeGeometry(0.18, 0.5, 16), flameOutMat); flameOut.rotation.x = Math.PI; flameOut.position.y = 0.2
+    const flameIn = new Mesh(new ConeGeometry(0.1, 0.34, 16), flameInMat); flameIn.rotation.x = Math.PI; flameIn.position.y = 0.26
+    pivot.add(hull, nose, belt, port, flameOut, flameIn)
+    clickable.push(hull, nose, belt)
+    updaters.push((t) => {
+      pivot.rotation.z = Math.sin(t * 2 + phase) * 0.04
+      const f = 0.8 + Math.sin(t * 18) * 0.22
+      flameOut.scale.set(f, 0.9 + Math.sin(t * 16) * 0.18, f); flameOutMat.opacity = 0.5 + Math.abs(Math.sin(t * 13)) * 0.3
+      flameIn.scale.set(f, 0.9 + Math.sin(t * 21) * 0.2, f)
+    })
+  } else if (avatarKind === 'jellyfish') {
+    // 水母: 半球形伞盖(半透明发光) + 8 条飘动触手 (空灵漂浮).
+    const bellMat = bodyMat.clone(); bellMat.transparent = true; bellMat.opacity = 0.82
+    const bell = new Mesh(new SphereGeometry(0.55, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2), bellMat); bell.position.y = 0.92
+    const inner = new Mesh(new SphereGeometry(0.4, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), glowMat.clone()); inner.position.y = 0.92
+    const tentacles: Mesh[] = []
+    for (let i = 0; i < 8; i += 1) {
+      const a = i / 8 * Math.PI * 2
+      const r = 0.34
+      const len = 0.55 + (i % 3) * 0.16
+      const tg = new Mesh(new CylinderGeometry(0.016, 0.006, len, 8), glowMat.clone())
+      tg.position.set(Math.cos(a) * r, 0.92 - len / 2, Math.sin(a) * r)
+      pivot.add(tg); tentacles.push(tg)
+    }
+    pivot.add(bell, inner)
+    clickable.push(bell)
+    updaters.push((t) => {
+      const p = 1 + Math.sin(t * 1.4) * 0.06
+      bell.scale.set(p, 1 + Math.sin(t * 1.4) * 0.09, p); inner.scale.copy(bell.scale)
+      tentacles.forEach((tg, i) => { tg.rotation.x = Math.sin(t * 1.2 + i) * 0.22; tg.rotation.z = Math.cos(t * 1.0 + i) * 0.22 })
+    })
+  } else if (avatarKind === 'atom') {
+    // 原子: 发光原子核 + 3 条倾斜电子轨道环 + 各自电子绕行 (科技感).
+    const nucleus = new Mesh(new SphereGeometry(0.24, 28, 22), bodyMat); nucleus.position.y = 0.85
+    const halo = new Mesh(new SphereGeometry(0.3, 20, 16), glowMat.clone()); halo.position.y = 0.85
+    for (let i = 0; i < 3; i += 1) {
+      const og = new Group(); og.position.y = 0.85
+      og.rotation.x = Math.PI / 3 * i + 0.3
+      og.rotation.y = Math.PI / 4 * i
+      const ring = new Mesh(new TorusGeometry(0.62, 0.012, 8, 64), glowMat.clone()); og.add(ring)
+      const sg = new Group(); og.add(sg)
+      const el = new Mesh(new SphereGeometry(0.06, 12, 12), visorMat); el.position.x = 0.62; sg.add(el)
+      pivot.add(og)
+      updaters.push((t) => { sg.rotation.z = t * (1.4 + i * 0.6) })
+    }
+    pivot.add(nucleus, halo)
+    clickable.push(nucleus)
+  } else if (avatarKind === 'flower') {
+    // 花朵: 花心(黄) + 7 片花瓣 + 2 片叶 (柔和自转绽放).
+    const bloom = new Group(); bloom.position.y = 0.95
+    const pollen = new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xfbbf24).multiplyScalar(0.45), roughness: 0.4, metalness: 0.1 })
+    const center = new Mesh(new SphereGeometry(0.2, 24, 18), pollen); bloom.add(center)
+    const petalGeo = new SphereGeometry(0.24, 16, 12)
+    for (let i = 0; i < 7; i += 1) {
+      const a = i / 7 * Math.PI * 2
+      const petal = new Mesh(petalGeo, bodyMat); petal.scale.set(1, 0.22, 0.55)
+      petal.position.set(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3); petal.rotation.y = -a; petal.rotation.x = -0.45
+      bloom.add(petal); clickable.push(petal)
+    }
+    const leafGeo = new SphereGeometry(0.2, 14, 10)
+    const leafL = new Mesh(leafGeo, topMat); leafL.scale.set(1, 0.18, 0.5); leafL.position.set(-0.42, -0.18, 0); leafL.rotation.z = 0.6
+    const leafR = new Mesh(leafGeo, topMat); leafR.scale.set(1, 0.18, 0.5); leafR.position.set(0.42, -0.18, 0); leafR.rotation.z = -0.6
+    bloom.add(leafL, leafR)
+    pivot.add(bloom)
+    clickable.push(center)
+    spin(bloom, 0.25)
+    updaters.push((t) => { bloom.scale.setScalar(1 + Math.sin(t * 1.2) * 0.05) })
   } else {
     // robot (默认): 方块机器人
     const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
