@@ -11,8 +11,11 @@ from pathlib import Path
 WIDTH = 1440
 HEIGHT = 900
 FPS = 25
+INTRO_SECONDS = 4.6
 TRANSITION_1_SECONDS = 3.0
 TRANSITION_2_SECONDS = 3.8
+TRIM_START_SECONDS = 2.0
+DEFAULT_INTRO = "让我们来尝试...(在这里阐述本次自进化的目标)...，|首先我们看一下自我迭代之前的样子。"
 DEFAULT_TRANSITION_1 = "接下来，我们给小莫提出需求，提出需求"
 DEFAULT_TRANSITION_2 = "小莫会处理您的指令……|等待享用一杯咖啡的时间后……"
 TYPE_SECONDS_PER_CHAR = 0.075
@@ -145,22 +148,25 @@ def render_transition(ass_path: Path, output: Path, duration: float) -> None:
     )
 
 
-def render_final(inputs: list[Path], output: Path) -> None:
+def render_final(segments: list[tuple[Path, float]], output: Path) -> None:
     norm = (
         f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,"
         f"pad={WIDTH}:{HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
         f"fps={FPS},format=yuv420p,settb=AVTB,setpts=PTS-STARTPTS"
     )
     filters: list[str] = []
-    for index in range(len(inputs)):
-        filters.append(f"[{index}:v]{norm}[v{index}]")
+    for index, (_, trim_start) in enumerate(segments):
+        filters.append(
+            f"[{index}:v]trim=start={max(trim_start, 0):.2f},"
+            f"setpts=PTS-STARTPTS,{norm}[v{index}]"
+        )
 
     filters.append(
-        "".join(f"[v{index}]" for index in range(len(inputs)))
-        + f"concat=n={len(inputs)}:v=1:a=0,format=yuv420p[vout]"
+        "".join(f"[v{index}]" for index in range(len(segments)))
+        + f"concat=n={len(segments)}:v=1:a=0,format=yuv420p[vout]"
     )
     cmd = ["ffmpeg", "-y"]
-    for input_path in inputs:
+    for input_path, _ in segments:
         cmd.extend(["-i", str(input_path)])
     cmd.extend(
         [
@@ -188,8 +194,10 @@ def main() -> None:
     parser.add_argument("--part2", default="/tmp/imac-demo-video/part2-request.webm")
     parser.add_argument("--part3", default="/tmp/imac-demo-video/part3-after.webm")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--intro", default=DEFAULT_INTRO)
     parser.add_argument("--transition1", default=DEFAULT_TRANSITION_1)
     parser.add_argument("--transition2", default=DEFAULT_TRANSITION_2)
+    parser.add_argument("--trim-start", type=float, default=TRIM_START_SECONDS)
     args = parser.parse_args()
 
     work_dir = Path(args.work_dir)
@@ -204,11 +212,15 @@ def main() -> None:
         if not path.exists():
             raise SystemExit(f"Missing input clip: {path}")
 
+    intro_ass = work_dir / "intro.ass"
     transition1_ass = work_dir / "transition1.ass"
     transition2_ass = work_dir / "transition2.ass"
+    intro_video = work_dir / "intro-animated.mp4"
     transition1_video = work_dir / "transition1-animated.mp4"
     transition2_video = work_dir / "transition2-animated.mp4"
 
+    write_ass(intro_ass, [line for line in args.intro.split("|") if line], INTRO_SECONDS)
+    render_transition(intro_ass, intro_video, INTRO_SECONDS)
     write_ass(transition1_ass, [args.transition1], TRANSITION_1_SECONDS)
     write_ass(
         transition2_ass,
@@ -218,8 +230,15 @@ def main() -> None:
     render_transition(transition1_ass, transition1_video, TRANSITION_1_SECONDS)
     render_transition(transition2_ass, transition2_video, TRANSITION_2_SECONDS)
 
-    inputs = [part1, transition1_video, part2, transition2_video, part3]
-    render_final(inputs, output)
+    segments = [
+        (intro_video, 0.0),
+        (part1, args.trim_start),
+        (transition1_video, 0.0),
+        (part2, args.trim_start),
+        (transition2_video, 0.0),
+        (part3, args.trim_start),
+    ]
+    render_final(segments, output)
     print(output)
 
 

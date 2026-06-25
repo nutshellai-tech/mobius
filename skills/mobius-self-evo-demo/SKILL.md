@@ -7,12 +7,14 @@ description: Produce a Mobius self-evolution demo video for requests that ask to
 
 Use this skill to create a reproducible Mobius self-evolution demo:
 
+1. Record an opening introduction card that frames the self-evolution goal.
 1. Record the current UI before the change.
 2. Record the user requirement being typed into Xiao Mo.
 3. Implement the requirement.
 4. Record the changed UI.
-5. Insert animated transition title cards between the clips.
-6. Concatenate the clips and convert the final video to MP4.
+5. Insert plain black title cards with typewriter text between the clips.
+6. Trim the first 2 seconds from each recorded clip before final assembly.
+7. Concatenate the clips and convert the final video to MP4.
 
 ## Required Rules
 
@@ -173,10 +175,18 @@ the route is mounted without mutating the repository.
 Always deliver MP4. Keep WebM intermediates if useful, but the final shared
 artifact should be MP4.
 
-Always insert two transition title cards between the three recorded clips. Keep
-them plain: black background, white text, and a typewriter effect that reveals
-the text character by character. Avoid colorful gradients or decorative motion
-unless the user explicitly asks for a stylized transition.
+Always start with a black introduction card that says:
+
+- `让我们来尝试...(在这里阐述本次自进化的目标)...，`
+- `首先我们看一下自我迭代之前的样子。`
+
+Then insert plain black transition title cards between the three recorded
+clips. Keep them plain: black background, white text, and a typewriter effect
+that reveals the text character by character. Avoid colorful gradients or
+decorative motion unless the user explicitly asks for a stylized transition.
+
+Trim the first 2 seconds from each recorded clip before final assembly, because
+the beginning often shows the page just opening.
 
 - Between clip 1 and clip 2:
   `接下来，我们给小莫提出需求，提出需求`
@@ -194,11 +204,14 @@ python3 skills/mobius-self-evo-demo/scripts/render_demo_video.py \
   --part1 /tmp/imac-demo-video/part1-before.webm \
   --part2 /tmp/imac-demo-video/part2-request.webm \
   --part3 /tmp/imac-demo-video/part3-after.webm \
+  --intro "让我们来尝试...(在这里阐述本次自进化的目标)...，|首先我们看一下自我迭代之前的样子。" \
+  --trim-start 2 \
   --output .imac/generated_videos/<session-or-flag-id>/self-evolution-demo.mp4
 ```
 
 The renderer creates:
 
+- `intro-animated.mp4`
 - `transition1-animated.mp4`
 - `transition2-animated.mp4`
 - the final `self-evolution-demo.mp4`
@@ -276,7 +289,8 @@ after-state UI.
   Playwright recording for reliability unless a visible browser is truly needed.
 - Video effects: the local static `ffmpeg` may have `ass` and `xfade` but no
   `drawtext`. Prefer ASS subtitle animation for Chinese title cards. Keep the
-  default transition plain: black background, white text, and typewriter reveal.
+  default cards plain: black background, white text, and typewriter reveal.
+  Trim the first 2 seconds from each recorded clip before the final render.
   If `xfade` rejects inputs as non-constant-frame-rate, use transition clips
   with normalized concat instead of installing another ffmpeg build.
 - Service discovery: automated dev-server detection can miss Mobius production
