@@ -34,6 +34,7 @@ const FRONTEND_RELATIVE = 'frontend';
 // RegistryEntry: {
 //   name, display_name, description, version, icon, icon_url?,
 //   dir, handler_path, frontend_dir, data_dir,
+//   project: { sync, default_hidden },
 //   manifest_mtime, errors: []
 // }
 const registry = new Map();
@@ -128,6 +129,10 @@ function scanFilesystem() {
       description: typeof manifest.description === 'string' ? manifest.description.slice(0, 2000) : '',
       version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
       icon_url: iconUrl,
+      project: {
+        sync: !manifest.project || manifest.project.sync !== false,
+        default_hidden: !!(manifest.project && manifest.project.default_hidden === true),
+      },
       dir,
       handler_path: path.join(dir, HANDLER_RELATIVE),
       frontend_dir: path.join(dir, FRONTEND_RELATIVE),
@@ -142,6 +147,7 @@ function syncWithDb(found) {
   ensureSystemUser();
   // 1. upsert 当前发现的拓展
   for (const [name, entry] of found.entries()) {
+    if (entry.project && entry.project.sync === false) continue;
     Projects.upsertExtension({
       id: `ext_${name}`,
       name: entry.display_name,
@@ -149,12 +155,14 @@ function syncWithDb(found) {
       createdBy: EXTENSION_SYSTEM_USER_ID,
       bindPath: APP_DIR,
       extensionName: name,
+      defaultHidden: !!(entry.project && entry.project.default_hidden),
     });
   }
   // 2. 目录已消失的拓展 → 标 disabled, 保留行 (用户数据不丢)
   const dbRows = Projects.listExtensions();
   for (const row of dbRows) {
-    const stillThere = row.extension_name && found.has(row.extension_name);
+    const entry = row.extension_name ? found.get(row.extension_name) : null;
+    const stillThere = !!(entry && (!entry.project || entry.project.sync !== false));
     const shouldDisable = !stillThere;
     if (shouldDisable !== row.disabled) {
       Projects.setExtensionDisabled(row.extension_name, shouldDisable);

@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Download, FolderOpen, Plus, Trash2, Upload, X } from 'lucide-react'
+import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { MemoriesManager } from '../memories'
 import { OpenInVSCodeButton } from '../project-files'
@@ -120,6 +120,14 @@ type GitTrackingState = {
   updated_at?: string
 }
 
+type GitTrackingAction = 'pull' | 'push' | 'stage'
+
+const GIT_TRACKING_ACTIONS: Array<{ key: GitTrackingAction; label: string; description: string }> = [
+  { key: 'pull', label: '拉取', description: 'git pull --ff-only' },
+  { key: 'push', label: '推送', description: 'git push' },
+  { key: 'stage', label: '暂存', description: 'git add -A' },
+]
+
 function formatCommitDate(date: string) {
   const d = new Date(date)
   if (isNaN(d.getTime())) return ''
@@ -158,6 +166,11 @@ function GitTrackingPanel({
   hardResettingHash,
   deployMessage,
   deployError,
+  canRunGitAction,
+  gitActionRunning,
+  gitActionMessage,
+  gitActionError,
+  onGitAction,
   onDeployVersion,
   onHardResetVersion,
 }: {
@@ -172,10 +185,18 @@ function GitTrackingPanel({
   hardResettingHash?: string
   deployMessage?: string
   deployError?: string
+  canRunGitAction?: boolean
+  gitActionRunning?: GitTrackingAction | ''
+  gitActionMessage?: string
+  gitActionError?: string
+  onGitAction?: (action: GitTrackingAction) => void
   onDeployVersion?: (commit: GitTrackingCommit) => void
   onHardResetVersion?: (commit: GitTrackingCommit) => void
 }) {
   const commits = data?.commits || []
+  const [gitMenuOpen, setGitMenuOpen] = useState(false)
+  const showGitActionMenu = !!data?.available && !!canRunGitAction && !!onGitAction
+  const gitActionBusy = !!gitActionRunning
   const statusText = data?.dirty
     ? `有 ${data.dirty_count || 0} 个未提交变更`
     : '工作区干净'
@@ -198,10 +219,61 @@ function GitTrackingPanel({
               : (data?.reason || error || '绑定路径下未检测到 Git 仓库')}
           </div>
         </div>
-        <button type="button" onClick={onRefresh} disabled={loading}
-          className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50">
-          {loading ? '刷新中...' : '刷新'}
-        </button>
+        <div className="relative flex shrink-0 items-center gap-2">
+          <button type="button" onClick={onRefresh} disabled={loading}
+            className="h-8 px-3 rounded-lg text-[12px] bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors border border-blue-500/20 disabled:opacity-50">
+            {loading ? '刷新中...' : '刷新'}
+          </button>
+          {showGitActionMenu && (
+            <>
+              {gitMenuOpen && (
+                <button
+                  type="button"
+                  aria-label="关闭 Git 操作菜单"
+                  className="fixed inset-0 z-20 cursor-default bg-transparent"
+                  onClick={() => setGitMenuOpen(false)}
+                />
+              )}
+              <button
+                type="button"
+                aria-label="Git 操作"
+                title="Git 操作"
+                disabled={loading || gitActionBusy}
+                onClick={() => setGitMenuOpen((value) => !value)}
+                className="relative z-30 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-500/20 bg-blue-500/10 text-blue-400 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+                <MoreHorizontal className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+              {gitMenuOpen && (
+                <div className="absolute right-0 top-10 z-30 w-44 overflow-hidden rounded-lg border shadow-xl"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                  {GIT_TRACKING_ACTIONS.map((item) => {
+                    const runningThisAction = gitActionRunning === item.key
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        disabled={gitActionBusy}
+                        onClick={() => {
+                          setGitMenuOpen(false)
+                          onGitAction?.(item.key)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-55"
+                        style={{ color: 'var(--text-primary)' }}>
+                        {item.key === 'pull' ? <Download className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} /> : null}
+                        {item.key === 'push' ? <Upload className="h-3.5 w-3.5 text-emerald-400" strokeWidth={1.8} /> : null}
+                        {item.key === 'stage' ? <Plus className="h-3.5 w-3.5 text-amber-400" strokeWidth={1.8} /> : null}
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{runningThisAction ? `${item.label}中...` : item.label}</span>
+                          <span className="block truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.description}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {loading && !data && (
@@ -225,6 +297,18 @@ function GitTrackingPanel({
       {deployError && (
         <div className="text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
           {deployError}
+        </div>
+      )}
+
+      {gitActionMessage && (
+        <div className="text-[12px] px-3 py-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+          {gitActionMessage}
+        </div>
+      )}
+
+      {gitActionError && (
+        <div className="whitespace-pre-wrap text-[12px] px-3 py-2 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400">
+          {gitActionError}
         </div>
       )}
 
@@ -453,10 +537,14 @@ export function ProjectSettingsPanel({
   const [hardResettingHash, setHardResettingHash] = useState('')
   const [deployMessage, setDeployMessage] = useState('')
   const [deployError, setDeployError] = useState('')
+  const [gitActionRunning, setGitActionRunning] = useState<GitTrackingAction | ''>('')
+  const [gitActionMessage, setGitActionMessage] = useState('')
+  const [gitActionError, setGitActionError] = useState('')
   const [, setImportDemoRefreshKey] = useState(0)
   const [importUploadConfirmBusy, setImportUploadConfirmBusy] = useState(false)
   const [importCleanupBusy, setImportCleanupBusy] = useState(false)
   const [importGuideMessage, setImportGuideMessage] = useState('')
+  const [bindPathCopied, setBindPathCopied] = useState(false)
   const importDemoState = readProjectImportDemoState()
   const contextDemoState = readContextSetupDemoState()
   const importDemoActiveForProject = !!importDemoState?.active && importDemoState.projectId === project?.id
@@ -668,6 +756,32 @@ export function ProjectSettingsPanel({
     }
   }
 
+  const runGitTrackingAction = async (action: GitTrackingAction) => {
+    if (!project?.id || gitActionRunning) return
+    setGitActionRunning(action)
+    setGitActionMessage('')
+    setGitActionError('')
+    setDeployMessage('')
+    setDeployError('')
+    try {
+      const result = await api(`/api/projects/${project.id}/git-action`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      })
+      if (result?.tracking) {
+        setGitTracking(result.tracking)
+      } else {
+        await loadGitTracking()
+      }
+      setGitActionMessage(result?.message || 'Git 操作完成')
+    } catch (e: any) {
+      setGitActionError(e?.message || 'Git 操作失败')
+      loadGitTracking().catch(() => {})
+    } finally {
+      setGitActionRunning('')
+    }
+  }
+
   const hardResetVersion = async (commit: GitTrackingCommit) => {
     if (!project?.id || !commit?.hash || deployingHash || hardResettingHash) return
     setHardResettingHash(commit.hash)
@@ -777,6 +891,11 @@ export function ProjectSettingsPanel({
           hardResettingHash={hardResettingHash}
           deployMessage={deployMessage}
           deployError={deployError}
+          canRunGitAction={canManageProject}
+          gitActionRunning={gitActionRunning}
+          gitActionMessage={gitActionMessage}
+          gitActionError={gitActionError}
+          onGitAction={runGitTrackingAction}
           onDeployVersion={deployOtherVersion}
           onHardResetVersion={hardResetVersion}
         />
@@ -836,10 +955,18 @@ export function ProjectSettingsPanel({
                     />
                   )}
                   {editBindPath && (
-                    <button type="button" disabled={!canManageProject} onClick={() => { setEditBindPath(''); setEditBindPathManual(false) }} title="清除绑定路径" aria-label="清除绑定路径"
-                      className="h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] hover:bg-red-500/10 hover:text-red-400 transition-colors border disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
-                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
-                      <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    <button type="button" onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(editBindPath)
+                        setBindPathCopied(true)
+                        setTimeout(() => setBindPathCopied(false), 1200)
+                      } catch {
+                        setBindPathCopied(false)
+                      }
+                    }} title={bindPathCopied ? '已复制' : '复制路径'} aria-label={bindPathCopied ? '已复制' : '复制路径'}
+                      className={`h-9 w-9 rounded-lg text-[12px] bg-[var(--bg-card-hover)] ${bindPathCopied ? 'text-emerald-400' : 'hover:bg-blue-500/10 hover:text-blue-400'} transition-colors border flex items-center justify-center`}
+                      style={{ color: bindPathCopied ? undefined : 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      {bindPathCopied ? <span className="text-[11px] font-medium">已复制</span> : <Copy className="h-3.5 w-3.5" strokeWidth={1.8} />}
                     </button>
                   )}
                   {importDemoActiveForProject && uploadSampleDownloadUrl && (

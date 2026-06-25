@@ -29,7 +29,8 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { tmux } = require('./tmux-operation-log')
+const { log, tmux } = require('./tmux-operation-log')
+const { take_tmux_window_text } = require('./tmux_utils')
 
 let Database = null
 try { Database = require('better-sqlite3') } catch {}
@@ -90,7 +91,7 @@ function ensureHub() {
   if (hubExists()) return
   const r = tmux(['new-session', '-d', '-s', HUB, '-n', '_root'])
   if (r.status !== 0) throw new Error(`tmux new-session failed: ${r.stderr}`)
-  console.log(`[tmux-codex] created tmux session ${HUB}`)
+  log(`[tmux-codex] created tmux session ${HUB}`)
 }
 
 function windowExists(name) {
@@ -169,7 +170,7 @@ function ensureProjectTrusted(cwd) {
     if (start < 0) {
       if (text && !text.endsWith('\n')) text += '\n'
       fs.writeFileSync(CODEX_CONFIG, `${text}\n${header}\ntrust_level = "trusted"\n`)
-      console.log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
+      log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
       return true
     }
 
@@ -188,7 +189,7 @@ function ensureProjectTrusted(cwd) {
     const tmp = `${CODEX_CONFIG}.imac-tmp-${process.pid}-${Date.now()}`
     fs.writeFileSync(tmp, lines.join('\n'))
     fs.renameSync(tmp, CODEX_CONFIG)
-    console.log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
+    log(`[tmux-codex] trusted project in ${CODEX_CONFIG}: ${path.resolve(cwd)}`)
     return true
   } catch (e) {
     console.warn(`[tmux-codex] failed to pre-trust project; screen fallback will handle it: ${e.message}`)
@@ -243,7 +244,7 @@ function findAsciiTailMarker(text) {
   if (proxyMissing.length) {
     console.warn(`[tmux-codex] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
   }
-  console.log(`[tmux-codex] ✅ preflight pass (HUB=${HUB}, CODEX_HOME=${CODEX_HOME})`)
+  log(`[tmux-codex] ✅ preflight pass (HUB=${HUB}, CODEX_HOME=${CODEX_HOME})`)
 })()
 
 function openStateDb() {
@@ -428,7 +429,7 @@ class TmuxCodexBackend extends AgentBackend {
             pendingBind: false,
           })
           this._ensureWatcher(sid)
-          console.log(`[tmux-codex] recovered pending runtime ${sid} to codex_thread=${entry.agentSessionId}`)
+          log(`[tmux-codex] recovered pending runtime ${sid} to codex_thread=${entry.agentSessionId}`)
           continue
         }
         this.runtime.set(sid, {
@@ -446,12 +447,12 @@ class TmuxCodexBackend extends AgentBackend {
           working: true,
           watch: null,
         })
-        console.log(`[tmux-codex] restored pending runtime ${sid}; waiting for codex thread bind`)
+        log(`[tmux-codex] restored pending runtime ${sid}; waiting for codex thread bind`)
         continue
       }
       const jsonlPath = p.jsonlPath || codexRolloutPathOf(p.agentSessionId)
       if (!jsonlPath || !fs.existsSync(jsonlPath)) {
-        console.log(`[tmux-codex] dropping runtime ${sid}; rollout jsonl missing: ${jsonlPath}`)
+        log(`[tmux-codex] dropping runtime ${sid}; rollout jsonl missing: ${jsonlPath}`)
         continue
       }
       this.runtime.set(sid, {
@@ -471,7 +472,7 @@ class TmuxCodexBackend extends AgentBackend {
       })
       this._ensureWatcher(sid)
     }
-    console.log(`[tmux-codex] runtime loaded ${this.runtime.size}/${total}`)
+    log(`[tmux-codex] runtime loaded ${this.runtime.size}/${total}`)
   }
 
   _ensureWatcher(sessionId, startOffset = null) {
@@ -830,7 +831,7 @@ class TmuxCodexBackend extends AgentBackend {
     this._forgetPersisted(sessionId)
     if (wasAlive) {
       tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
-      console.log(`[tmux-codex] terminate: killed window=${sessionId} (wasWorking=${wasWorking})`)
+      log(`[tmux-codex] terminate: killed window=${sessionId} (wasWorking=${wasWorking})`)
     }
     const flagRoot = entry?.flagRoot || entry?.cwd
     if (flagRoot) {
@@ -942,7 +943,7 @@ class TmuxCodexBackend extends AgentBackend {
     })
     // First stream subscribers attach before Codex has a rollout path; emit from byte 0.
     this._ensureWatcher(sessionId, 0)
-    console.log(`[tmux-codex] bound window=${sessionId} to codex_thread=${found.id} via ${foundBy} jsonl=${jsonlPath}`)
+    log(`[tmux-codex] bound window=${sessionId} to codex_thread=${found.id} via ${foundBy} jsonl=${jsonlPath}`)
     return entry
   }
 
@@ -1055,7 +1056,7 @@ class TmuxCodexBackend extends AgentBackend {
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window failed: ${r.stderr}`)
     // 记录启动参数，包含模型、代理、profile、秘钥环境变量和 resume 信息。
-    console.log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} profile-v2=${profileKey} secret_env=${secretEnvKey} config=${codexConfigPath || expectedConfigPath}${useResume ? ` resume=${agentSessionId}` : ''}`)
+    log(`[tmux-codex] started: window=${sessionId} cwd=${cwd} model=${finalModel} use_proxy=${finalUseProxy ? 1 : 0} profile-v2=${profileKey} secret_env=${secretEnvKey} config=${codexConfigPath || expectedConfigPath}${useResume ? ` resume=${agentSessionId}` : ''}`)
 
     // 设置等待 TUI ready 的截止时间。
     const deadline = Date.now() + READY_TIMEOUT_MS
@@ -1067,12 +1068,11 @@ class TmuxCodexBackend extends AgentBackend {
     let lastUpdatePress = 0
     // 保留最后一次非空屏幕内容，超时报错时给调用方看。
     let lastScreen = ''
+    const target = `${HUB}:${sessionId}`
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
-      // 抓取窗口最近 200 行内容用于检测 TUI 状态。
-      const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-200'])
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = cap.status === 0 ? cap.stdout : ''
+      const screen = take_tmux_window_text(target, 100)
       // 如果当前屏幕非空，就保存为最新屏幕快照。
       lastScreen = screen || lastScreen
       // 看到所有 ready 哨兵文本就结束等待。
@@ -1088,7 +1088,7 @@ class TmuxCodexBackend extends AgentBackend {
           // 更新上次跳过更新提示的时间。
           lastUpdatePress = now
           // 写日志说明已自动跳过 Codex 更新提示。
-          console.log(`[tmux-codex] window=${sessionId} skipped Codex update prompt (cwd=${cwd})`)
+          log(`[tmux-codex] window=${sessionId} skipped Codex update prompt (cwd=${cwd})`)
         }
       }
       // 如果屏幕上出现目录信任提示，就进入自动确认逻辑。
@@ -1102,7 +1102,7 @@ class TmuxCodexBackend extends AgentBackend {
           // 更新上次发送 Enter 的时间。
           lastTrustPress = now
           // 写日志说明已自动处理信任弹窗。
-          console.log(`[tmux-codex] window=${sessionId} confirmed Codex directory trust (cwd=${cwd})`)
+          log(`[tmux-codex] window=${sessionId} confirmed Codex directory trust (cwd=${cwd})`)
         }
       }
       // 等待一个轮询间隔后继续检查屏幕内容。
@@ -1118,7 +1118,7 @@ class TmuxCodexBackend extends AgentBackend {
       throw new Error(`Codex TUI was not ready within ${READY_TIMEOUT_MS}ms (cwd=${cwd})${detail ? `; last screen:\n${detail}` : ''}`)
     }
     // 记录 TUI 已可用。
-    console.log(`[tmux-codex] window=${sessionId} TUI ready`)
+    log(`[tmux-codex] window=${sessionId} TUI ready`)
 
     // 新会话此时还不知道 Codex thread id，需要后续通过新增 rollout 绑定。
     if (!useResume) {
@@ -1236,7 +1236,7 @@ class TmuxCodexBackend extends AgentBackend {
   async _sendPromptToWindow(sessionId, text) {
     if (!windowExists(sessionId)) throw new Error(`window ${sessionId} does not exist`)
     const marker = findAsciiTailMarker(text)
-    console.log(`[tmux-codex] sendPrompt window=${sessionId} len=${text.length} marker=${marker ? JSON.stringify(marker) : '(none)'}`)
+    log(`[tmux-codex] sendPrompt window=${sessionId} len=${text.length} marker=${marker ? JSON.stringify(marker) : '(none)'}`)
 
     const bufName = `imac_codex_${process.pid}_${Date.now()}`
     const r1 = tmux(['load-buffer', '-b', bufName, '-'], { input: text })

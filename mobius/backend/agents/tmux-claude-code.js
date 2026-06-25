@@ -41,7 +41,8 @@ const {
   safeRemoveFlagDir,
 } = require('../utils/session-flags')
 const { MOBIUS_DATA_PATH } = require('../config')
-const { tmux } = require('./tmux-operation-log')
+const { log, tmux } = require('./tmux-operation-log')
+const { take_tmux_window_text } = require('./tmux_utils')
 
 // ── 常量 ────────────────────────────────────────────────
 const HUB = 'imac_claude_code_agent_hub'
@@ -114,7 +115,7 @@ function ensureProjectTrusted(cwd) {
     const tmp = `${CLAUDE_CONFIG}.imac-tmp-${process.pid}-${Date.now()}`
     fs.writeFileSync(tmp, JSON.stringify(j, null, 2))
     fs.renameSync(tmp, CLAUDE_CONFIG)
-    console.log(`[tmux-claude-code] 预置目录信任: ${abs} → ~/.claude.json`)
+    log(`[tmux-claude-code] 预置目录信任: ${abs} → ~/.claude.json`)
     return true
   } catch (e) {
     console.warn(`[tmux-claude-code] 预置目录信任失败 (走截屏兜底): ${e.message}`)
@@ -143,7 +144,7 @@ function ensureHub() {
   if (hubExists()) return
   const r = tmux(['new-session', '-d', '-s', HUB, '-n', '_root'])
   if (r.status !== 0) throw new Error(`tmux new-session 失败: ${r.stderr}`)
-  console.log(`[tmux-claude-code] created tmux session ${HUB}`)
+  log(`[tmux-claude-code] created tmux session ${HUB}`)
 }
 
 function windowExists(name) {
@@ -244,7 +245,7 @@ function pickInitialContextGreeting() {
   if (proxyMissing.length) {
     console.warn(`[tmux-claude-code] ⚠️  proxychains 依赖不完整; use_proxy=false 的会话仍可直连启动: ${proxyMissing.join(', ')}`)
   }
-  console.log(`[tmux-claude-code] ✅ preflight pass (HUB=${HUB})`)
+  log(`[tmux-claude-code] ✅ preflight pass (HUB=${HUB})`)
 })()
 
 // ── Backend ────────────────────────────────────────────
@@ -263,7 +264,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     for (const [sid, p] of Object.entries(this.persisted)) {
       total++
       if (!p?.jsonlPath || !fs.existsSync(p.jsonlPath)) {
-        console.log(`[tmux-claude-code] runtime 条目 ${sid} 被丢弃 (jsonl 缺失: ${p?.jsonlPath})`)
+        log(`[tmux-claude-code] runtime 条目 ${sid} 被丢弃 (jsonl 缺失: ${p?.jsonlPath})`)
         continue
       }
       this.runtime.set(sid, {
@@ -281,7 +282,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       })
       this._ensureWatcher(sid)
     }
-    console.log(`[tmux-claude-code] runtime 加载 ${this.runtime.size}/${total} 条`)
+    log(`[tmux-claude-code] runtime 加载 ${this.runtime.size}/${total} 条`)
   }
 
   // 每个 session 起一个 jsonl-watcher (后端唯一), 新行 → _emitRaw 给所有订阅者.
@@ -589,7 +590,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     this._forgetPersisted(sessionId)
     if (wasAlive) {
       tmux(['kill-window', '-t', `${HUB}:${sessionId}`])
-      console.log(`[tmux-claude-code] terminate: killed window=${sessionId} (wasWorking=${wasWorking})`)
+      log(`[tmux-claude-code] terminate: killed window=${sessionId} (wasWorking=${wasWorking})`)
     }
     // 顺手清掉 running flag 目录 (agent 没自删的话别留垃圾)
     const flagRoot = entry?.flagRoot || entry?.cwd
@@ -676,7 +677,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)
     // 记录窗口、目录、Claude 会话、代理和 settings 信息。
-    console.log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} use_proxy=${finalUseProxy ? 1 : 0}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
+    log(`[tmux-claude-code] started: window=${sessionId} cwd=${cwd} claude_session=${claudeSessionId} use_proxy=${finalUseProxy ? 1 : 0}${finalSettingsPath ? ` settings=${finalSettingsPath}` : ''}`)
 
     // 等 TUI ready (底栏 "bypass permissions on" 出现)
     // 设置等待 TUI ready 的截止时间。
@@ -691,12 +692,11 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     let lastApiKeyPress = 0
     // 记录上次自动按 Bypass 警告确认的时间，用来限频。
     let lastBypassPress = 0
+    const target = `${HUB}:${sessionId}`
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
-      // 抓取窗口最近 200 行内容用于检测 TUI 状态。
-      const cap = tmux(['capture-pane', '-pt', `${HUB}:${sessionId}`, '-p', '-S', '-200'])
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = cap.status === 0 ? cap.stdout : ''
+      const screen = take_tmux_window_text(target, 100)
       // 看到 ready 哨兵文本就结束等待。
       if (screen.includes(READY_SENTINEL)) { ready = true; break }
       // 信任对话框: 默认已高亮 "❯ 1. Yes, I trust this folder", 回车即确认.
@@ -712,7 +712,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
           // 更新上次发送 Enter 的时间。
           lastTrustPress = now
           // 写日志说明已自动处理信任弹窗。
-          console.log(`[tmux-claude-code] window=${sessionId} 检测到目录信任对话框, 已自动确认信任 (cwd=${cwd})`)
+          log(`[tmux-claude-code] window=${sessionId} 检测到目录信任对话框, 已自动确认信任 (cwd=${cwd})`)
         }
       }
       // 首次启动引导对话框 (主题选择、欢迎屏幕): 自动按 Enter 确认.
@@ -721,7 +721,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         if (now - lastOnboardingPress > ONBOARDING_PRESS_INTERVAL_MS) {
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
           lastOnboardingPress = now
-          console.log(`[tmux-claude-code] window=${sessionId} 检测到首次启动引导对话框, 已自动确认`)
+          log(`[tmux-claude-code] window=${sessionId} 检测到首次启动引导对话框, 已自动确认`)
         }
       }
       // "Detected a custom API key" 对话框: 按 "1" 确认使用环境变量中的 Key.
@@ -731,7 +731,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, '1'])
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
           lastApiKeyPress = now
-          console.log(`[tmux-claude-code] window=${sessionId} 检测到 API Key 对话框, 已自动选择使用环境变量 Key`)
+          log(`[tmux-claude-code] window=${sessionId} 检测到 API Key 对话框, 已自动选择使用环境变量 Key`)
         }
       }
       // "Bypass Permissions mode" 警告: 按 "2" + Enter 接受 (选项 1 = No/退出, 选项 2 = Yes/接受).
@@ -741,7 +741,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, '2'])
           tmux(['send-keys', '-t', `${HUB}:${sessionId}`, 'Enter'])
           lastBypassPress = now
-          console.log(`[tmux-claude-code] window=${sessionId} 检测到 Bypass Permissions 警告, 已自动确认接受`)
+          log(`[tmux-claude-code] window=${sessionId} 检测到 Bypass Permissions 警告, 已自动确认接受`)
         }
       }
       // 等待一个轮询间隔后继续检查屏幕内容。
@@ -755,7 +755,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
       throw new Error(`claude TUI 未在 ${READY_TIMEOUT_MS}ms 内 ready (cwd=${cwd}).`)
     }
     // 记录 TUI 已可用。
-    console.log(`[tmux-claude-code] window=${sessionId} TUI ready`)
+    log(`[tmux-claude-code] window=${sessionId} TUI ready`)
 
     // 计算该 Claude session 对应的 jsonl 文件路径。
     const jp = jsonlPathOf(cwd, claudeSessionId)
@@ -803,7 +803,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     const plan = pickInitialContextPlan()
     if (plan === 'greeting_then_context') {
       const greeting = pickInitialContextGreeting()
-      console.log(`[tmux-claude-code] initial context plan=${plan} greeting=${JSON.stringify(greeting)} delay_ms=${INITIAL_CONTEXT_DELAY_MS}`)
+      log(`[tmux-claude-code] initial context plan=${plan} greeting=${JSON.stringify(greeting)} delay_ms=${INITIAL_CONTEXT_DELAY_MS}`)
       await this._sendPromptToWindow(sessionId, greeting)
       await sleep(INITIAL_CONTEXT_DELAY_MS)
       await this._sendPromptToWindow(sessionId, text)
@@ -811,13 +811,13 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     }
 
     if (plan === 'delay_then_context') {
-      console.log(`[tmux-claude-code] initial context plan=${plan} delay_ms=${INITIAL_CONTEXT_DELAY_MS}`)
+      log(`[tmux-claude-code] initial context plan=${plan} delay_ms=${INITIAL_CONTEXT_DELAY_MS}`)
       await sleep(INITIAL_CONTEXT_DELAY_MS)
       await this._sendPromptToWindow(sessionId, text)
       return
     }
 
-    console.log(`[tmux-claude-code] initial context plan=${plan}`)
+    log(`[tmux-claude-code] initial context plan=${plan}`)
     await this._sendPromptToWindow(sessionId, text)
   }
 
@@ -827,7 +827,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     }
 
     const marker = findAsciiTailMarker(text)
-    console.log(`[tmux-claude-code] sendPrompt window=${sessionId} len=${text.length} marker=${marker ? JSON.stringify(marker) : '(none)'}`)
+    log(`[tmux-claude-code] sendPrompt window=${sessionId} len=${text.length} marker=${marker ? JSON.stringify(marker) : '(none)'}`)
 
     const bufName = `imac_${process.pid}_${Date.now()}`
     const r1 = tmux(['load-buffer', '-b', bufName, '-'], { input: text })

@@ -12,23 +12,13 @@ const MAX_SCAN_ITEMS = 80;
 // ---------------------------------------------------------------------------
 // LLM 接入配置（通过环境变量注入，不要在代码里硬编码 IP 或 Key）
 //
-// 在项目根目录 .env 中配置（填一次，所有扩展共享）：
-//   ASSISTANT_API_BASE=http://your-llm-host/v1    # LLM API 地址（兼容 OpenAI 格式）
-//   ASSISTANT_API_KEY=sk-your-api-key-here         # LLM API 鉴权 Key
-//   ASSISTANT_MODEL=your-model-name               # 默认模型名称
-//
-// 也可单独为本扩展设置（优先级更高）：
-//   FINANCE_NEWS_LLM_API_BASE=http://...
-//   FINANCE_NEWS_LLM_MODEL=your-model-name
+// 在项目根目录 .env 中配置：
+//   FINANCE_NEWS_LLM_API_BASE=http://your-llm-host/v1  # LLM API 地址（兼容 OpenAI 格式）
+//   FINANCE_NEWS_LLM_API_KEY=sk-your-api-key-here      # LLM API 鉴权 Key
+//   FINANCE_NEWS_LLM_MODEL=your-model-name             # 默认模型名称
 // ---------------------------------------------------------------------------
-const DEFAULT_LLM_BASE = (
-  process.env.FINANCE_NEWS_LLM_API_BASE
-  || process.env.ASSISTANT_API_BASE
-  || ''
-).replace(/\/+$/, '');
-const DEFAULT_LLM_MODEL = process.env.FINANCE_NEWS_LLM_MODEL
-  || process.env.ASSISTANT_MODEL
-  || 'gpt-4o-mini';
+const DEFAULT_LLM_BASE = (process.env.FINANCE_NEWS_LLM_API_BASE || '').replace(/\/+$/, '');
+const DEFAULT_LLM_MODEL = process.env.FINANCE_NEWS_LLM_MODEL || 'gpt-4o-mini';
 
 const DEFAULT_RSS_SOURCES = [
   { id: 'federal-reserve', name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/press_all.xml', enabled: true },
@@ -866,9 +856,7 @@ async function fetchBraveEvents(settings, secrets, direction, maxItems) {
 async function enrichWithLlm(settings, secrets, direction, events, logger, board) {
   if (settings.providers?.llm?.enabled === false || events.length === 0) return events;
   const apiKey = pickKey(secrets.llm_api_key)
-    || pickKey(process.env.FINANCE_NEWS_LLM_API_KEY)
-    || pickKey(process.env.ASSISTANT_API_KEY)
-    || pickKey(process.env.BEST_API_KEY);
+    || pickKey(process.env.FINANCE_NEWS_LLM_API_KEY);
   if (!apiKey) return events;
   const apiBase = (settings.providers?.llm?.api_base || DEFAULT_LLM_BASE).replace(/\/+$/, '');
   const model = settings.providers?.llm?.model || DEFAULT_LLM_MODEL;

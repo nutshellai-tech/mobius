@@ -19,7 +19,7 @@ from typing import Iterable, Mapping, MutableMapping, Sequence
 # 用于过滤加载时遇到的非法键，避免把脏数据塞进 tmux/子进程环境。
 VALID_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # 命中这些子串的键被认为是敏感配置，在日志/打印时会被脱敏（见 mask_setting_value）。
-SECRET_SETTING = re.compile(r"(SECRET|TOKEN|PASSWORD|PASS|API_KEY|BEST_API_KEY|AUTH|BOOTSTRAP_USERS)")
+SECRET_SETTING = re.compile(r"(SECRET|TOKEN|PASSWORD|PASS|API_KEY|AUTH|BOOTSTRAP_USERS)")
 
 # tmux 会继承父进程环境，但 TMUX/TMUX_PANE 是 tmux 自身的内部变量，
 # 在已有 tmux 会话内再启动新会话时这些值会冲突，因此注入前必须剥离。
@@ -66,6 +66,12 @@ RUNTIME_SETTINGS = ordered_unique(
         "VITE_HMR_PROTOCOL",
         "VITE_HMR_CLIENT_PORT",
         "CODE_SERVER_PORT",
+        "MOBIUS_SSH_PORT",
+        "MOBIUS_SSH_URL",
+        "MOBIUS_SSH_FORWARD_USER",
+        "MOBIUS_SSH_FORWARD_DIR",
+        "MOBIUS_SSH_PRIVATE_KEY_PATH",
+        "MOBIUS_SSH_KEY_PATH",
         "CODE_SERVER_BIND",
         "CODE_SERVER_CWD",
         "VSCODE_WEB_URL",
@@ -83,10 +89,6 @@ RUNTIME_SETTINGS = ordered_unique(
         "HOME_WORKSPACE_ROOT",
         "LOCAL_WORKSPACE_ROOT",
         "TURNS_SUMMARY_DIR",
-        "ASSISTANT_API_BASE",
-        "ASSISTANT_API_KEY",
-        "BEST_API_KEY",
-        "ASSISTANT_MODEL",
         "CODEX_HOME",
         "IMAC_DEBUG_ENV_FILE",
         "IMAC_SKILLS_PROXY",

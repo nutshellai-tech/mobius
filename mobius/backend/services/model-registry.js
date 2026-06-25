@@ -184,9 +184,14 @@ function listSessionModelOptions() {
     .filter(Boolean)
 
   // picker 顺序: [内置 codex] [管理员 codex ...] [动态 claude code] [内置 claude code]
+  // 内置 codex 的 profileKey (默认 'mobiusdefault') 已作为兜底 seed 进 model-access 表,
+  // 但它跟内置 codex 共享同一份 ~/.codex/<profileKey>.config.toml, 所以 picker 里要剔除,
+  // 避免与内置 codex 重复显示. 该项仍可在 admin 面板编辑.
+  const builtinCodexProfileKey = (MODEL_OPTIONS.codex && MODEL_OPTIONS.codex.profileKey) || null
   const codexDynamics = modelAccess.listCodexModels({ enabledOnly: true })
     .map((m) => dynamicCodexEntryFor(m.session_model))
     .filter(Boolean)
+    .filter((m) => !builtinCodexProfileKey || m.model !== builtinCodexProfileKey)
 
   const claudeDynamics = modelAccess.listClaudeCodeModels({ enabledOnly: true })
     .map((m) => dynamicEntryFor(m.session_model))

@@ -42,6 +42,10 @@ const {
   APP_DIR,
   BACKEND_WORKER_LOG_DIR,
   ENABLE_PASSWORD_LOGIN,
+  MOBIUS_SSH_FORWARD_USER,
+  MOBIUS_SSH_PORT,
+  MOBIUS_SSH_PRIVATE_KEY_PATH,
+  MOBIUS_SSH_URL,
   VSCODE_WEB_URL,
   FORGOTTEN_FLAG_ISSUE_INTERVAL_MINUTES_MIN,
   FORGOTTEN_FLAG_RESEARCH_INTERVAL_MINUTES_MIN,
@@ -82,6 +86,56 @@ function normalizeProjectPort(value) {
   const port = Number(text);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   return port;
+}
+
+function parseMobiusSshUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { raw, host: '', port: null };
+
+  if (/^ssh:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      return {
+        raw,
+        host: parsed.hostname || '',
+        port: parsed.port ? normalizeProjectPort(parsed.port) : null,
+      };
+    } catch {
+      return { raw, host: '', port: null };
+    }
+  }
+
+  const withoutUser = raw.includes('@') ? raw.slice(raw.lastIndexOf('@') + 1) : raw;
+  if (withoutUser.startsWith('[')) {
+    const end = withoutUser.indexOf(']');
+    const host = end > 0 ? withoutUser.slice(1, end) : '';
+    const rest = end > 0 ? withoutUser.slice(end + 1) : '';
+    const port = rest.startsWith(':') ? normalizeProjectPort(rest.slice(1)) : null;
+    return { raw, host, port };
+  }
+
+  const lastColon = withoutUser.lastIndexOf(':');
+  if (lastColon > 0 && withoutUser.indexOf(':') === lastColon) {
+    const host = withoutUser.slice(0, lastColon).trim();
+    const port = normalizeProjectPort(withoutUser.slice(lastColon + 1));
+    return { raw, host, port };
+  }
+
+  return { raw, host: withoutUser.trim(), port: null };
+}
+
+function readSshPrivateKey() {
+  const keyPath = String(MOBIUS_SSH_PRIVATE_KEY_PATH || '').trim();
+  if (!keyPath) return { privateKey: '', privateKeyExists: false };
+  try {
+    const stat = fs.statSync(keyPath);
+    if (!stat.isFile() || stat.size <= 0 || stat.size > 64 * 1024) {
+      return { privateKey: '', privateKeyExists: false };
+    }
+    return { privateKey: fs.readFileSync(keyPath, 'utf8'), privateKeyExists: true };
+  } catch {
+    return { privateKey: '', privateKeyExists: false };
+  }
 }
 
 function mainProjectPortPath(project) {
@@ -991,6 +1045,68 @@ function runGit(cwd, args, opts = {}) {
   }
 }
 
+const PROJECT_GIT_ACTIONS = Object.freeze({
+  pull: {
+    label: '拉取',
+    args: ['pull', '--ff-only'],
+    timeout: 60 * 1000,
+  },
+  push: {
+    label: '推送',
+    args: ['push'],
+    timeout: 60 * 1000,
+  },
+  stage: {
+    label: '暂存',
+    args: ['add', '-A'],
+    timeout: 30 * 1000,
+  },
+});
+
+function compactGitOutput(...parts) {
+  const text = parts.map((part) => String(part || '').trim()).filter(Boolean).join('\n');
+  if (!text) return '';
+  return text.length > 4000 ? `${text.slice(0, 4000)}\n...` : text;
+}
+
+function projectGitActionError(message, statusCode = 400) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+function runProjectGitAction(project, action) {
+  const spec = PROJECT_GIT_ACTIONS[action];
+  if (!spec) {
+    throw projectGitActionError('不支持的 Git 操作');
+  }
+
+  const discovered = discoverGitRepo(project.bind_path);
+  if (!discovered.available) {
+    throw projectGitActionError(discovered.reason || '绑定路径下未检测到 Git 仓库');
+  }
+
+  const result = runGit(discovered.repo_path, spec.args, {
+    timeout: spec.timeout,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const output = compactGitOutput(result.stdout, result.stderr);
+  if (!result.ok) {
+    throw projectGitActionError(
+      `${spec.label}失败${result.error ? `: ${result.error}` : ''}${output ? `\n${output}` : ''}`,
+      409,
+    );
+  }
+
+  return {
+    ok: true,
+    action,
+    label: spec.label,
+    repo_path: discovered.repo_path,
+    output,
+    message: output ? `${spec.label}完成` : `${spec.label}完成，没有额外输出`,
+    tracking: readProjectGitTracking(project, 12),
+  };
+}
+
 function hasGitMarker(dir) {
   try {
     return fs.existsSync(path.join(dir, '.git'));
@@ -1764,6 +1880,17 @@ router.get('/:id/git-tracking', auth, (req, res) => {
   }
 });
 
+router.post('/:id/git-action', auth, (req, res) => {
+  const project = loadManageableProject(req, res, req.params.id);
+  if (!project) return;
+  const action = String(req.body?.action || '').trim();
+  try {
+    res.json(runProjectGitAction(project, action));
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message || '执行 Git 操作失败' });
+  }
+});
+
 router.post('/:id/deploy-version', auth, (req, res) => {
   const project = loadReadableProject(req, res, req.params.id);
   if (!project) return;
@@ -2125,6 +2252,34 @@ router.get('/:id/main-project-port', auth, (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: e.message || '读取项目端口失败' });
   }
+});
+
+router.get('/:id/ssh-forward-config', auth, (req, res) => {
+  const project = loadReadableProject(req, res, req.params.id);
+  if (!project) return;
+
+  const parsed = parseMobiusSshUrl(MOBIUS_SSH_URL);
+  const invalidUrlPort = parsed.port === 443;
+  const sshPort = invalidUrlPort ? null : (parsed.port || MOBIUS_SSH_PORT || null);
+  const key = readSshPrivateKey();
+  const missing = [];
+  if (!parsed.host) missing.push('MOBIUS_SSH_URL');
+  if (invalidUrlPort) missing.push('MOBIUS_SSH_URL_port_must_not_be_443');
+  if (!sshPort) missing.push('MOBIUS_SSH_PORT');
+  if (!key.privateKeyExists) missing.push('ssh_private_key');
+
+  res.json({
+    enabled: missing.length === 0,
+    ssh_url: MOBIUS_SSH_URL || '',
+    host: parsed.host,
+    port: sshPort,
+    mobius_ssh_port: MOBIUS_SSH_PORT || null,
+    user: MOBIUS_SSH_FORWARD_USER,
+    private_key: key.privateKey,
+    private_key_path: MOBIUS_SSH_PRIVATE_KEY_PATH || '',
+    private_key_exists: key.privateKeyExists,
+    missing,
+  });
 });
 
 router.post('/:id/main-project-port', auth, (req, res) => {

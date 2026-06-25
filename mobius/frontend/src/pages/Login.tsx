@@ -45,8 +45,9 @@ export default function Login() {
         body: JSON.stringify(body),
       })
       setAuth(r.token, r.user)
-    } catch {
-      setErr(passwordRequired ? '账户名或密码错误' : '账户名错误')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : ''
+      setErr(message || (passwordRequired ? '账户名或密码错误' : '账户名错误'))
     } finally {
       setLoading(false)
     }

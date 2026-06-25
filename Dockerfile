@@ -32,6 +32,9 @@ ENV fq=""
 # 简化做法：如果你需要代理，手动将下一行 ENV fq="" 改为 ENV fq="proxychains"
 # ENV fq="proxychains"
 
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY . /app_image
 WORKDIR /app_image

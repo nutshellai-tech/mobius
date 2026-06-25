@@ -54,6 +54,23 @@ const BRANDING = Object.freeze({
 const CORE_DATA_PATH = process.env.CORE_DATA_PATH || '/data/protected_data';
 const MODEL_ACCESS_PATH = process.env.MODEL_ACCESS_PATH || path.join(MOBIUS_DATA_PATH, 'model-access.json');
 const BACKEND_WORKER_LOG_DIR = path.join(CORE_DATA_PATH, 'backend_worker_log');
+
+function parseMobiusSshPort(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (!/^[0-9]{1,5}$/.test(text)) return null;
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 443) return null;
+  return port;
+}
+
+const MOBIUS_SSH_FORWARD_USER = String(process.env.MOBIUS_SSH_FORWARD_USER || 'mobius-forward').trim() || 'mobius-forward';
+const MOBIUS_SSH_PORT = parseMobiusSshPort(process.env.MOBIUS_SSH_PORT || '33318');
+const MOBIUS_SSH_URL = String(process.env.MOBIUS_SSH_URL || (MOBIUS_SSH_PORT ? `localhost:${MOBIUS_SSH_PORT}` : '')).trim();
+const MOBIUS_SSH_FORWARD_DIR = process.env.MOBIUS_SSH_FORWARD_DIR || path.join(CORE_DATA_PATH, 'ssh-forward');
+const MOBIUS_SSH_PRIVATE_KEY_PATH = process.env.MOBIUS_SSH_PRIVATE_KEY_PATH
+  || process.env.MOBIUS_SSH_KEY_PATH
+  || path.join(MOBIUS_SSH_FORWARD_DIR, 'mobius-forward-ed25519');
 const MODEL_OPTIONS = {
   opus: {
     id: 'opus-4.8',
@@ -112,6 +129,14 @@ module.exports = {
   ENABLE_PASSWORD_LOGIN: process.env.ENABLE_PASSWORD_LOGIN === 'true',
   // VSCode Web (code-server) 基础 URL, 例: http://localhost:8443. 留空则前端不展示"在 VSCode 打开"按钮.
   VSCODE_WEB_URL: process.env.VSCODE_WEB_URL || '',
+  // SSH local-forward 入口: MOBIUS_SSH_URL 是用户 PC 可访问的 host:port, MOBIUS_SSH_PORT 是服务端监听端口。
+  // 443 被显式禁用, 避免和 HTTPS 网关语义混淆。
+  MOBIUS_SSH_PORT,
+  MOBIUS_SSH_URL,
+  MOBIUS_SSH_FORWARD_USER,
+  MOBIUS_SSH_FORWARD_DIR,
+  MOBIUS_SSH_PRIVATE_KEY_PATH,
+  parseMobiusSshPort,
   UPLOAD_DIR: path.join(__dirname, '..', 'uploads'),
   PUBLIC_DIR: path.join(__dirname, '..', 'public'),
   TURNS_SUMMARY_DIR: process.env.TURNS_SUMMARY_DIR || path.join(MOBIUS_DATA_PATH, 'turn-summaries'),

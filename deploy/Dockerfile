@@ -5,7 +5,7 @@ RUN sed -i 's@//.*deb.debian.org@//mirrors.aliyun.com@g; s@//.*security.debian.o
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         nano tmux proxychains-ng git curl ca-certificates tini \
-        python3 make g++ procps less locales iproute2 psmisc \
+        python3 make g++ procps less locales iproute2 psmisc openssh-server \
  && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------

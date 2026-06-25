@@ -851,7 +851,7 @@ function KeyNode({ k, v, depth, parentKey }: { k: string; v: any; depth: number;
           <summary className="cursor-pointer text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-text">
             <span className="text-amber-300/80 font-mono">{k}</span>
             <span className="text-gray-500"> : </span>
-            <span className="italic">"…" ({v.length} chars, {v.split('\n').length} lines)</span>
+            <span className="italic">"…" ({v.split('\n').length} lines)</span>
           </summary>
           <pre className="mt-1 ml-3 px-2 py-1.5 text-[11px] font-mono whitespace-pre-wrap break-words rounded border border-[var(--border-color)] bg-[var(--prose-bg)] text-[var(--text-secondary)] max-h-96 overflow-auto">{v}</pre>
         </details>
@@ -1065,9 +1065,6 @@ function JsonEntryWritePreview({ writeCall }: { writeCall: WriteToolCall }) {
         <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
           {writeCall.lineCount} lines
         </span>
-        <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
-          {writeCall.charCount} chars
-        </span>
       </div>
       <div className="max-h-[34rem] overflow-auto">
         <div className="min-w-max py-1 font-mono text-[11px] leading-[1.45]">
@@ -1144,9 +1141,6 @@ function BashCallCard({ call, index, results = [] }: { call: BashCall; index: nu
         </div>
         <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
           {lines.length} lines
-        </span>
-        <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
-          {call.command.length} chars
         </span>
         <button
           type="button"
@@ -1252,9 +1246,6 @@ function BashResultPanel({ result }: { result: BashToolResult }) {
           <>
             <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
               {displayLines.length} lines
-            </span>
-            <span className="flex-shrink-0 rounded border border-[var(--border-color)] px-1.5 py-0.5 font-mono text-[var(--text-muted)]">
-              {displayText.length} chars
             </span>
           </>
         )}
@@ -1547,7 +1538,7 @@ function functionCallCommand(payload: any): string | null {
 function summarizeWriteToolInput(input: any): string | null {
   const writeCall = normalizeWriteInput(input)
   if (!writeCall) return null
-  return `${basename(writeCall.filePath)} · ${writeCall.lineCount} lines · ${writeCall.charCount} chars`
+  return `${basename(writeCall.filePath)} · ${writeCall.lineCount} lines`
 }
 
 function functionOutputBody(output: any): string {

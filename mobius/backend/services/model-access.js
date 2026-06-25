@@ -10,7 +10,7 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { MODEL_ACCESS_PATH } = require('../config')
+const { MODEL_ACCESS_PATH, MODEL_OPTIONS } = require('../config')
 
 const DATA_FILE = MODEL_ACCESS_PATH
 const HOME = os.homedir()
@@ -158,6 +158,12 @@ function apiKeyFromConfigToml(tomlText) {
   return match ? match[2].trim() : ''
 }
 
+// 顶层 `model = "..."` 字段 (不能匹配 [model_providers.xxx] 段, 也不匹配 model_reasoning_effort).
+function modelFromCodexToml(tomlText) {
+  const match = String(tomlText || '').match(/(?:^|\n)\s*model\s*=\s*(['"])([^'"]+)\1/)
+  return match ? match[2].trim() : ''
+}
+
 function assertConfigEnvKeyMatches(tomlText, secretEnvKey, key) {
   const envKey = envKeyFromConfigToml(tomlText)
   if (!envKey) return
@@ -224,10 +230,52 @@ function loadData() {
         console.warn(`[model-access] 跳过非法 codex 模型配置: ${e.message}`)
       }
     }
+    seedBuiltinCodexIfNeeded(data)
     return data
   } catch (e) {
     console.warn(`[model-access] 读取失败, 回退空配置: ${e.message}`)
     return defaultData()
+  }
+}
+
+// 把内置 codex (短键 'codex', profileKey 默认 'mobiusdefault') seed 进 codexModels 表,
+// 这样前端 "系统配置 → 模型接入 → Codex" 就能列出并编辑这一条.
+// 仅在表里缺该 key 且 $CODEX_HOME/<profileKey>.config.toml 存在时执行; 解析后立即落盘,
+// 后续读取直接从 JSON 走, 不会再触发 seed. seed 失败 (TOML 缺字段) 只 warn, 不抛.
+function seedBuiltinCodexIfNeeded(data) {
+  const builtin = MODEL_OPTIONS && MODEL_OPTIONS.codex
+  if (!builtin || !builtin.profileKey) return
+  const key = builtin.profileKey
+  if (data.codexModels.some((m) => m.key === key)) return
+  const configPath = codexConfigPathForKey(key)
+  if (!fs.existsSync(configPath)) return
+  const toml = readCodexConfigToml(key)
+  if (!toml.trim()) return
+  const codexModel = modelFromCodexToml(toml) || builtin.id || 'gpt-5.5'
+  const secretEnvKey = envKeyFromConfigToml(toml) || builtin.secretEnvKey || ''
+  const secretValue = apiKeyFromConfigToml(toml) || ''
+  const now = nowIso()
+  data.codexModels.push({
+    key,
+    channel: key,
+    label: builtin.label || `GPT-5.5 (${key})`,
+    codex_model: codexModel,
+    secret_env_key: secretEnvKey,
+    secret_value: secretValue,
+    config_file: displayCodexConfigPathForKey(key),
+    enabled: true,
+    use_proxy: false,
+    imported: true,
+    backend: 'tmux-codex',
+    created_at: now,
+    updated_at: now,
+  })
+  data.codexModels.sort((a, b) => a.key.localeCompare(b.key))
+  try {
+    saveData(data)
+    console.log(`[model-access] seeded builtin codex channel '${key}' from ${configPath}`)
+  } catch (e) {
+    console.warn(`[model-access] seed builtin codex 落盘失败 (${key}): ${e.message}`)
   }
 }
 

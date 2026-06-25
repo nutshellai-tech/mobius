@@ -63,6 +63,10 @@ function userMessageContentForEventMirror(entry: any): string | null {
   return typeof content === 'string' ? content : null
 }
 
+function entryHasMobiusField(entry: any): boolean {
+  return Boolean(entry && Object.prototype.hasOwnProperty.call(entry, 'mobius') && entry.mobius)
+}
+
 function eventMsgMirrorsPreviousUser(entry: any, previousUserMessages: Set<string>): boolean {
   if (entry?.type !== 'event_msg') return false
   const message = entry?.payload?.message
@@ -1489,11 +1493,26 @@ export function ChatArea() {
     }
     closeRun(jsonlEntries.length)
 
+    // 先收集所有 "纯 user 卡" (没有 mobius 元数据字段) 的 content.
+    // 当一条 user 卡同时存在带 mobius 和不带 mobius 两个版本时, 隐藏带 mobius 的那个.
+    const plainUserContents = new Set<string>()
+    for (const entry of jsonlEntries) {
+      if (entry?.type !== 'user') continue
+      const content = userMessageContentForEventMirror(entry)
+      if (content === null) continue
+      if (!entryHasMobiusField(entry)) plainUserContents.add(content)
+    }
+
     const previousUserMessages = new Set<string>()
     for (let i = 0; i < jsonlEntries.length; i++) {
       const entry = jsonlEntries[i]
       const mirroredUserMessage = eventMsgMirrorsPreviousUser(entry, previousUserMessages)
-      const isMinor = !MAJOR_JSONL_TYPES.has(entry?.type) || hiddenIndexes.has(i) || mirroredUserMessage
+      const duplicateMobiusCard =
+        entry?.type === 'user' &&
+        entryHasMobiusField(entry) &&
+        plainUserContents.has(userMessageContentForEventMirror(entry) ?? '')
+      const isMinor =
+        !MAJOR_JSONL_TYPES.has(entry?.type) || hiddenIndexes.has(i) || mirroredUserMessage || duplicateMobiusCard
 
       if (isMinor) hiddenCount += 1
       if (!hideMinorJsonl || !isMinor) visible.push(entry)

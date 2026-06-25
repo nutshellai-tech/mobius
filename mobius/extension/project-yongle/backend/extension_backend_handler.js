@@ -38,23 +38,13 @@ const EXTENSION_DISPLAY_NAME = '人类共鸣计划';
 // ---------------------------------------------------------------------------
 // LLM 接入配置（通过环境变量注入，不要在代码里硬编码 IP 或 Key）
 //
-// 在项目根目录 .env 中配置（填一次，所有扩展共享）：
-//   ASSISTANT_API_BASE=http://your-llm-host/v1    # LLM API 地址（兼容 OpenAI 格式）
-//   ASSISTANT_API_KEY=sk-your-api-key-here         # LLM API 鉴权 Key
-//   ASSISTANT_MODEL=your-model-name               # 默认模型名称
-//
-// 也可单独为本扩展设置（优先级更高）：
-//   PROJECT_YONGLE_LLM_API_BASE=http://...
-//   PROJECT_YONGLE_LLM_MODEL=your-model-name
+// 在项目根目录 .env 中配置：
+//   PROJECT_YONGLE_LLM_API_BASE=http://your-llm-host/v1  # LLM API 地址（兼容 OpenAI 格式）
+//   PROJECT_YONGLE_LLM_API_KEY=sk-your-api-key-here      # LLM API 鉴权 Key
+//   PROJECT_YONGLE_LLM_MODEL=your-model-name             # 默认模型名称
 // ---------------------------------------------------------------------------
-const DEFAULT_LLM_BASE = (
-  process.env.PROJECT_YONGLE_LLM_API_BASE
-  || process.env.ASSISTANT_API_BASE
-  || ''
-).replace(/\/+$/, '');
-const DEFAULT_LLM_MODEL = process.env.PROJECT_YONGLE_LLM_MODEL
-  || process.env.ASSISTANT_MODEL
-  || 'gpt-4o-mini';
+const DEFAULT_LLM_BASE = (process.env.PROJECT_YONGLE_LLM_API_BASE || '').replace(/\/+$/, '');
+const DEFAULT_LLM_MODEL = process.env.PROJECT_YONGLE_LLM_MODEL || 'gpt-4o-mini';
 
 const MAX_MESSAGES_PER_CONV = 200;
 const MAX_CONV_PER_USER = 60;
@@ -530,8 +520,6 @@ function resolveLlmConfig(state) {
   const apiBase = (state.settings?.llm_api_base || DEFAULT_LLM_BASE).replace(/\/+$/, '');
   const apiKey = state.settings?.llm_api_key
     || process.env.PROJECT_YONGLE_LLM_API_KEY
-    || process.env.ASSISTANT_API_KEY
-    || process.env.BEST_API_KEY
     || '';
   const model = state.settings?.llm_model || DEFAULT_LLM_MODEL;
   return { apiBase, apiKey, model };
@@ -543,7 +531,7 @@ function resolveLlmConfig(state) {
  * 返回 { text: 累积全文, finishReason }
  */
 async function streamChatCompletions({ apiBase, apiKey, model, messages, temperature = 0.5, onDelta, deadlineMs }) {
-  if (!apiKey) throw new Error('未配置 LLM API Key (ASSISTANT_API_KEY)');
+  if (!apiKey) throw new Error('未配置 LLM API Key (PROJECT_YONGLE_LLM_API_KEY)');
   const url = `${apiBase}/chat/completions`;
   return new Promise((resolve, reject) => {
     let parsed;
@@ -622,7 +610,7 @@ async function streamChatCompletions({ apiBase, apiKey, model, messages, tempera
  * 非流式 chat.completions, 一次返回完整文本 (用于短任务: 解析意图、抽取共鸣点等)
  */
 async function chatCompletions({ apiBase, apiKey, model, messages, temperature = 0.2, timeoutMs = 16_000 }) {
-  if (!apiKey) throw new Error('未配置 LLM API Key (ASSISTANT_API_KEY)');
+  if (!apiKey) throw new Error('未配置 LLM API Key (PROJECT_YONGLE_LLM_API_KEY)');
   const res = await fetchWithTimeout(`${apiBase}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -1022,7 +1010,7 @@ async function handleSendMessage({ extDataDir, username, payload, logger }) {
     accumulated = result.text || accumulated;
   } catch (e) {
     logger?.warn?.('LLM stream failed', { error: e.message, model });
-    const errText = `\n\n[模型调用失败: ${e.message}]\n这里给出一份不依赖外部模型的回退建议: 请先确认 \`.env\` 中的 ASSISTANT_API_KEY / PROJECT_YONGLE_LLM_API_KEY 是否填了真实密钥, 然后重试。如果只想本地体验, 可在右上角侧栏粘贴自定义 OpenAI 兼容 API。`;
+    const errText = `\n\n[模型调用失败: ${e.message}]\n这里给出一份不依赖外部模型的回退建议: 请先确认 \`.env\` 中的 PROJECT_YONGLE_LLM_API_KEY 是否填了真实密钥, 然后重试。如果只想本地体验, 可在右上角侧栏粘贴自定义 OpenAI 兼容 API。`;
     accumulated += errText;
     await appendChunk(dir, turnId, errText);
   }
