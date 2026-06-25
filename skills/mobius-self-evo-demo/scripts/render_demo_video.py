@@ -11,11 +11,11 @@ from pathlib import Path
 WIDTH = 1440
 HEIGHT = 900
 FPS = 25
-INTRO_SECONDS = 4.6
+INTRO_SECONDS = 5.6
 TRANSITION_1_SECONDS = 3.0
 TRANSITION_2_SECONDS = 3.8
 TRIM_START_SECONDS = 2.0
-DEFAULT_INTRO = "让我们来尝试...(在这里阐述本次自进化的目标)...，|首先我们看一下自我迭代之前的样子。"
+DEFAULT_INTRO = "让我们来尝试给版本追踪 tab 添加 Git 操作菜单，|支持拉取、推送和暂存。|首先我们看一下自我迭代之前的样子。"
 DEFAULT_TRANSITION_1 = "接下来，我们给小莫提出需求，提出需求"
 DEFAULT_TRANSITION_2 = "小莫会处理您的指令……|等待享用一杯咖啡的时间后……"
 TYPE_SECONDS_PER_CHAR = 0.075
@@ -62,8 +62,14 @@ def typewriter_states(lines: list[str], duration: float) -> list[tuple[float, fl
     if not lines:
         lines = [""]
     states: list[tuple[float, float, list[str]]] = []
-    current = 0.28
+    current = min(0.28, duration)
     visible = [""] * len(lines)
+
+    def add_state(start: float, end: float, text_lines: list[str]) -> None:
+        if end > start:
+            states.append((start, end, text_lines.copy()))
+
+    add_state(0, current, visible)
 
     for line_index, line in enumerate(lines):
         for char_index in range(1, len(line) + 1):
@@ -71,23 +77,28 @@ def typewriter_states(lines: list[str], duration: float) -> list[tuple[float, fl
             visible[line_index] = line[:char_index]
             cursor_lines = visible.copy()
             cursor_lines[line_index] += "|"
-            states.append((current, max(next_time, current + 0.04), cursor_lines.copy()))
+            add_state(current, max(next_time, current + 0.04), cursor_lines)
             current = next_time
-        current = min(current + 0.22, duration - 0.28)
+        if line_index < len(lines) - 1:
+            pause_end = min(current + 0.22, duration - 0.28)
+            cursor_lines = visible.copy()
+            cursor_lines[line_index] += "|"
+            add_state(current, pause_end, cursor_lines)
+            current = pause_end
 
     if not states:
-        states.append((0, duration, ""))
+        states.append((0, duration, visible))
 
     final_text = lines.copy()
     while current < duration - 0.24:
         cursor_on_end = min(current + CURSOR_SECONDS, duration - 0.24)
-        states.append((current, cursor_on_end, [*final_text[:-1], final_text[-1] + "|"]))
+        add_state(current, cursor_on_end, [*final_text[:-1], final_text[-1] + "|"])
         current = cursor_on_end
         cursor_off_end = min(current + CURSOR_SECONDS, duration - 0.24)
-        states.append((current, cursor_off_end, final_text))
+        add_state(current, cursor_off_end, final_text)
         current = cursor_off_end
 
-    states.append((max(duration - 0.24, 0), duration, final_text))
+    add_state(max(duration - 0.24, 0), duration, final_text)
     return [(start, end, text) for start, end, text in states if end > start]
 
 
