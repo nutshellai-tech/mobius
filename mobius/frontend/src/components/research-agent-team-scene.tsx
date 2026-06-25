@@ -30,6 +30,7 @@ import { Vector2 } from 'three/src/math/Vector2.js'
 import { Vector3 } from 'three/src/math/Vector3.js'
 import { Group } from 'three/src/objects/Group.js'
 import { Line } from 'three/src/objects/Line.js'
+import { LineSegments } from 'three/src/objects/LineSegments.js'
 import { Mesh } from 'three/src/objects/Mesh.js'
 import { Points } from 'three/src/objects/Points.js'
 import { Sprite } from 'three/src/objects/Sprite.js'
@@ -51,11 +52,12 @@ export type ResearchTeamSceneAgent = {
   status?: string
 }
 
-// 七个截然不同的场景 (灵感取自 threejs.org 经典示例: 城市天际线 / 研究实验室 / 深空星港 /
-// 霓虹合成波网格 / 螺旋粒子星河 / 镜面海面 / 极光山谷).
-export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora'
-// 七个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋.
-export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix'
+// 九个截然不同的场景 (灵感取自 threejs.org 经典示例: 城市天际线 / 研究实验室 / 深空星港 /
+// 霓虹合成波网格 / 螺旋粒子星河 / 镜面海面 / 极光山谷 / 机械机库 / 全息训练场).
+export type SceneKind = 'city' | 'lab' | 'space' | 'neon' | 'galaxy' | 'ocean' | 'aurora' | 'hangar' | 'grid'
+// 十一个截然不同的形象: 方块机器人 / 能量球体 / 晶体核心 / 扭结核心 / 钻石体 / 卫星体 / 双螺旋 /
+// 四旋翼无人机 / 人形机甲 / 探测车 / 宇航机器人.
+export type AvatarKind = 'robot' | 'orb' | 'crystal' | 'knot' | 'diamond' | 'satellite' | 'helix' | 'drone' | 'mech' | 'rover' | 'droid'
 
 export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'city', label: '城市天际线' },
@@ -65,6 +67,8 @@ export const SCENE_KIND_OPTIONS: { value: SceneKind; label: string }[] = [
   { value: 'galaxy', label: '螺旋星河' },
   { value: 'ocean', label: '镜面海面' },
   { value: 'aurora', label: '极光山谷' },
+  { value: 'hangar', label: '机械机库' },
+  { value: 'grid', label: '全息训练场' },
 ]
 export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'robot', label: '方块机器人' },
@@ -74,6 +78,10 @@ export const AVATAR_KIND_OPTIONS: { value: AvatarKind; label: string }[] = [
   { value: 'diamond', label: '钻石体' },
   { value: 'satellite', label: '卫星体' },
   { value: 'helix', label: '双螺旋' },
+  { value: 'drone', label: '四旋翼无人机' },
+  { value: 'mech', label: '人形机甲' },
+  { value: 'rover', label: '探测车' },
+  { value: 'droid', label: '宇航机器人' },
 ]
 
 type SceneProps = {
@@ -230,6 +238,14 @@ const SCENE_PALETTES: Record<SceneKind, { dark: ScenePalette; light: Partial<Sce
   aurora: {
     dark: { bg: 0x04101a, fog: 0x06202c, sky: 0x062236, skyTop: 0x08243a, skyBottom: 0x020a12, ground: 0x04141e, groundFar: 0x0a2230, stage: 0x03101a, platform: 0x5eead4, runway: 0x6ee7b7, runwaySoft: 0x5eead4, building: 0x061a26, buildingTop: 0x34d399 },
     light: { bg: 0xe6fbf4, fog: 0xc7f5e7, sky: 0x0f766e, skyTop: 0x5eead4, skyBottom: 0xecfdf5, ground: 0x99f6e4, groundFar: 0x5eead4, stage: 0xf0fdfa, platform: 0x14b8a6, runway: 0x10b981, runwaySoft: 0x14b8a6, building: 0x115e59, buildingTop: 0x34d399 },
+  },
+  hangar: {
+    dark: { bg: 0x0c0f14, fog: 0x141a22, sky: 0x1a2230, skyTop: 0x1c2632, skyBottom: 0x06090d, ground: 0x11161e, groundFar: 0x1c2530, stage: 0x0e131a, platform: 0xfbbf24, runway: 0xf59e0b, runwaySoft: 0xfde68a, building: 0x2a3340, buildingTop: 0xfbbf24 },
+    light: { bg: 0xeef1f5, fog: 0xdfe4ea, sky: 0x475569, skyTop: 0x97a3b5, skyBottom: 0xeef1f5, ground: 0xcbd2da, groundFar: 0x94a3b8, stage: 0xe2e6ec, platform: 0xf59e0b, runway: 0xd97706, runwaySoft: 0xfbbf24, building: 0x64748b, buildingTop: 0xf59e0b },
+  },
+  grid: {
+    dark: { bg: 0x03101a, fog: 0x06222e, sky: 0x06222e, skyTop: 0x082a3a, skyBottom: 0x020a12, ground: 0x04161f, groundFar: 0x0a2a38, stage: 0x03121a, platform: 0x22d3ee, runway: 0x67e8f9, runwaySoft: 0x22d3ee, building: 0x0a2a38, buildingTop: 0x67e8f9 },
+    light: { bg: 0xe0f7fb, fog: 0xbdf2f9, sky: 0x0e7490, skyTop: 0x5eb3c7, skyBottom: 0xe0f7fb, ground: 0xa5e8f2, groundFar: 0x67e8f9, stage: 0xeefafc, platform: 0x06b6d4, runway: 0x22d3ee, runwaySoft: 0x67e8f9, building: 0x0e7490, buildingTop: 0x22d3ee },
   },
 }
 
@@ -509,6 +525,26 @@ function makeAuroraTexture() {
   grad.addColorStop(1, 'rgba(167,139,250,0)')
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, 32, 256)
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  texture.needsUpdate = true
+  return texture
+}
+
+// 警示斑马纹贴图 (黄/深灰对角条), 机库对接口地标.
+function makeStripeTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#111827'
+  ctx.fillRect(0, 0, 64, 64)
+  ctx.fillStyle = '#fbbf24'
+  ctx.save()
+  ctx.translate(32, 32)
+  ctx.rotate(Math.PI / 4)
+  for (let x = -64; x < 64; x += 22) ctx.fillRect(x, -48, 11, 96)
+  ctx.restore()
   const texture = new CanvasTexture(canvas)
   texture.colorSpace = SRGBColorSpace
   texture.needsUpdate = true
@@ -919,6 +955,147 @@ function makeBackdropAurora(target: SceneTarget, palette: Palette, theme: SceneP
   return { root, animate }
 }
 
+// 全息网格面板: XY 平面的发光线网格 (LineSegments), 旋转后当地面/墙/顶.
+function makeGridPlane(size: number, divisions: number, color: number, opacity: number) {
+  const step = size / divisions
+  const half = size / 2
+  const pts: number[] = []
+  for (let i = 0; i <= divisions; i += 1) {
+    const v = -half + i * step
+    pts.push(-half, v, 0, half, v, 0)
+    pts.push(v, -half, 0, v, half, 0)
+  }
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new Float32BufferAttribute(pts, 3))
+  const mat = new LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: AdditiveBlending })
+  return new LineSegments(geo, mat)
+}
+
+// hangar: 机械机库 — 钢结构立柱 + 龙门吊 + 后墙机柜阵列(指示灯闪烁) + 警示地标 + 顶灯 (钢铁灰+琥珀).
+function makeBackdropHangar(target: SceneTarget, palette: Palette, theme: SceneProps['theme']): BackdropBuild {
+  const root = new Group()
+  addGround(root, target, palette, theme)
+  const R = target.stageRadius
+  const cx = target.center.x
+  const cz = target.center.z
+  const back = cz - R * 2.6
+  const steel = new MeshStandardMaterial({ color: palette.building, roughness: 0.62, metalness: 0.55 })
+  const steelLite = new MeshStandardMaterial({
+    color: palette.buildingTop, roughness: 0.5, metalness: 0.45,
+    emissive: new Color(palette.buildingTop).multiplyScalar(theme === 'light' ? 0.05 : 0.1),
+  })
+  const span = R * 2.0
+  // 四角钢柱
+  ;([[1, 1], [-1, 1], [1, -1], [-1, -1]] as const).forEach(([sx, sz]) => {
+    const pillar = new Mesh(new BoxGeometry(0.36, 7.4, 0.36), steel.clone())
+    pillar.position.set(cx + sx * span, 3.6, back + (sz > 0 ? R * 1.0 : 0))
+    root.add(pillar)
+  })
+  // 龙门吊: 主梁(沿X) + 横轨(沿Z) + 小车 + 钩缆
+  const gantryZ = back + R * 0.5
+  const mainBeam = new Mesh(new BoxGeometry(span * 2.2, 0.34, 0.34), steel.clone())
+  mainBeam.position.set(cx, 7.0, gantryZ); root.add(mainBeam)
+  const rail = new Mesh(new BoxGeometry(0.34, 0.34, R * 2.2), steel.clone())
+  rail.position.set(cx, 7.0, gantryZ); root.add(rail)
+  const trolley = new Mesh(new BoxGeometry(0.5, 0.34, 0.5), steelLite.clone())
+  trolley.position.set(cx, 6.8, gantryZ); root.add(trolley)
+  root.add(makeLine([new Vector3(cx, 6.6, gantryZ), new Vector3(cx, 4.4, gantryZ)], palette.runwaySoft, theme === 'light' ? 0.4 : 0.6))
+  const hook = new Mesh(new BoxGeometry(0.14, 0.14, 0.14), steelLite.clone())
+  hook.position.set(cx, 4.3, gantryZ); root.add(hook)
+  // 后墙机柜阵列 + 指示灯
+  const ledMats: MeshBasicMaterial[] = []
+  for (let i = 0; i < 11; i += 1) {
+    const x = cx + (i - 5) * (R * 0.4)
+    const rack = new Mesh(new BoxGeometry(0.5, 4.4, 0.5), steel.clone())
+    rack.position.set(x, 2.1, back - 0.2); root.add(rack)
+    for (let l = 0; l < 5; l += 1) {
+      const led = new Mesh(new BoxGeometry(0.035, 0.035, 0.02), new MeshBasicMaterial({ color: l % 2 ? palette.runway : palette.runwaySoft, transparent: true, opacity: 0.9 }))
+      led.position.set(x - 0.18 + l * 0.09, 3.9, back + 0.06)
+      root.add(led)
+      ledMats.push(led.material)
+    }
+  }
+  // 对接口警示地标
+  const stripeTex = makeStripeTexture()
+  stripeTex.wrapS = RepeatWrapping
+  stripeTex.wrapT = RepeatWrapping
+  stripeTex.repeat.set(6, 1)
+  const stripe = new Mesh(new PlaneGeometry(R * 3.6, 0.5), new MeshBasicMaterial({ map: stripeTex, transparent: true, opacity: theme === 'light' ? 0.55 : 0.7, depthWrite: false }))
+  stripe.rotation.x = -Math.PI / 2
+  stripe.position.set(cx, 0.02, cz + R * 0.95)
+  root.add(stripe)
+  // 顶灯
+  const lightMat = new SpriteMaterial({ map: makeDotTexture(), color: palette.runwaySoft, transparent: true, opacity: theme === 'light' ? 0.4 : 0.6, blending: AdditiveBlending, depthWrite: false })
+  ;[-1, 0, 1].forEach((i) => {
+    const l = new Sprite(lightMat.clone())
+    l.scale.set(2.2, 2.2, 1)
+    l.position.set(cx + i * R * 1.2, 6.6, back + R * 0.6)
+    root.add(l)
+  })
+  addFogBands(root, target, palette, theme)
+  const animate = (t: number) => {
+    ledMats.forEach((m, i) => { m.opacity = 0.35 + Math.abs(Math.sin(t * 1.8 + i * 0.4)) * 0.6 })
+  }
+  return { root, animate }
+}
+
+// grid: 全息训练场 — 封闭式发光线网格竞技场(地+顶+三面墙) + 上下扫描全息面 (青蓝). 适合机器人训练/仿真.
+function makeBackdropGrid(target: SceneTarget, palette: Palette, theme: SceneProps['theme']): BackdropBuild {
+  const root = new Group()
+  const R = target.stageRadius
+  const cx = target.center.x
+  const arenaZ = target.center.z - R * 0.4
+  const S = R * 2.6
+  const H = R * 2.4
+  const col = palette.runway
+  const op = theme === 'light' ? 0.32 : 0.46
+
+  const floor = makeGridPlane(S, 14, col, op)
+  floor.rotation.x = -Math.PI / 2
+  floor.position.set(cx, -0.02, arenaZ)
+  root.add(floor)
+
+  const ceil = makeGridPlane(S, 10, col, op * 0.4)
+  ceil.rotation.x = Math.PI / 2
+  ceil.position.set(cx, H, arenaZ)
+  root.add(ceil)
+
+  const wallB = makeGridPlane(S, 12, col, op * 0.8)
+  wallB.position.set(cx, H / 2, arenaZ - S / 2)
+  root.add(wallB)
+
+  const wallL = makeGridPlane(S, 12, col, op * 0.6)
+  wallL.rotation.y = Math.PI / 2
+  wallL.position.set(cx - S / 2, H / 2, arenaZ)
+  root.add(wallL)
+
+  const wallR = makeGridPlane(S, 12, col, op * 0.6)
+  wallR.rotation.y = Math.PI / 2
+  wallR.position.set(cx + S / 2, H / 2, arenaZ)
+  root.add(wallR)
+
+  // 全息扫描面 (上下扫)
+  const scan = new Mesh(new PlaneGeometry(S, S), new MeshBasicMaterial({ color: col, transparent: true, opacity: 0.1, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }))
+  scan.rotation.x = -Math.PI / 2
+  scan.position.set(cx, 0.04, arenaZ)
+  root.add(scan)
+
+  // 四角发光立柱
+  const pillarMat = new MeshBasicMaterial({ color: palette.platform, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false })
+  ;([[1, 1], [1, -1], [-1, 1], [-1, -1]] as const).forEach(([sx, sz]) => {
+    const p = new Mesh(new BoxGeometry(0.07, H, 0.07), pillarMat.clone())
+    p.position.set(cx + sx * S / 2, H / 2, arenaZ + sz * S / 2)
+    root.add(p)
+  })
+
+  const animate = (t: number) => {
+    const m = scan.material as MeshBasicMaterial
+    scan.position.y = (Math.sin(t * 0.5) * 0.5 + 0.5) * H
+    m.opacity = 0.06 + Math.abs(Math.cos(t * 0.5)) * 0.14
+  }
+  return { root, animate }
+}
+
 function makeBackdrop(target: SceneTarget, palette: Palette, theme: SceneProps['theme'], sceneKind: SceneKind | undefined): BackdropBuild {
   switch (sceneKind) {
     case 'lab': return makeBackdropLab(target, palette, theme)
@@ -927,6 +1104,8 @@ function makeBackdrop(target: SceneTarget, palette: Palette, theme: SceneProps['
     case 'galaxy': return makeBackdropGalaxy(target, palette, theme)
     case 'ocean': return makeBackdropOcean(target, palette, theme)
     case 'aurora': return makeBackdropAurora(target, palette, theme)
+    case 'hangar': return makeBackdropHangar(target, palette, theme)
+    case 'grid': return makeBackdropGrid(target, palette, theme)
     case 'city':
     default: return makeBackdropCity(target, palette, theme)
   }
@@ -992,6 +1171,10 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   })
   const panelMat = new MeshBasicMaterial({ color: selected ? 0xdbeafe : bodyColor, transparent: true, opacity: selected ? 0.84 : 0.62 })
   const glowMat = new MeshBasicMaterial({ color: selected ? 0x38bdf8 : bodyColor, transparent: true, opacity: selected ? 0.4 : 0.16, depthWrite: false, blending: AdditiveBlending })
+  const visorMat = new MeshStandardMaterial({
+    color: selected ? 0x38bdf8 : 0x0ea5e9, roughness: 0.22, metalness: 0.3,
+    emissive: new Color(selected ? 0x38bdf8 : 0x0ea5e9).multiplyScalar(selected ? 0.6 : 0.35),
+  })
 
   const group = new Group()
   const pivot = new Group() // 浮动 pivot (放身体, 地面光圈保持静止)
@@ -1008,7 +1191,9 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   group.add(pad, ring)
 
   const clickable: Object3D[] = []
-  let spinTarget: Object3D | null = null
+  // 形象内置动画收集器 (统一支持多旋翼/多关节自旋). 第一 effect 的帧循环通过返回的 animate 调用.
+  const updaters: Array<(t: number) => void> = []
+  const spin = (obj: Object3D, speed: number, axis: 'x' | 'y' | 'z' = 'y') => updaters.push((t) => { obj.rotation[axis] = t * speed })
 
   if (avatarKind === 'orb') {
     const body = new Mesh(new SphereGeometry(0.62, 48, 48), bodyMat); body.position.y = 0.78
@@ -1016,14 +1201,14 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     const shell = new Mesh(new SphereGeometry(0.68, 48, 48), panelMat.clone()); shell.position.y = 0.78
     pivot.add(body, top, shell)
     clickable.push(body, top, shell)
-    spinTarget = body
+    spin(body, 0.3)
   } else if (avatarKind === 'crystal') {
     const body = new Mesh(new OctahedronGeometry(0.66, 0), bodyMat); body.position.y = 0.82
     const top = new Mesh(new OctahedronGeometry(0.26, 0), topMat); top.position.y = 1.5
     const shell = new Mesh(new OctahedronGeometry(0.72, 0), panelMat.clone()); shell.position.y = 0.82
     pivot.add(body, top, shell)
     clickable.push(body, top, shell)
-    spinTarget = body
+    spin(body, 0.3)
   } else if (avatarKind === 'knot') {
     // 扭结核心: three.js 标志性的 TorusKnot, 金属发光, 持续旋转.
     const knot = new Mesh(new TorusKnotGeometry(0.42, 0.14, 140, 18), bodyMat)
@@ -1032,7 +1217,8 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     shell.position.y = 0.86
     pivot.add(knot, shell)
     clickable.push(knot, shell)
-    spinTarget = knot
+    spin(knot, 0.7)
+    updaters.push((t) => { knot.rotation.x = Math.sin(t * 0.4) * 0.25 })
   } else if (avatarKind === 'diamond') {
     // 钻石体: 冠部(浅锥) + 亭部(深锥) + 腰线环, 高金属低粗糙 = 闪亮宝石. 冠/亭共享 bodyMat(就地改质感, 随宿主一起 dispose).
     bodyMat.roughness = 0.12
@@ -1042,7 +1228,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     const girdle = new Mesh(new TorusGeometry(0.55, 0.03, 8, 6), topMat); girdle.position.y = 0.86; girdle.rotation.x = Math.PI / 2
     pivot.add(crown, pavilion, girdle)
     clickable.push(crown, pavilion, girdle)
-    spinTarget = pivot
+    spin(pivot, 0.5)
   } else if (avatarKind === 'satellite') {
     // 卫星体: 球形核心 + 倾斜轨道环 + 两侧太阳能板 + 天线, 环绕旋转.
     const core = new Mesh(new SphereGeometry(0.42, 36, 36), bodyMat); core.position.y = 0.9
@@ -1058,15 +1244,11 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
     const tip = new Mesh(new SphereGeometry(0.05, 12, 12), glowMat.clone()); tip.position.set(0, 1.54, 0)
     pivot.add(core, orbit, panelL, panelR, panelStripe(panelL), panelStripe(panelR), antenna, tip)
     clickable.push(core, orbitRing, panelL, panelR, antenna)
-    spinTarget = orbit
     // 卫星专有动画: 轨道环旋转 + 小月沿环跑.
-    const orbitAnimate = (t: number) => {
+    updaters.push((t) => {
       orbit.rotation.y = t * 0.9
-      const a = t * 0.9
-      moon.position.set(Math.cos(a) * 0.66, Math.sin(a) * 0.66 * Math.cos(Math.PI / 2.3), Math.sin(a) * 0.66 * Math.sin(Math.PI / 2.3))
-    }
-    setAgentId(group, agent.id)
-    return { group, clickable, animate: (t) => { orbitAnimate(t); pivot.position.y = Math.sin(t * 1.1 + phase) * 0.05 } }
+      moon.position.set(Math.cos(t * 0.9) * 0.66, Math.sin(t * 0.9) * 0.66 * Math.cos(Math.PI / 2.3), Math.sin(t * 0.9) * 0.66 * Math.sin(Math.PI / 2.3))
+    })
   } else if (avatarKind === 'helix') {
     // 双螺旋: 两条相位相反的螺旋珠链 + 连接横档, 整体绕 Y 旋转 (DNA/生物科技感).
     const turns = 2.6
@@ -1107,7 +1289,85 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
         }
       }
     }
-    spinTarget = pivot
+    spin(pivot, 0.55)
+  } else if (avatarKind === 'drone') {
+    // 四旋翼无人机: 八边形机身 + 4 机臂 + 4 高速旋翼 + 前置云台镜头 + 下方发光圈 (悬浮).
+    const hub = new Mesh(new CylinderGeometry(0.34, 0.4, 0.2, 8), bodyMat); hub.position.y = 1.0
+    const cap = new Mesh(new SphereGeometry(0.17, 20, 16), topMat); cap.position.y = 1.12
+    const eye = new Mesh(new SphereGeometry(0.09, 16, 16), visorMat); eye.position.set(0, 0.97, 0.33)
+    pivot.add(hub, cap, eye)
+    clickable.push(hub, cap, eye)
+    for (let i = 0; i < 4; i += 1) {
+      const ang = i * Math.PI / 2 + Math.PI / 4
+      const len = 0.52
+      const arm = new Mesh(new BoxGeometry(len, 0.04, 0.06), bodyMat)
+      arm.position.set(Math.cos(ang) * len / 2, 1.0, Math.sin(ang) * len / 2)
+      arm.rotation.y = -ang
+      pivot.add(arm); clickable.push(arm)
+      const tx = Math.cos(ang) * len, tz = Math.sin(ang) * len
+      const housing = new Mesh(new CylinderGeometry(0.1, 0.1, 0.05, 16), topMat); housing.position.set(tx, 1.02, tz)
+      pivot.add(housing)
+      const rotor = new Group(); rotor.position.set(tx, 1.07, tz)
+      const bladeA = new Mesh(new BoxGeometry(0.28, 0.012, 0.03), glowMat.clone())
+      const bladeB = new Mesh(new BoxGeometry(0.28, 0.012, 0.03), glowMat.clone()); bladeB.rotation.y = Math.PI / 2
+      rotor.add(bladeA, bladeB); pivot.add(rotor)
+      spin(rotor, 14)
+    }
+    const under = new Mesh(new CircleGeometry(0.32, 24), glowMat.clone()); under.rotation.x = -Math.PI / 2; under.position.y = 0.88
+    pivot.add(under)
+  } else if (avatarKind === 'mech') {
+    // 人形机甲: 双腿 + 躯干(胸口反应堆) + 双肩 + 双臂 + 头(发光面罩). 站立微摆 + 头部环视.
+    const legGeo = new BoxGeometry(0.22, 0.7, 0.24)
+    const legL = new Mesh(legGeo, bodyMat); legL.position.set(-0.18, 0.35, 0)
+    const legR = new Mesh(legGeo, bodyMat); legR.position.set(0.18, 0.35, 0)
+    const hip = new Mesh(new BoxGeometry(0.52, 0.2, 0.42), topMat); hip.position.y = 0.74
+    const torso = new Mesh(new BoxGeometry(0.7, 0.72, 0.5), bodyMat); torso.position.y = 1.12
+    const core = new Mesh(new BoxGeometry(0.18, 0.18, 0.06), visorMat); core.position.set(0, 1.16, 0.27)
+    const shL = new Mesh(new BoxGeometry(0.22, 0.24, 0.26), topMat); shL.position.set(-0.46, 1.4, 0)
+    const shR = new Mesh(new BoxGeometry(0.22, 0.24, 0.26), topMat); shR.position.set(0.46, 1.4, 0)
+    const armL = new Mesh(new BoxGeometry(0.16, 0.52, 0.18), bodyMat); armL.position.set(-0.46, 1.0, 0)
+    const armR = new Mesh(new BoxGeometry(0.16, 0.52, 0.18), bodyMat); armR.position.set(0.46, 1.0, 0)
+    const head = new Mesh(new BoxGeometry(0.34, 0.3, 0.32), topMat); head.position.y = 1.66
+    const visor = new Mesh(new BoxGeometry(0.26, 0.07, 0.04), visorMat); visor.position.set(0, 1.68, 0.17)
+    pivot.add(legL, legR, hip, torso, core, shL, shR, armL, armR, head, visor)
+    clickable.push(torso, head, core, armL, armR, legL, legR)
+    updaters.push((t) => {
+      pivot.rotation.z = Math.sin(t * 1.0 + phase) * 0.03
+      head.rotation.y = Math.sin(t * 0.6) * 0.14
+    })
+  } else if (avatarKind === 'rover') {
+    // 探测车: 车身 + 顶部太阳能板 + 桅杆 + 相机头(发光镜头) + 6 轮(滚动). 火星巡视器.
+    const body = new Mesh(new BoxGeometry(0.92, 0.3, 0.6), bodyMat); body.position.y = 0.5
+    const deck = new Mesh(new BoxGeometry(0.82, 0.04, 0.5), topMat); deck.position.y = 0.66
+    const mast = new Mesh(new CylinderGeometry(0.03, 0.03, 0.5, 8), topMat); mast.position.set(0, 0.92, 0.08)
+    const camHead = new Mesh(new BoxGeometry(0.18, 0.14, 0.14), bodyMat); camHead.position.set(0, 1.2, 0.08)
+    const lens = new Mesh(new CylinderGeometry(0.045, 0.045, 0.06, 14), visorMat); lens.rotation.x = Math.PI / 2; lens.position.set(0, 1.2, 0.18)
+    pivot.add(body, deck, mast, camHead, lens)
+    clickable.push(body, camHead, mast)
+    const wheelGeo = new CylinderGeometry(0.17, 0.17, 0.1, 18)
+    ;[[-0.34, -0.2], [0, -0.2], [0.34, -0.2], [-0.34, 0.2], [0, 0.2], [0.34, 0.2]].forEach(([x, z]) => {
+      const wp = new Group(); wp.position.set(x, 0.17, z); wp.rotation.x = Math.PI / 2
+      const w = new Mesh(wheelGeo, topMat)
+      wp.add(w); pivot.add(wp)
+      spin(w, 2.2)
+    })
+    updaters.push((t) => { camHead.rotation.y = Math.sin(t * 0.5) * 0.3 })
+  } else if (avatarKind === 'droid') {
+    // 宇航机器人: 球形机体(滚动) + 装饰环 + 顶部小头(独眼+天线). BB-8/球童式.
+    const bodySpin = new Group(); bodySpin.position.y = 0.5
+    const ball = new Mesh(new SphereGeometry(0.5, 36, 28), bodyMat)
+    const ringA = new Mesh(new TorusGeometry(0.5, 0.03, 8, 40), topMat); ringA.rotation.x = Math.PI / 2
+    const ringB = new Mesh(new TorusGeometry(0.36, 0.025, 8, 32), panelMat.clone()); ringB.rotation.x = Math.PI / 2.3
+    bodySpin.add(ball, ringA, ringB)
+    const head = new Group(); head.position.set(0, 1.0, 0.04)
+    const dome = new Mesh(new SphereGeometry(0.22, 24, 18), topMat)
+    const droidEye = new Mesh(new SphereGeometry(0.05, 14, 14), visorMat); droidEye.position.set(0, 0.02, 0.2)
+    const ant = new Mesh(new CylinderGeometry(0.01, 0.01, 0.13, 8), topMat); ant.position.set(0.06, 0.2, 0)
+    head.add(dome, droidEye, ant)
+    pivot.add(bodySpin, head)
+    clickable.push(ball, dome)
+    spin(bodySpin, 0.4)
+    updaters.push((t) => { head.rotation.z = Math.sin(t * 0.8 + phase) * 0.06; head.position.x = Math.sin(t * 0.8 + phase) * 0.03 })
   } else {
     // robot (默认): 方块机器人
     const base = new Mesh(new BoxGeometry(0.82, 0.2, 0.72), bodyMat); base.position.y = 0.15
@@ -1124,12 +1384,7 @@ function makeAgentAvatar(agent: ResearchTeamSceneAgent, color: number, selected:
   setAgentId(group, agent.id)
   const animate = (t: number) => {
     pivot.position.y = Math.sin(t * 1.1 + phase) * 0.05
-    if (spinTarget) {
-      if (avatarKind === 'knot') { spinTarget.rotation.y = t * 0.7; spinTarget.rotation.x = Math.sin(t * 0.4) * 0.25 }
-      else if (avatarKind === 'diamond') { spinTarget.rotation.y = t * 0.5 }
-      else if (avatarKind === 'helix') { spinTarget.rotation.y = t * 0.55 }
-      else if (avatarKind === 'orb' || avatarKind === 'crystal') { spinTarget.rotation.y = t * 0.3 }
-    }
+    for (const u of updaters) u(t)
   }
   return { group, clickable, animate }
 }
