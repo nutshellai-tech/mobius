@@ -315,6 +315,18 @@ function createWindow(): void {
   mainWindow.on("maximize", () => broadcast("window:maximize-changed", true));
   mainWindow.on("unmaximize", () => broadcast("window:maximize-changed", false));
 
+  // 缩放约束：拖拽时强制 width >= height（不锁 aspectRatio，仅维持不等式 w ≥ h）。
+  // will-resize 在用户手动拖拽改尺寸前触发；setBounds 不会触发本事件，故无递归。
+  // minWidth:1040 / minHeight:760 保持不变（width=1040 时 height 同步为 1040 仍 ≥760，无冲突）；
+  // 最大化/还原不经过 will-resize，行为不受影响。同一份代码三平台统一处理。
+  mainWindow.on("will-resize", (event, newBounds) => {
+    if (newBounds.width < newBounds.height) {
+      event.preventDefault();
+      // 把 height 同步为 width，确保 w ≥ h（相等即满足）。
+      mainWindow?.setBounds({ ...newBounds, height: newBounds.width });
+    }
+  });
+
   // 只允许在登录服务器 origin 内导航，防被重定向到钓鱼页
   mainWindow.webContents.on("will-navigate", (_e, url) => {
     if (url.startsWith("file://")) return;
