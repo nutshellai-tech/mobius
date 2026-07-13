@@ -775,6 +775,14 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           <AimuxStatusBadge />
           {/* 桌面端项目本地路径绑定闸门 — 仅 Electron + 进入未绑定项目时弹窗（替代旧 Electron 注入 overlay） */}
           <ProjectPathBindGate projectId={projectParam} />
+          {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
+          <GlobalCreateMenu
+            open={showNewMenu}
+            onOpenChange={setShowNewMenu}
+            onPick={setCreateKind}
+            inProject={inProject}
+            currentProject={currentProject}
+          />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"
@@ -787,14 +795,6 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             {/* {!isMobile && <span className="mobius-topnav-search-label text-[12px] font-medium">搜索</span>} */}
           </button>
-          {/* 新建下拉 — 全局 4 类创建 (项目 / Issue / Session / Research Agent) */}
-          <GlobalCreateMenu
-            open={showNewMenu}
-            onOpenChange={setShowNewMenu}
-            onPick={setCreateKind}
-            inProject={inProject}
-            currentProject={currentProject}
-          />
           <button
             type="button"
             onClick={() => setShowGuideHelp(true)}
