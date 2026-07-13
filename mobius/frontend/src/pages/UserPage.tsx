@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -123,28 +123,44 @@ export default function UserPage() {
     navigate(to)
   }
 
-  const LinklessNav = ({ to, className = '', children, onClick, onAuxClick, ...props }: any) => (
-    <button
-      type="button"
-      {...props}
-      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
-      onClick={(event) => {
-        console.debug('[diag] LinklessNav onClick', to, 'at', +event.timeStamp.toFixed(1), 'defaultPrevented=', event.defaultPrevented)
-        onClick?.(event)
-        if (event.defaultPrevented) return
-        openNavTarget(to, event)
-      }}
-      onAuxClick={(event) => {
-        onAuxClick?.(event)
-        if (event.defaultPrevented) return
-        if (event.button !== 1) return
-        event.preventDefault()
-        openNavTarget(to, event)
-      }}
-    >
-      {children}
-    </button>
-  )
+  const LinklessNav = ({ to, className = '', children, onClick, onAuxClick, ...props }: any) => {
+    // 连点偶发无响应兜底: 导航按钮在连点期间其 DOM 节点可能被 React 重渲染替换,
+    // 浏览器因 mousedown/mouseup 落在不同节点实例而不触发 click -> onClick 丢失 -> 导航无响应.
+    // mouseup 仍会在替换后的新节点触发, 用 onMouseUp 兜底导航; onClick 与 onMouseUp 用 rAF guard 去重.
+    const navGuardRef = useRef(false)
+    const tryNav = (event: any) => {
+      if (event.defaultPrevented) return
+      if (navGuardRef.current) { console.debug('[diag] tryNav guarded', to); return }
+      navGuardRef.current = true
+      requestAnimationFrame(() => { navGuardRef.current = false })
+      console.debug('[diag] tryNav OK', to, 'at', +event.timeStamp.toFixed(1))
+      openNavTarget(to, event)
+    }
+    return (
+      <button
+        type="button"
+        {...props}
+        className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+        onClick={(event) => {
+          onClick?.(event)
+          tryNav(event)
+        }}
+        onMouseUp={(event) => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return
+          tryNav(event)
+        }}
+        onAuxClick={(event) => {
+          onAuxClick?.(event)
+          if (event.defaultPrevented) return
+          if (event.button !== 1) return
+          event.preventDefault()
+          openNavTarget(to, event)
+        }}
+      >
+        {children}
+      </button>
+    )
+  }
 
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
