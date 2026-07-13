@@ -119,7 +119,6 @@ export default function UserPage() {
       window.open(to, '_blank', 'noopener,noreferrer')
       return
     }
-    console.debug('[diag] navigate ->', to, 'at', +(event?.timeStamp ?? 0).toFixed(1))
     navigate(to)
   }
 
@@ -130,10 +129,9 @@ export default function UserPage() {
     const navGuardRef = useRef(false)
     const tryNav = (event: any) => {
       if (event.defaultPrevented) return
-      if (navGuardRef.current) { console.debug('[diag] tryNav guarded', to); return }
+      if (navGuardRef.current) return
       navGuardRef.current = true
       requestAnimationFrame(() => { navGuardRef.current = false })
-      console.debug('[diag] tryNav OK', to, 'at', +event.timeStamp.toFixed(1))
       openNavTarget(to, event)
     }
     return (
@@ -170,49 +168,6 @@ export default function UserPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [userParam])
-
-  // TEMP DEBUG (2026-07-13): 定位 /u/<user> 页面连点偶发无效. 复现后执行 copy(JSON.stringify(window.__clickDiag)) 贴给小莫, 定位完移除.
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    const seq: any[] = []
-    ;(window as any).__clickDiag = seq
-    let mdNode: Element | null = null
-    let mutationsBetween = 0
-    const mo = new MutationObserver(() => { mutationsBetween++ })
-    mo.observe(document.body, { childList: true, subtree: true })
-    const record = (e: Event) => {
-      const t = e.target as Element | null
-      const me = e as MouseEvent
-      const info: any = {
-        type: e.type, ts: +e.timeStamp.toFixed(1),
-        tag: t?.tagName || '',
-        title: (t as HTMLElement)?.getAttribute?.('title') || '',
-        cx: me.clientX, cy: me.clientY, btn: me.button,
-      }
-      if (e.type === 'mousedown') {
-        mdNode = t
-        mutationsBetween = 0
-        info.disabled = (t as HTMLButtonElement)?.disabled ?? null
-      }
-      if (e.type === 'mouseup') {
-        info.mdSameNode = t === mdNode
-        info.mdStillInDom = mdNode ? document.contains(mdNode) : null
-        info.mutations = mutationsBetween
-        info.activeEl = document.activeElement ? `${document.activeElement.tagName}/${(document.activeElement as HTMLElement).getAttribute?.('title') || ''}` : ''
-      }
-      seq.push(info)
-      if (seq.length > 500) seq.shift()
-      console.debug('[diag]', info)
-    }
-    const opt: AddEventListenerOptions = { capture: true, passive: true }
-    const types = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'dragstart', 'selectstart', 'contextmenu']
-    types.forEach((t) => document.addEventListener(t, record, opt))
-    console.debug('[diag v2] installed. 连点项目标题 10 次(含无效的), 再 copy(JSON.stringify(window.__clickDiag))')
-    return () => {
-      mo.disconnect()
-      types.forEach((t) => document.removeEventListener(t, record, opt))
-    }
-  }, [])
 
   // 进入页面时拉取已屏蔽项目 ID
   useEffect(() => {
