@@ -194,11 +194,23 @@ function AuthenticatedApp() {
 }
 
 export default function App() {
-  const { token, user, theme, backgroundFlowEnabled, logout } = useStore()
+  const { token, user, authChecking, theme, backgroundFlowEnabled, logout } = useStore()
 
   useEffect(() => {
     if (token && !user) {
-      api('/api/auth/me').then(u => useStore.getState().setAuth(token, u)).catch(() => logout())
+      // 标记"会话校验中": 期间 App 渲染加载态而非登录页, 避免弱网下闪现登录页.
+      useStore.setState({ authChecking: true })
+      api('/api/auth/me')
+        .then(u => useStore.getState().setAuth(token, u))
+        .catch(() => {
+          // 区分"未授权"与"网络错误":
+          //  - 401 已在 api() 内清 token 并跳转首页, 这里仅收尾 authChecking.
+          //  - 网络错误(fetch reject)时 token 仍有效, 不主动 logout, 保留 token
+          //    以便刷新后继续校验, 避免弱网偶发失败把已登录用户误踢回登录页.
+          const tokenStillValid = !!localStorage.getItem('cc-token')
+          useStore.setState({ authChecking: false })
+          if (!tokenStillValid) logout()
+        })
     }
   }, [token])
 
@@ -222,6 +234,11 @@ export default function App() {
     applyCustomThemeToRoot(map[activeId] || null)
     pushDesktopTitleBarTheme()
   }, [theme])
+
+  // 有 token 但会话尚在校验: 显示加载态, 而不是登录页(消除弱网下闪现登录页).
+  if (token && authChecking && !user) {
+    return <RouteFallback />
+  }
 
   if (!token || !user) {
     return (

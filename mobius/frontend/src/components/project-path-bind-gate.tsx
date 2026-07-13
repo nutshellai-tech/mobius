@@ -87,7 +87,7 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
       >
         <h3 className="text-[16px] font-semibold mb-2.5">绑定本地工作路径</h3>
-        <p className="text-[13px] mb-3.5" style={{ color: 'var(--text-secondary)' }}>
+        <p className="text-[13px] mb-3.5 break-words leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
           本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。您必须选择一个本地路径才能继续。
         </p>
         <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>
