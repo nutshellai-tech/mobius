@@ -9,6 +9,18 @@ function loadBackgroundFlowEnabled() {
   return stored == null ? false : stored === '1'
 }
 
+// 工作区布局模式: 'session' (现有会话监督布局) | 'editor-chat' (左 code-server 编辑器 + 右 Session 对话).
+// 属于用户全局偏好, 持久化到 localStorage; 非法值一律回落 'session'.
+const WORKSPACE_LAYOUT_STORAGE_KEY = 'mobius:ui:workspace-layout'
+export type WorkspaceLayoutMode = 'session' | 'editor-chat'
+function loadWorkspaceLayoutMode(): WorkspaceLayoutMode {
+  try {
+    return localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY) === 'editor-chat' ? 'editor-chat' : 'session'
+  } catch {
+    return 'session'
+  }
+}
+
 // Branding: 由 index.html 头部同步阻塞 script 注入到 window.__BRANDING__,
 // React 启动前已经定型, 不需要异步 fetch, 避免首屏闪烁.
 interface Branding {
@@ -265,6 +277,8 @@ interface AppState {
   // 移动端断点(px): 由当前页面设置 (内容密集页可调大, 如 ProjectPage=1024);
   // TopNav 汉堡按钮的显隐与 ResizablePanel 抽屉态都读它, 保证两者始终同步.
   mobileNavBreakpoint: number
+  // 工作区布局模式 (session | editor-chat). 用户全局偏好, 持久化.
+  workspaceLayoutMode: WorkspaceLayoutMode
   // Actions
   setAuth: (token: string, user: User) => void
   logout: () => void
@@ -274,6 +288,8 @@ interface AppState {
   setMutedProjectIds: (ids: string[]) => void
   setMobileNavOpen: (open: boolean) => void
   setMobileNavBreakpoint: (px: number) => void
+  setWorkspaceLayoutMode: (mode: WorkspaceLayoutMode) => void
+  toggleWorkspaceLayoutMode: () => void
   setIssues: (issues: Issue[]) => void
   setIssuesMap: (projectId: string, issues: Issue[]) => void
   setCurrentIssue: (issue: Issue | null) => void
@@ -330,6 +346,7 @@ export const useStore = create<AppState>((set) => ({
   branding: loadInitialBranding(),
   mobileNavOpen: false,
   mobileNavBreakpoint: 900,
+  workspaceLayoutMode: loadWorkspaceLayoutMode(),
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
     set({ token, user, authChecking: false })
@@ -344,6 +361,16 @@ export const useStore = create<AppState>((set) => ({
   setMutedProjectIds: (ids) => set({ mutedProjectIds: Array.isArray(ids) ? ids : [] }),
   setMobileNavOpen: (open) => set({ mobileNavOpen: !!open }),
   setMobileNavBreakpoint: (px) => set({ mobileNavBreakpoint: Number.isFinite(px) && px > 0 ? Math.round(px) : 900 }),
+  setWorkspaceLayoutMode: (mode) => {
+    const next: WorkspaceLayoutMode = mode === 'editor-chat' ? 'editor-chat' : 'session'
+    try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
+    set({ workspaceLayoutMode: next })
+  },
+  toggleWorkspaceLayoutMode: () => set((s) => {
+    const next: WorkspaceLayoutMode = s.workspaceLayoutMode === 'editor-chat' ? 'session' : 'editor-chat'
+    try { localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, next) } catch { /* localStorage 不可用时静默 */ }
+    return { workspaceLayoutMode: next }
+  }),
   setIssues: (issues) => set({ issues }),
   setIssuesMap: (projectId, issues) => set((s) => ({ issuesMap: { ...s.issuesMap, [projectId]: issues } })),
   setCurrentIssue: (issue) => set({ currentIssue: issue }),
