@@ -3014,7 +3014,7 @@ export function ChatArea() {
         />
       )}
       {/* 顶栏（会话标题 + 单一状态 chip + Stop + VSCode + 溢出菜单） */}
-      <div data-tour="session-chat-header" className="h-12 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
+      <div data-tour="session-chat-header" className="h-10 border-b flex items-center justify-between px-5 flex-shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}>
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="min-w-0 flex items-center gap-2">
             <SessionTitle name={currentSession?.name || currentTask?.name} theme={theme} />
