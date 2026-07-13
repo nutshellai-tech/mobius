@@ -4,21 +4,20 @@
 // 需求: 顶栏搜索框输入关键词, 返回命中的每个 session 及其命中片段,
 //       层级: 项目 → Issue/Research → Session → 命中片段.
 //
-// 数据源 (双层, DB 优先以保证响应速度):
-//   1. 主路径 — messages_v2 表 (覆盖 ~98% 会话): 单条 SQL LIKE 直接搜 message 正文,
-//      实测全 7 天候选集 < 100ms. role 仅取 user/assistant/tool/thinking (system 是注入
-//      提醒/上下文, 非 agent JSONL 原文, 纳入只会加噪且变慢, 跳过).
-//   2. 回退路径 — session 的 JSONL 原文 (primary cc jsonl + .mobius.jsonl sidecar):
-//      仅对 messages_v2 完全没有任何消息的会话 (多为刚建、尚未镜像的新会话) 扫文件, 保覆盖率.
-//      路径解析复用 backend._resolveJsonlPath (runtime → hub-runtime.json → hub-archive.json).
+// 数据源: session 的 JSONL 原文 (primary cc jsonl + .mobius.jsonl sidecar, 与
+//         readMergedJsonlHistory 同源). 路径解析复用 backend._resolveJsonlPath
+//         (runtime → hub-runtime.json → hub-archive.json 三级查表).
+//         注: messages_v2 自 2026-06-10 起只落 user/system (assistant/tool/thinking 的
+//         insertXxx 成死代码、无调用方), 不能作内容搜索源 → 完整对话正文仍以 JSONL 为唯一权威源.
 //
 // 性能边界 (用户主动触发, 非轮询; 仍要保护单 worker 事件循环):
 //   - 候选 session 上限 DEFAULT_CANDIDATES=200 (按 last_active 倒序), 可由 query 抬到 MAX_CANDIDATES.
 //   - 时间范围 range (默认 7d): 仅扫 created_at 在窗口内的 session, 缩小候选集.
-//   - DB 路径用 ROW_NUMBER() 窗口按 session 截 maxFragments 条最新命中, 单个话痨会话不会刷屏.
+//   - 有界并发扫描 SCAN_CONCURRENCY=8, 重叠文件 I/O (await 让出事件循环时其它 worker 推进).
 //   - 单 jsonl 文件读取上限 FILE_READ_CAP=1.5MB, 超过只读尾部; 整文件一次小写预判, 无命中直接跳过.
-//   - 单 session 命中片段上限 MAX_FRAGMENTS_PER_SESSION=3.
-//   - 回退路径全局墙钟预算 BUDGET_MS=4000ms, 超时返回已得部分 + truncated=true.
+//   - 单 session 命中片段上限 MAX_FRAGMENTS_PER_SESSION=3, 命中即提前结束该文件扫描.
+//   - 全局墙钟预算 BUDGET_MS=4000ms, 超时返回已得部分 + truncated=true.
+//   - 匹配用「原始 JSONL 行小写子串」, 命中行才 JSON.parse 提取可读片段 — 不逐行 parse.
 // =====================================================================
 import express from 'express';
 import fs from 'fs';
@@ -51,17 +50,12 @@ const MAX_FRAGMENTS_PER_SESSION = 3;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const BUDGET_MS = 4000;
-const MATCH_ROW_CAP = 1000; // DB 主路径单次最多取多少条 (session,message) 匹配行的安全上限
+const SCAN_CONCURRENCY = 8; // 并发扫 JSONL 的 worker 数 (重叠文件 I/O; 单 worker 事件循环不被长时阻塞)
 
 function clampInt(v: any, def: number, lo: number, hi: number): number {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return def;
   return Math.max(lo, Math.min(hi, n));
-}
-
-// 转义 LIKE 的特殊字符 (% _ \), 使关键词按字面子串匹配 (与原 JSONL 子串语义一致).
-function escapeLike(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 // ---- 从一条 JSONL entry 提取 {role, text, timestamp} ----
@@ -125,30 +119,6 @@ interface Fragment {
   role: string;
   snippet: string;
   timestamp: string | null;
-}
-
-// 把 messages_v2 匹配行按 task_id 聚合成每会话 ≤ maxFragments 条片段 (SQL 已按 created_at DESC 取最新).
-// 同会话内按 role+片段前缀去重 (与 scanSession 同策略).
-function groupDbMatches(matchRows: any[], qLower: string, qlen: number, maxFragments: number): Map<string, Fragment[]> {
-  const bySession = new Map<string, { frags: Fragment[]; seen: Set<string> }>();
-  for (const r of matchRows) {
-    const sid = r.task_id;
-    let bucket = bySession.get(sid);
-    if (!bucket) { bucket = { frags: [], seen: new Set() }; bySession.set(sid, bucket); }
-    if (bucket.frags.length >= maxFragments) continue;
-    const text = String(r.content || '');
-    const lo = text.toLowerCase();
-    const mIdx = lo.indexOf(qLower);
-    const snippet = mIdx >= 0 ? windowAround(text, mIdx, qlen) : windowAround(text, 0, 0);
-    const role = String(r.role || 'unknown');
-    const key = role + '|' + snippet.slice(0, 60);
-    if (bucket.seen.has(key)) continue;
-    bucket.seen.add(key);
-    bucket.frags.push({ role, snippet, timestamp: r.created_at || null });
-  }
-  const out = new Map<string, Fragment[]>();
-  for (const [sid, bucket] of bySession) out.set(sid, bucket.frags);
-  return out;
 }
 
 const fsp = fs.promises;
@@ -266,6 +236,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
 
   const start = Date.now();
   let truncatedByBudget = false;
+  let scannedCount = 0;
 
   // 访问控制: 先过滤出可读候选 (canReadSession 是 JS 逻辑, 无法下推 SQL).
   const readable: any[] = [];
@@ -273,53 +244,35 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
     if (canReadSession(user, row)) readable.push(row);
   }
 
-  // ===== 主路径: 直接搜 messages_v2 (单条 SQL, 覆盖 ~98% 会话, 实测 < 100ms) =====
-  // ROW_NUMBER() 窗口按 session 截 maxFragments 条最新命中, 防止单个话痨会话刷屏占满结果.
-  const fragsBySession = new Map<string, Fragment[]>();
-  const coveredTaskIds = new Set<string>(); // messages_v2 里出现过消息的 session → 其余才需 JSONL 回退
-  if (readable.length) {
-    const idPlaceholders = readable.map(() => '?').join(',');
-    const ids = readable.map(r => r.session_id);
-    const likePattern = `%${escapeLike(q)}%`;
-    const matchRows: any[] = db.prepare(`
-      SELECT task_id, role, content, created_at FROM (
-        SELECT task_id, role, content, created_at,
-               ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY created_at DESC) AS rn
-        FROM messages_v2
-        WHERE task_id IN (${idPlaceholders})
-          AND role IN ('user','assistant','tool','thinking')
-          AND content LIKE ? ESCAPE '\\'
-      )
-      WHERE rn <= ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(...ids, likePattern, maxFragments, MATCH_ROW_CAP);
-    for (const [sid, frags] of groupDbMatches(matchRows, qLower, q.length, maxFragments)) {
-      fragsBySession.set(sid, frags);
+  // 有界并发扫描 JSONL (重叠文件 I/O; JS 单线程, nextIdx/scannedCount 自增在 await 之间同步执行, 无竞态).
+  const fragsByIndex = new Map<number, Fragment[]>();
+  let nextIdx = 0;
+  let budgetStopped = false;
+  const worker = async () => {
+    while (!budgetStopped) {
+      const myIdx = nextIdx++;
+      if (myIdx >= readable.length) return;
+      if (Date.now() - start > BUDGET_MS) { truncatedByBudget = true; budgetStopped = true; return; }
+      const row = readable[myIdx];
+      let ff: Fragment[];
+      try {
+        ff = await scanSession(row.session_id, row.model, qLower, q.length, maxFragments);
+      } catch {
+        ff = [];
+      }
+      scannedCount++;
+      if (ff.length > 0) fragsByIndex.set(myIdx, ff);
     }
-    // 哪些 readable session 在 messages_v2 里有消息 → 其余才需要 JSONL 回退 (走 idx_messages_v2_task, 很快).
-    const cov: any[] = db.prepare(`SELECT DISTINCT task_id FROM messages_v2 WHERE task_id IN (${idPlaceholders})`).all(...ids);
-    for (const c of cov) coveredTaskIds.add(c.task_id);
-  }
+  };
+  const workerCount = Math.min(SCAN_CONCURRENCY, readable.length);
+  if (workerCount > 0) await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
-  // ===== 回退路径: 仅对 messages_v2 完全没有消息的会话扫 JSONL 文件 (保覆盖率, 多为刚建的新会话) =====
-  for (const row of readable) {
-    if (coveredTaskIds.has(row.session_id)) continue;
-    if (Date.now() - start > BUDGET_MS) { truncatedByBudget = true; break; }
-    let ff: Fragment[];
-    try {
-      ff = await scanSession(row.session_id, row.model, qLower, q.length, maxFragments);
-    } catch {
-      ff = [];
-    }
-    if (ff.length > 0) fragsBySession.set(row.session_id, ff);
-  }
-
-  // 组装结果 (readable 已按 last_active 倒序 → 结果自然最活跃在前).
+  // 组装结果 (按 readable 顺序 = last_active 倒序 → 最活跃在前).
   const results: any[] = [];
-  for (const row of readable) {
-    const frags = fragsBySession.get(row.session_id);
+  for (let i = 0; i < readable.length; i++) {
+    const frags = fragsByIndex.get(i);
     if (!frags || frags.length === 0) continue;
+    const row = readable[i];
     results.push({
       session_id: row.session_id,
       session_name: row.name,
@@ -341,7 +294,7 @@ router.get('/', auth, async (req: express.Request, res: express.Response) => {
     query: q,
     range: rangeKey,
     total: results.length,
-    scanned_sessions: readable.length,
+    scanned_sessions: scannedCount,
     candidate_sessions: rows.length,
     truncated: truncatedByBudget,
     results,
