@@ -62,7 +62,7 @@ export function WindowControls() {
         style={btnBase}
         onMouseEnter={(e) => enterHover(e, 'var(--bg-hover)')} onMouseLeave={leaveHover}
         onClick={() => md.windowMinimize?.().catch(() => {})}>
-        <svg width="10" height="10" viewBox="0 0 11 11"><rect y="5" width="11" height="1.1" fill="currentColor" /></svg>
+        <svg width="10" height="10" viewBox="0 0 11 11"><rect y="4.6" width="11" height="1.8" fill="currentColor" /></svg>
       </button>
       <button type="button" title={maximized ? '还原' : '最大化'} aria-label={maximized ? '还原' : '最大化'}
         style={btnBase}
