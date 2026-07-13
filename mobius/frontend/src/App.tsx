@@ -5,6 +5,7 @@ import { useStore, api } from './store'
 import { startTextRedactionRuntime } from './services/text-redaction'
 import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
+import { DesktopTitleBar } from './components/window-controls'
 
 const Login = lazy(() => import('./pages/Login'))
 const Welcome = lazy(() => import('./pages/Welcome'))
@@ -176,7 +177,7 @@ function AuthenticatedApp() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
-          <Route path="/welcome" element={<Welcome />} />
+          <Route path="/welcome" element={<><DesktopTitleBar /><Welcome /></>} />
           <Route path="/u/:user" element={<UserPage />} />
           <Route path="/u/:user/p/:project" element={<ProjectPage />} />
           <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
