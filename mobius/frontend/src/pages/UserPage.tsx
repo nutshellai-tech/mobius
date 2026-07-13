@@ -562,7 +562,7 @@ export default function UserPage() {
                 <div className="flex items-center gap-2">
                   <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
                     icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-                    新建项目
+                    新项目
                   </PrimaryActionButton>
                   {userParam === user?.id && (
                     <button type="button" onClick={toggleSkillMemory}
