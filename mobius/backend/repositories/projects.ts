@@ -65,6 +65,8 @@ type ProjectRawRowWithExtras = ProjectRawRow & {
   hidden?: number;
   issue_count?: number;
   research_count?: number;
+  recent_session_count?: number;
+  recent_research_agent_count?: number;
   created_by_name?: string;
 };
 
@@ -194,22 +196,28 @@ const Projects = {
           CASE WHEN pus.user_id IS NULL THEN 0 ELSE 1 END AS starred,
           CASE WHEN puh.user_id IS NULL THEN 0 ELSE 1 END AS hidden,
           (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
-          (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count
+          (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
+          (SELECT COUNT(*) FROM sessions_v2 WHERE project_id = p.id AND scope_type = 'issue' AND datetime(created_at) >= datetime('now', '-7 days')) as recent_session_count,
+          -- "research agent" is represented by research-scoped agent sessions, not research rows.
+          (SELECT COUNT(*) FROM sessions_v2 WHERE project_id = p.id AND scope_type = 'research' AND datetime(created_at) >= datetime('now', '-7 days')) as recent_research_agent_count
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         LEFT JOIN project_user_stars pus ON pus.project_id = p.id AND pus.user_id = ?
         LEFT JOIN project_user_hidden puh ON puh.project_id = p.id AND puh.user_id = ?
-        ORDER BY starred DESC, p.last_active DESC, p.name ASC
+        ORDER BY starred DESC, (recent_session_count + recent_research_agent_count) DESC, p.last_active DESC, p.name ASC
       `).all(userId, userId) as ProjectRawRowWithExtras[]).map(hydrate);
     }
     return (db.prepare(`
       SELECT p.*, u.display_name as created_by_name,
       0 AS starred, 0 AS hidden,
       (SELECT COUNT(*) FROM issues WHERE project_id = p.id) as issue_count,
-      (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count
+      (SELECT COUNT(*) FROM researches WHERE project_id = p.id) as research_count,
+      (SELECT COUNT(*) FROM sessions_v2 WHERE project_id = p.id AND scope_type = 'issue' AND datetime(created_at) >= datetime('now', '-7 days')) as recent_session_count,
+      -- "research agent" is represented by research-scoped agent sessions, not research rows.
+      (SELECT COUNT(*) FROM sessions_v2 WHERE project_id = p.id AND scope_type = 'research' AND datetime(created_at) >= datetime('now', '-7 days')) as recent_research_agent_count
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
-      ORDER BY p.last_active DESC, p.name ASC
+      ORDER BY (recent_session_count + recent_research_agent_count) DESC, p.last_active DESC, p.name ASC
     `).all() as ProjectRawRowWithExtras[]).map(hydrate);
   },
 
