@@ -67,6 +67,17 @@ export default function UserPage() {
   const userParam = params.user || user?.id || ''
 
   const [showNew, setShowNew] = useState(false)
+  // 个人 Skill / Memory 侧栏折叠状态 (仅自己主页存在该侧栏), 持久化到 localStorage
+  const [skillMemoryCollapsed, setSkillMemoryCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('mobius:ui:sidebar:user-skills:hidden') === '1' } catch { return false }
+  })
+  const toggleSkillMemory = () => {
+    setSkillMemoryCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('mobius:ui:sidebar:user-skills:hidden', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
   const [search, setSearch] = useState('')
   const [issuesByProject, setIssuesByProject] = useState<Record<string, any[]>>({})
   const [researchesByProject, setResearchesByProject] = useState<Record<string, any[]>>({})
@@ -545,10 +556,23 @@ export default function UserPage() {
             <div className="mb-5">
               <div className="flex items-center justify-between">
                 <h1 className="text-[18px] font-semibold" style={{ color: 'var(--text-primary)' }}>{pageTitle}</h1>
-                <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
-                  icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
-                  新建项目
-                </PrimaryActionButton>
+                <div className="flex items-center gap-2">
+                  <PrimaryActionButton onClick={() => setShowNew(true)} data-tour="user-new-project"
+                    icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}>
+                    新建项目
+                  </PrimaryActionButton>
+                  {userParam === user?.id && (
+                    <button type="button" onClick={toggleSkillMemory}
+                      title={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
+                      aria-label={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
+                      className="h-8 w-8 inline-flex items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                      style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
+                      {skillMemoryCollapsed
+                        ? <EyeOff className="w-4 h-4" />
+                        : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
+                </div>
               </div>
               {projectPagination.totalPages > 1 ? (
                 <div className="mt-3">
@@ -829,7 +853,7 @@ export default function UserPage() {
               </div>
             )}
             </div>
-            {userParam === user?.id && (
+            {userParam === user?.id && !skillMemoryCollapsed && (
               <ResizablePanel
                 storageKey="mobius:ui:sidebar:user-skills"
                 defaultWidth={340}
