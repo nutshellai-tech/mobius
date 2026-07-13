@@ -21,7 +21,7 @@
 //   (对齐 mobius/desktop main.ts project:bind-status 的 defaultPath)。
 // 绑定路径 = mobius 中枢 agent 工作目录 (服务器侧 user.work_dir/<随机 slug>)。
 // =====================================================================
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   History, FolderInput, Plus, FileText, FolderOpen, ChevronLeft, ChevronDown,
@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { useStore, api } from '../store'
 import { MobiusLogo } from '../components/mobius-logo'
-import { ErrBanner, PathPickerModal } from '../components/modals'
+import { ErrBanner, PathPickerModal, PcTaskModeSection } from '../components/modals'
 import { ToggleSwitch } from '../components/toggle-switch'
 import { ExpandableTextarea } from '../components/expandable-textarea'
 import { SessionModelPicker } from '../components/session-model-picker'
@@ -204,7 +204,7 @@ export default function Welcome() {
   if (step === 'session' && flow && sessionCtx) {
     return (
       <WelcomeSession
-        flow={flow} dark={dark} ctx={sessionCtx}
+        flow={flow} dark={dark} isDesktop={isDesktop} ctx={sessionCtx}
         onBack={() => setStep('menu')}
       />
     )
@@ -532,9 +532,10 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
 // =====================================================================
 // 页面 3: 创建第一个任务 / 导入文件随便聊聊 (session 创建 + 10s 进度)
 // =====================================================================
-function WelcomeSession({ flow, dark, ctx, onBack }: {
+function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
   flow: FlowConfig
   dark: boolean
+  isDesktop: boolean
   ctx: SessionCtx
   onBack: () => void
 }) {
@@ -557,6 +558,12 @@ function WelcomeSession({ flow, dark, ctx, onBack }: {
   const [submitting, setSubmitting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [err, setErr] = useState('')
+  // PC 任务模式 (仅 electron 桌面端, 与 global-create/NewSessionModal 同源): work_mode/aimux_id/local_path.
+  // 经 pc_client_metadata 注入 session 提示词; pc/dual 时 mobius-aimux skill 强制必选.
+  // web 端 isDesktop=false → workMode 恒 null → 不渲染区块、不附 body、不锁 skill, 行为完全不变.
+  const [workMode, setWorkMode] = useState<'hub' | 'pc' | 'dual' | null>(isDesktop ? 'dual' : null)
+  const [aimuxId, setAimuxId] = useState<string | null>(null)
+  const [pcPath, setPcPath] = useState<string>('')
 
   // 模型默认: 项目默认 > 全局默认 > codex (用户未手动改时回落)
   useEffect(() => {
@@ -589,6 +596,24 @@ function WelcomeSession({ flow, dark, ctx, onBack }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueId])
 
+  // 桌面端: 取 aimux_id (注入 pc_client_metadata) + 本项目绑定的本机工作路径.
+  // PcTaskModeSection 挂在高级选项里, 用户不展开时它不挂载; 此处保证 local_path 已就绪, 双侧/本机模式仍能正确注入.
+  useEffect(() => {
+    const md = getDesktopBridge()
+    if (!md?.isDesktop) return
+    md.getBootData?.().then?.(b => { if (b?.aimuxIdentifier) setAimuxId(b.aimuxIdentifier) }).catch(() => {})
+    const anyMd = md as any
+    anyMd.getProjectLocalPath?.(projectId).then?.((p: string | null | undefined) => { if (p) setPcPath(p) }).catch(() => {})
+  }, [projectId])
+
+  // PC 任务模式 (仅桌面端 pc/dual): mobius-aimux skill 强制必选, SkillMemoryPicker 经 skillLockedOf 锁定不可取消.
+  const isPcTaskMode = workMode === 'pc' || workMode === 'dual'
+  const skillLockedOf = useCallback((id: string) => {
+    if (!isPcTaskMode) return false
+    const sk = availSkills.find(s => s.id === id)
+    return (sk?.dirName || '').replace(/_/g, '-') === 'mobius-aimux'
+  }, [isPcTaskMode, availSkills])
+
   const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     const n = new Set(set); n.has(id) ? n.delete(id) : n.add(id); setter(n)
   }
@@ -604,9 +629,18 @@ function WelcomeSession({ flow, dark, ctx, onBack }: {
     }, 100)
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
+      // pc/dual 时 mobius-aimux 必选: 即便用户此前排除过, 提交时也从排除集清理 (与 global-create/NewSessionModal 同源).
+      const excludedSkillIds = isPcTaskMode
+        ? Array.from(excludedSkills).filter(id => {
+          const sk = availSkills.find(s => s.id === id)
+          return (sk?.dirName || '').replace(/_/g, '-') !== 'mobius-aimux'
+        })
+        : Array.from(excludedSkills)
       const s = await api(`/api/issues/${issueId}/sessions`, { method: 'POST', body: JSON.stringify({
         name, description: finalDesc, model, language,
-        excluded_skill_ids: Array.from(excludedSkills), excluded_memory_ids: Array.from(excludedMemories),
+        excluded_skill_ids: excludedSkillIds, excluded_memory_ids: Array.from(excludedMemories),
+        // PC 任务模式 (仅桌面端): workMode 非空才附 pc_client_metadata; web 端恒 null → body 完全不变.
+        ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }) })
       if (s?.error) { window.clearInterval(timer); setSubmitting(false); setErr(s.error); return }
       // 等 10s 走完
@@ -664,7 +698,7 @@ function WelcomeSession({ flow, dark, ctx, onBack }: {
             {/* 模型: 可见, 必选 */}
             <SessionModelPicker value={model} onChange={v => { setModel(v); modelUserTouchedRef.current = true }} dark={dark} />
 
-            {/* 高级选项 (折叠): session 名称 / 语言 / Skill / Memory */}
+            {/* 高级选项 (折叠): session 名称 / 语言 / Skill / Memory / PC 任务模式 */}
             <div className="rounded-xl" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
               <button type="button" onClick={() => setAdvancedOpen(v => !v)}
                 className="flex w-full items-center justify-between px-3 py-2.5 text-left text-[13px] font-medium"
@@ -688,8 +722,12 @@ function WelcomeSession({ flow, dark, ctx, onBack }: {
                       excludedSkills={excludedSkills} excludedMemories={excludedMemories}
                       onToggleSkill={id => toggle(excludedSkills, id, setExcludedSkills)}
                       onToggleMemory={id => toggle(excludedMemories, id, setExcludedMemories)}
+                      skillLockedOf={skillLockedOf}
                       disabled={!issueId} dark={dark} />
                   </div>
+                  {isDesktop && (
+                    <PcTaskModeSection projectId={projectId} isDark={dark} onModeChange={setWorkMode} onPathChange={setPcPath} />
+                  )}
                 </div>
               )}
             </div>
