@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, MoreHorizontal, Settings, Star } from 'lucide-react'
 import { useStore, api } from '../store'
@@ -60,6 +60,44 @@ function projectMatchesSearch(project: any, query: string) {
     || String(project?.description || '').toLowerCase().includes(q)
 }
 
+// 导航按钮: <button> 外观但走 SPA navigate.
+// ⚠️ 必须定义在组件外(模块顶层)! 之前定义在 UserPage 函数体内, 导致每次 UserPage 重渲染
+// LinklessNav 都是新的函数引用(= 新组件类型), React 按组件类型 reconcile 时把所有 <LinklessNav>
+// 实例 unmount/remount -> 按钮 DOM 节点在连点期间被替换 -> 浏览器 mousedown/mouseup 落在不同节点实例
+// 而不触发 click -> 连点偶发无响应. 提到顶层后引用稳定, 重渲染只更新 props 不重挂节点.
+function LinklessNav({ to, className = '', children, onClick, onAuxClick, ...props }: any) {
+  const navigate = useNavigate()
+  const go = (event: any) => {
+    if (!to) return
+    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+      window.open(to, '_blank', 'noopener,noreferrer')
+      return
+    }
+    navigate(to)
+  }
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+      onClick={(event) => {
+        onClick?.(event)
+        if (event.defaultPrevented) return
+        go(event)
+      }}
+      onAuxClick={(event) => {
+        onAuxClick?.(event)
+        if (event.defaultPrevented) return
+        if (event.button !== 1) return
+        event.preventDefault()
+        go(event)
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function UserPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -113,54 +151,6 @@ export default function UserPage() {
   const [mutedBusyId, setMutedBusyId] = useState<string | null>(null)
   const mutedIdSet = useMemo(() => new Set(mutedProjectIds || []), [mutedProjectIds])
 
-  const openNavTarget = (to: string, event: any) => {
-    if (!to) return
-    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
-      window.open(to, '_blank', 'noopener,noreferrer')
-      return
-    }
-    navigate(to)
-  }
-
-  const LinklessNav = ({ to, className = '', children, onClick, onAuxClick, ...props }: any) => {
-    // 连点偶发无响应兜底: 导航按钮在连点期间其 DOM 节点可能被 React 重渲染替换,
-    // 浏览器因 mousedown/mouseup 落在不同节点实例而不触发 click -> onClick 丢失 -> 导航无响应.
-    // mouseup 仍会在替换后的新节点触发, 用 onMouseUp 兜底导航; onClick 与 onMouseUp 用 rAF guard 去重.
-    const navGuardRef = useRef(false)
-    const tryNav = (event: any) => {
-      if (event.defaultPrevented) return
-      if ((window as any).__blockNav) { console.debug('[diag3] nav blocked'); return }
-      if (navGuardRef.current) return
-      navGuardRef.current = true
-      requestAnimationFrame(() => { navGuardRef.current = false })
-      openNavTarget(to, event)
-    }
-    return (
-      <button
-        type="button"
-        {...props}
-        className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
-        onClick={(event) => {
-          onClick?.(event)
-          tryNav(event)
-        }}
-        onMouseUp={(event) => {
-          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return
-          tryNav(event)
-        }}
-        onAuxClick={(event) => {
-          onAuxClick?.(event)
-          if (event.defaultPrevented) return
-          if (event.button !== 1) return
-          event.preventDefault()
-          openNavTarget(to, event)
-        }}
-      >
-        {children}
-      </button>
-    )
-  }
-
   // 进入页面清空更深层选择，避免残留
   useEffect(() => {
     setCurrentProject(null)
@@ -169,54 +159,6 @@ export default function UserPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [userParam])
-
-  // TEMP DEBUG v3 (2026-07-13): 彻底定位按钮 DOM 节点为何被 React 替换(key={p.id} 稳定却 unmount).
-  // 用法: console 执行 window.__blockNav=true 后连点项目标题(此时不跳转), 看 [diag3] 输出;
-  //       domOps 显示 mousedown->mouseup 间被移除/添加的元素 + 最近 data-tour 祖先, 定位 reconciliation 层级.
-  //       完成后 window.__blockNav=false 恢复导航.
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    let mdNode: Element | null = null
-    let recording = false
-    let domOps: any[] = []
-    const describe = (n: Node) => {
-      const el = n as Element
-      if (!el.tagName) return { kind: 'text' }
-      return {
-        tag: el.tagName,
-        tour: el.getAttribute?.('data-tour') || '',
-        title: el.getAttribute?.('title') || '',
-        ancestorTour: el.closest?.('[data-tour]')?.getAttribute('data-tour') || '',
-        kids: el.childElementCount,
-      }
-    }
-    const mo = new MutationObserver((muts) => {
-      if (!recording) return
-      for (const m of muts) {
-        if (m.type !== 'childList') continue
-        m.removedNodes.forEach((n) => domOps.push({ op: 'rm', ...describe(n) }))
-        m.addedNodes.forEach((n) => domOps.push({ op: 'add', ...describe(n) }))
-      }
-      if (domOps.length > 100) domOps.splice(0, domOps.length - 100)
-    })
-    mo.observe(document.body, { childList: true, subtree: true })
-    const onMd = (e: Event) => { mdNode = e.target as Element; recording = true; domOps = [] }
-    const onMu = (e: Event) => {
-      recording = false
-      const ops = domOps.slice()
-      window.setTimeout(() => {
-        console.debug('[diag3]', { mdSameNode: e.target === mdNode, mdStillInDom: mdNode ? document.contains(mdNode) : null, domOps: ops })
-      }, 60)
-    }
-    document.addEventListener('mousedown', onMd, { capture: true, passive: true })
-    document.addEventListener('mouseup', onMu, { capture: true, passive: true })
-    console.debug('[diag3] installed. 先 window.__blockNav=true, 再连点标题, 看 [diag3]')
-    return () => {
-      mo.disconnect()
-      document.removeEventListener('mousedown', onMd)
-      document.removeEventListener('mouseup', onMu)
-    }
-  }, [])
 
   // 进入页面时拉取已屏蔽项目 ID
   useEffect(() => {

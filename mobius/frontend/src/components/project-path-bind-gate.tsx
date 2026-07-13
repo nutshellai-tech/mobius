@@ -2,7 +2,7 @@
 // 仅当 Electron 桌面端 (window.mobiusDesktop.isDesktop) 且当前在某项目页时生效：
 //   进入项目 → 拉取 project:bind-status → 未绑定则强制弹窗让用户选/确认本机路径。
 // 已绑定(主进程会必要时补建目录)则静默放行。绑定确认走 confirmProjectPath IPC。
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
 
 interface BindStatus {
@@ -32,7 +32,6 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
   const [path, setPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const taRef = useRef<HTMLTextAreaElement>(null)
 
   // 仅桌面端 + 有 projectId 时拉取绑定状态；切换项目重新判定。
   useEffect(() => {
@@ -47,14 +46,6 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
       .catch(() => {})
     return () => { cancelled = true }
   }, [md, projectId])
-
-  // 路径可能很长（含中文，等宽字体下更宽），textarea 按内容自动撑高，完整显示不裁切。
-  useEffect(() => {
-    const ta = taRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = `${ta.scrollHeight}px`
-  }, [path])
 
   // 非 Electron / 已绑定 / 尚未在项目页 → 不渲染。
   if (!md?.isDesktop || !projectId || !status || status.bound) return null
@@ -100,22 +91,21 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
           本项目「{projectName}」还没有绑定这台机器{machineInfo ? `（${machineInfo}）` : ''}的本地工作路径。您必须选择一个本地路径才能继续。
         </p>
         <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>本地路径</label>
-        <div className="flex gap-2 mb-2 items-start">
-          <textarea
-            ref={taRef}
+        <div className="flex gap-2 mb-2">
+          <input
+            type="text"
             value={path}
             autoFocus
-            rows={2}
             onChange={e => { setPath(e.target.value); setErr('') }}
             onKeyDown={e => { if (e.key === 'Enter' && !busy) { e.preventDefault(); void confirm() } }}
-            className="flex-1 min-w-0 px-3 py-2 rounded-lg text-[13px] outline-none focus:border-blue-500/40 font-mono resize-none break-all leading-snug overflow-hidden"
+            className="flex-1 min-w-0 h-9 px-3 rounded-lg text-[13px] outline-none focus:border-blue-500/40 font-mono"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }}
           />
           <button
             type="button"
             onClick={browse}
             disabled={busy}
-            className="h-9 shrink-0 self-start px-3 rounded-lg text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 shrink-0 px-3 rounded-lg text-[13px] flex items-center gap-1.5 disabled:opacity-50"
             style={{ background: 'var(--bg-card-hover)', border: '1px solid var(--input-border)', color: 'var(--text-secondary)' }}
           >
             <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.8} />
