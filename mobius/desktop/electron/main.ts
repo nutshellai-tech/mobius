@@ -192,11 +192,10 @@ async function bootDesktop(): Promise<void> {
   }
 
   await seedWebAuth(server, creds.jwt);
-  // 启动恢复：有本机该账号上次退出页面，且同源同用户前缀，则回到该页；否则进默认主页。
-  const homePath = `/u/${encodeURIComponent(creds.username)}`;
-  const saved = getLastRoute(server, creds.username);
-  const restore = saved && saved.startsWith(homePath) ? saved : homePath;
-  void mainWindow.loadURL(`${server}${restore}`);
+  // 桌面端启动统一进 /welcome 欢迎向导 (链接一切的自进化 Agent 操作系统)。
+  // 向导内"从上次结束处继续"经 desktop:get-last-route 读取本机该账号上次退出页;
+  // 首次运行无记录 -> 该项隐藏。不再启动即自动恢复, 把"回到上次页面/开新项目/接入项目"统一交给向导。
+  void mainWindow.loadURL(`${server}/welcome`);
 }
 
 /** 记下当前窗口所在页面路径，供下次启动回到该页。
@@ -442,6 +441,15 @@ ipcMain.handle("auth:logout", () => {
 ipcMain.handle("desktop:boot-data", (): BootData =>
   gatherHostInfo({ aimuxIdentifier: creds?.identifier || "", serverOrigin: serverOrigin(), appVersion: app.getVersion() }),
 );
+// /welcome 欢迎向导"从上次结束处继续"用：返本机该账号上次退出页路径 (仅 /u/username 前缀内, 跨账号/跨域不存)。
+// 无记录 (首次运行) 或未登录返 null -> 向导隐藏该项。
+ipcMain.handle("desktop:get-last-route", () => {
+  if (!creds) return null;
+  const saved = getLastRoute(serverOrigin(), creds.username);
+  if (!saved) return null;
+  const homePath = `/u/${encodeURIComponent(creds.username)}`;
+  return saved.startsWith(homePath) ? saved : null;
+});
 ipcMain.handle("aimux:status", () => lastStatus);
 ipcMain.handle("aimux:update", () => runUpdateAimux());
 ipcMain.handle("app:sync-reload", () => {
