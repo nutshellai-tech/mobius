@@ -119,6 +119,7 @@ export default function UserPage() {
       window.open(to, '_blank', 'noopener,noreferrer')
       return
     }
+    console.debug('[diag] navigate ->', to, 'at', +(event?.timeStamp ?? 0).toFixed(1))
     navigate(to)
   }
 
@@ -128,6 +129,7 @@ export default function UserPage() {
       {...props}
       className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
       onClick={(event) => {
+        console.debug('[diag] LinklessNav onClick', to, 'at', +event.timeStamp.toFixed(1), 'defaultPrevented=', event.defaultPrevented)
         onClick?.(event)
         if (event.defaultPrevented) return
         openNavTarget(to, event)
@@ -152,6 +154,31 @@ export default function UserPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [userParam])
+
+  // TEMP DEBUG (2026-07-13): 定位 /u/<user> 页面连点偶发无效. 复现后执行 copy(JSON.stringify(window.__clickDiag)) 贴给小莫, 定位完移除.
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const seq: any[] = []
+    ;(window as any).__clickDiag = seq
+    const record = (e: Event) => {
+      const t = e.target as Element | null
+      const me = e as MouseEvent
+      seq.push({
+        type: e.type, ts: +e.timeStamp.toFixed(1),
+        tag: t?.tagName || '',
+        cls: typeof t?.className === 'string' ? t.className.slice(0, 50) : '',
+        title: (t as HTMLElement)?.getAttribute?.('title') || '',
+        cx: me.clientX, cy: me.clientY, btn: me.button,
+      })
+      if (seq.length > 300) seq.shift()
+      console.debug('[diag]', seq[seq.length - 1])
+    }
+    const opt: AddEventListenerOptions = { capture: true, passive: true }
+    const types = ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'dragstart', 'selectstart']
+    types.forEach((t) => document.addEventListener(t, record, opt))
+    console.debug('[diag] installed. 复现连点无效后执行: copy(JSON.stringify(window.__clickDiag))')
+    return () => types.forEach((t) => document.removeEventListener(t, record, opt))
+  }, [])
 
   // 进入页面时拉取已屏蔽项目 ID
   useEffect(() => {
