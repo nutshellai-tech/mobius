@@ -83,7 +83,7 @@ function ProjectPathBindGateInner({ projectId }: { projectId?: string }) {
     <div className="fixed inset-0 z-[2147483646] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/45" />
       <div
-        className="relative w-[460px] max-w-[calc(100vw-40px)] rounded-[14px] p-[22px_24px] shadow-2xl"
+        className="relative w-[460px] max-w-[calc(100vw-40px)] max-h-[calc(100vh-40px)] overflow-y-auto overscroll-contain rounded-[14px] p-[22px_24px] shadow-2xl"
         style={{ background: 'var(--modal-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
       >
         <h3 className="text-[16px] font-semibold mb-2.5">绑定本地工作路径</h3>
