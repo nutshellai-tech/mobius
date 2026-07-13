@@ -434,7 +434,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
               <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目名称 <span style={{ color: '#ef4444' }}>*</span></label>
               <input type="text" value={name} autoFocus
                 onChange={e => { setName(e.target.value); setErr('') }}
-                placeholder="例如：营销活动策划" className={inputCls} style={inputStyle} />
+                placeholder="例如：强化学习最新进展调研" className={inputCls} style={inputStyle} />
             </div>
 
             {isDesktop && flow.localPathVisible && <LocalPathField />}
@@ -622,10 +622,11 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
     if (!name.trim()) { setErr('请填写 Session 名称'); return }
     setSubmitting(true); setErr(''); setProgress(0)
     const startTs = Date.now()
-    // 进度条 10s 动画
+    // 进度条 5s 动画
+    const time_max = 5000;
     const timer = window.setInterval(() => {
       const elapsed = Date.now() - startTs
-      setProgress(Math.min(100, (elapsed / 10000) * 100))
+      setProgress(Math.min(100, (elapsed / time_max) * 100))
     }, 100)
     try {
       const finalDesc = appendAttachmentsToDesc(desc.trim() || name, attachments)
@@ -643,8 +644,8 @@ function WelcomeSession({ flow, dark, isDesktop, ctx, onBack }: {
         ...(workMode ? { pc_client_metadata: { work_mode: workMode, aimux_id: aimuxId, local_path: pcPath || undefined } } : {}),
       }) })
       if (s?.error) { window.clearInterval(timer); setSubmitting(false); setErr(s.error); return }
-      // 等 10s 走完
-      const remaining = 10000 - (Date.now() - startTs)
+      // 等进度条走完
+      const remaining = time_max - (Date.now() - startTs)
       if (remaining > 0) await new Promise(r => window.setTimeout(r, remaining))
       window.clearInterval(timer); setProgress(100)
       const sid = s?.session_id
