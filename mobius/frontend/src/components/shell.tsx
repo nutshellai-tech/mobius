@@ -15,6 +15,7 @@ import { THEME_OPTIONS, getThemeOption } from '../theme'
 import { applyCustomThemeToRoot, customThemeSwatches, getBaseOption, loadActiveCustomThemeId, loadCustomThemes, saveActiveCustomThemeId, type CustomTheme } from '../services/custom-themes'
 import { useIsMobile } from './resizable-panel'
 import { WindowControls } from './window-controls'
+import { WorkspaceLayoutToggle } from './workspace/workspace-layout-toggle'
 
 // 桌面端标题栏: Electron 窗口下顶栏充当可拖拽标题栏 (VSCode 风)。
 // isDesktop 来自 window.mobiusDesktop (preload 注入); 平台用 navigator.platform 判:
@@ -783,6 +784,8 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
             inProject={inProject}
             currentProject={currentProject}
           />
+          {/* 工作区布局切换 (会话 ↔ 代码对话) — 仅 Issue/Research 路由渲染, 桌面端可见 */}
+          <WorkspaceLayoutToggle />
           {/* 顶栏搜索 — 跨项目/Issue/Research 搜索所有会话内容 (紧邻 +新建) */}
           <button
             type="button"

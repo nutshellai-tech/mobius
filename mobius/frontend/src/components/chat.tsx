@@ -1377,7 +1377,10 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 // =====================================================================
 // 主对话区（基于 currentSession）
 // =====================================================================
-export function ChatArea() {
+// layout: 'default' = 现有 68/32 横向分栏; 'stacked' = 强制纵向堆叠 (历史在上、输入在下),
+// 用于「代码对话」模式的窄右栏. 仅切换 .mobius-chat-body 上的修饰类 (见 index.css),
+// 不触碰任何 SSE / 草稿 / Stop / Send / Agent 状态逻辑. 向后兼容 (默认 default).
+export function ChatArea({ layout = 'default' }: { layout?: 'default' | 'stacked' } = {}) {
   const { currentSession, currentTask, currentIssue, currentProject, projects, setProjects, sessionsMap, setSessionsMap, setCurrentSession, setCurrentTask, messages, setMessages, addMessage, isTyping, setTyping, streamContent, setStreamContent, theme } = useStore()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [inputExpanded, setInputExpanded] = useState(false)
@@ -3148,8 +3151,9 @@ export function ChatArea() {
         </div>
       )}
 
-      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body). */}
-      <div className="mobius-chat-body flex-1 flex min-h-0">
+      {/* body: 横向分 68% JsonlView + 32% (输入 + skill/memory 编辑). 窄屏改纵向堆叠 (见 index.css .mobius-chat-body).
+          layout='stacked' 时附加 mobius-chat-body--stacked, 与视口无关地强制纵向堆叠 (代码对话模式). */}
+      <div className={`mobius-chat-body flex-1 flex min-h-0${layout === 'stacked' ? ' mobius-chat-body--stacked' : ''}`}>
         {/* 左 68%: JSONL 视图 */}
         <SessionJsonlPanel
           currentProjectId={currentProjectId}

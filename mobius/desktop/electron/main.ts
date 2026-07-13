@@ -11,7 +11,7 @@ import { gatherHostInfo, type BootData } from "./lib/host-info";
 import { ensureAimux, upgradeAimux, getAimuxVersion, aimuxExe, venvDir, hasBundledPython, type InstallProgress } from "./lib/python-runtime";
 import { AimuxSupervisor, aimuxLogPath, appendAimuxLog, type AimuxStatus } from "./lib/aimux-supervisor";
 import { getProjectLocalPath, setProjectLocalPath, getProjectWorkMode, setProjectWorkMode, sanitizeName } from "./lib/project-paths";
-import { getAimuxEnabled, setAimuxEnabled } from "./lib/desktop-settings";
+import { getAimuxEnabled, setAimuxEnabled, getLastRoute, setLastRoute } from "./lib/desktop-settings";
 import { createStatusWindow } from "./status-window";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -192,7 +192,30 @@ async function bootDesktop(): Promise<void> {
   }
 
   await seedWebAuth(server, creds.jwt);
-  void mainWindow.loadURL(`${server}/u/${encodeURIComponent(creds.username)}`);
+  // 启动恢复：有本机该账号上次退出页面，且同源同用户前缀，则回到该页；否则进默认主页。
+  const homePath = `/u/${encodeURIComponent(creds.username)}`;
+  const saved = getLastRoute(server, creds.username);
+  const restore = saved && saved.startsWith(homePath) ? saved : homePath;
+  void mainWindow.loadURL(`${server}${restore}`);
+}
+
+/** 记下当前窗口所在页面路径，供下次启动回到该页。
+ *  只在本服务器 origin 内、且属于本用户工作页前缀(/u/username)时才存：
+ *  登录页(file://)、跨域、或跨账号页面一律不存，避免下次错配恢复。 */
+function persistLastRoute(): void {
+  if (!mainWindow || !creds) return;
+  const origin = serverOrigin();
+  if (!origin) return;
+  try {
+    const wc = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    const raw = wc.getURL();
+    if (!raw || !raw.startsWith(origin)) return; // 登录页 file:// / 跨域 / 加载中空串都不存
+    const path = new URL(raw).pathname + new URL(raw).search + new URL(raw).hash;
+    const homePrefix = `/u/${encodeURIComponent(creds.username)}`;
+    if (!path.startsWith(homePrefix)) return;
+    setLastRoute(origin, creds.username, path);
+  } catch { /* 窗口/webContents 已销毁等，忽略 */ }
 }
 
 // ——— 菜单动作（与 IPC 共用同一份实现）———
@@ -333,6 +356,22 @@ function createWindow(): void {
     const origin = serverOrigin();
     if (origin && !url.startsWith(origin)) _e.preventDefault();
   });
+
+  // 捕获 F12 切换开发者工具：本应用自定义了应用菜单 (Menu.setApplicationMenu)，
+  // Electron 默认菜单里的 F12→toggleDevTools 绑定不复存在，菜单里的「开发者工具」项也没有 accelerator。
+  // 故在主进程 before-input-event 最早处拦截 F12（菜单栏隐藏 / 远程页面聚焦都可靠触发），
+  // 与菜单项 role 互不冲突（不会 double-toggle），detach 模式与 app:open-devtools IPC 保持一致。
+  mainWindow.webContents.on("before-input-event", (_e, input) => {
+    if (input.type !== "keyDown" || input.key !== "F12") return;
+    _e.preventDefault();
+    const wc = mainWindow?.webContents;
+    if (!wc) return;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: "detach" });
+  });
+
+  // 窗口关闭时记下当前页面路径：退出/关窗都会触发 close，覆盖 Mac(关窗不退出) 与 三平台退出。
+  mainWindow.on("close", () => persistLastRoute());
   // 项目本地路径绑定已移至前端 ProjectPathBindGate（进入项目页时拉 project:bind-status 自行渲染弹窗）。
 }
 
@@ -548,5 +587,6 @@ app.on("window-all-closed", () => {
 
 // 退出前务必杀 aimux（Windows taskkill /T 连进程树）
 app.on("before-quit", () => {
+  persistLastRoute(); // 兜底：若 close 未捕获（如异常退出路径），退出前再存一次当前页。
   void supervisor?.stop();
 });

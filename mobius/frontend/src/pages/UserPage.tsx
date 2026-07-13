@@ -412,15 +412,17 @@ export default function UserPage() {
                 style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: 'var(--text-primary)' }} />
             </div>
             <div className="mt-2 rounded-lg px-2 py-2" style={{ }}>
-              <div className="flex flex-nowrap gap-1.5 overflow-x-auto">
+              <div className="flex gap-1">
                 <button
                   type="button"
                   onClick={() => setProjectFilters([])}
                   title="显示全部未屏蔽项目"
-                  className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors flex-shrink-0"
-                  style={projectFilters.length === 0
-                    ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.55)', color: '#60a5fa' }
-                    : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}
+                  className={`flex-1 h-7 rounded text-[11px] transition-colors ${
+                    projectFilters.length === 0
+                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                      : 'border border-transparent hover:bg-[var(--bg-card-hover)]'
+                  }`}
+                  style={projectFilters.length !== 0 ? { color: 'var(--text-muted)' } : undefined}
                 >
                   全部
                 </button>
@@ -432,10 +434,12 @@ export default function UserPage() {
                       type="button"
                       onClick={() => toggleProjectFilter(item.key)}
                       title={item.title}
-                      className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors flex-shrink-0"
-                      style={active
-                        ? { background: 'rgba(59,130,246,0.16)', borderColor: 'rgba(59,130,246,0.55)', color: '#60a5fa' }
-                        : { background: 'var(--input-bg)', borderColor: 'var(--input-border)', color: 'var(--text-muted)' }}
+                      className={`flex-1 h-7 rounded text-[11px] transition-colors ${
+                        active
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                          : 'border border-transparent hover:bg-[var(--bg-card-hover)]'
+                      }`}
+                      style={!active ? { color: 'var(--text-muted)' } : undefined}
                     >
                       {item.label}
                     </button>

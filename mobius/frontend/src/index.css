@@ -5437,6 +5437,32 @@ body.mobius-resizing .mobius-resizable-handle {
   }
 }
 
+/* ======================================================================
+   代码对话模式: 强制 ChatArea 纵向堆叠 (历史 jsonl 在上、输入在下), 与视口宽度无关.
+   镜像上面 @media(max-width:900px) 的规则, 仅在 .mobius-chat-body--stacked 时生效;
+   !important 用于覆盖 .mobius-chat-history/.mobius-chat-input 的 inline width (68%/32%).
+   桌面宽屏下右栏较窄时, 68/32 横向分栏会变成两个不可用的小栏, 故强制堆叠.
+   ====================================================================== */
+.mobius-chat-body.mobius-chat-body--stacked {
+  flex-direction: column;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-history {
+  width: 100% !important;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input {
+  width: 100% !important;
+  flex: 0 0 auto;
+  min-height: 0;
+  border-left: 0 !important;
+  border-top: 1px solid var(--border-color) !important;
+}
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-actions,
+.mobius-chat-body.mobius-chat-body--stacked .mobius-chat-input-side {
+  display: none !important;
+}
+
 /* =====================================================================
    全局「+」新建菜单 (.global-create-modal) — 窄屏移动端基本适配
    CreateModalShell 已用 flex-col + max-h + overflow-y-auto; 这里补窄屏细节.
