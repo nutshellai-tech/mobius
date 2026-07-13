@@ -160,24 +160,42 @@ export default function UserPage() {
     if (typeof document === 'undefined') return
     const seq: any[] = []
     ;(window as any).__clickDiag = seq
+    let mdNode: Element | null = null
+    let mutationsBetween = 0
+    const mo = new MutationObserver(() => { mutationsBetween++ })
+    mo.observe(document.body, { childList: true, subtree: true })
     const record = (e: Event) => {
       const t = e.target as Element | null
       const me = e as MouseEvent
-      seq.push({
+      const info: any = {
         type: e.type, ts: +e.timeStamp.toFixed(1),
         tag: t?.tagName || '',
-        cls: typeof t?.className === 'string' ? t.className.slice(0, 50) : '',
         title: (t as HTMLElement)?.getAttribute?.('title') || '',
         cx: me.clientX, cy: me.clientY, btn: me.button,
-      })
-      if (seq.length > 300) seq.shift()
-      console.debug('[diag]', seq[seq.length - 1])
+      }
+      if (e.type === 'mousedown') {
+        mdNode = t
+        mutationsBetween = 0
+        info.disabled = (t as HTMLButtonElement)?.disabled ?? null
+      }
+      if (e.type === 'mouseup') {
+        info.mdSameNode = t === mdNode
+        info.mdStillInDom = mdNode ? document.contains(mdNode) : null
+        info.mutations = mutationsBetween
+        info.activeEl = document.activeElement ? `${document.activeElement.tagName}/${(document.activeElement as HTMLElement).getAttribute?.('title') || ''}` : ''
+      }
+      seq.push(info)
+      if (seq.length > 500) seq.shift()
+      console.debug('[diag]', info)
     }
     const opt: AddEventListenerOptions = { capture: true, passive: true }
-    const types = ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'dragstart', 'selectstart']
+    const types = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'dragstart', 'selectstart', 'contextmenu']
     types.forEach((t) => document.addEventListener(t, record, opt))
-    console.debug('[diag] installed. 复现连点无效后执行: copy(JSON.stringify(window.__clickDiag))')
-    return () => types.forEach((t) => document.removeEventListener(t, record, opt))
+    console.debug('[diag v2] installed. 连点项目标题 10 次(含无效的), 再 copy(JSON.stringify(window.__clickDiag))')
+    return () => {
+      mo.disconnect()
+      types.forEach((t) => document.removeEventListener(t, record, opt))
+    }
   }, [])
 
   // 进入页面时拉取已屏蔽项目 ID
