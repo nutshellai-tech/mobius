@@ -29,10 +29,9 @@ function sortProjectsForDisplay(items: any[]) {
   return [...items].sort((a: any, b: any) => {
     const starDiff = Number(!!b.starred) - Number(!!a.starred)
     if (starDiff !== 0) return starDiff
-    const recentA = Number(a.recent_session_count || 0) + Number(a.recent_research_agent_count || 0)
-    const recentB = Number(b.recent_session_count || 0) + Number(b.recent_research_agent_count || 0)
-    const recentDiff = recentB - recentA
-    if (recentDiff !== 0) return recentDiff
+    const activityA = a.last_session_activity_at ? Date.parse(a.last_session_activity_at) : -Infinity
+    const activityB = b.last_session_activity_at ? Date.parse(b.last_session_activity_at) : -Infinity
+    if (activityA !== activityB) return activityB - activityA
     const activeDiff = new Date(b.last_active || 0).getTime() - new Date(a.last_active || 0).getTime()
     if (activeDiff !== 0) return activeDiff
     return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN')
