@@ -815,7 +815,7 @@ export function CreateProjectForm({ onClose, onDone }: { onClose: () => void; on
       </div>
       <div>
         <SectionLabel>项目名称</SectionLabel>
-        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：营销活动策划" autoFocus dark={dark} />
+        <TextInput value={name} onChange={v => { setName(v); setErr('') }} placeholder="例如：强化学习最新进展调研" autoFocus dark={dark} />
       </div>
       {projectKind === 'extension' ? (
         <div>
