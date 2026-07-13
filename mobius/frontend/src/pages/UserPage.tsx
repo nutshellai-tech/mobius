@@ -568,7 +568,7 @@ export default function UserPage() {
                     <button type="button" onClick={toggleSkillMemory}
                       title={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
                       aria-label={skillMemoryCollapsed ? '显示 Skill / Memory' : '隐藏 Skill / Memory'}
-                      className="h-8 w-8 inline-flex items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
+                      className="h-8 w-8 hidden xl:inline-flex items-center justify-center rounded-lg border transition-colors hover:bg-[var(--bg-hover)]"
                       style={{ color: 'var(--text-muted)', borderColor: 'var(--input-border)' }}>
                       {skillMemoryCollapsed
                         ? <EyeOff className="w-4 h-4" />
@@ -863,7 +863,7 @@ export default function UserPage() {
                 minWidth={260}
                 maxWidth={520}
                 side="right"
-                className="hidden lg:block space-y-4"
+                className="hidden xl:block space-y-4"
                 style={{ background: 'transparent' }}>
                 <div>
                   <div className="mb-3">
