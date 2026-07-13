@@ -764,8 +764,9 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
           )}
         </div>
 
-        {/* 桌面端唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击; web 端不加 class 零影响 */}
-        <div className={`flex-1${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`} aria-hidden="true" />
+        {/* 桌面端唯一拖拽区: 独立空白 spacer, 无交互子元素 → drag 区不会吞按钮点击; web 端不加 class 零影响。
+            self-stretch 必需: 顶栏 items-center 下空 div 高度会塌成 0 → drag 区无面积拖不动; stretch 撑满 48px 顶栏高。 */}
+        <div className={`flex-1 self-stretch${IS_DESKTOP ? ' mobius-desktop-drag' : ''}`} aria-hidden="true" />
 
         {/* 右侧操作 */}
         <div className="mobius-topnav-actions flex min-w-0 flex-shrink items-center gap-1.5 xl:gap-2">
