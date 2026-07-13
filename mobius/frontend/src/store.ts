@@ -228,6 +228,9 @@ interface Turn {
 interface AppState {
   token: string | null
   user: User | null
+  // 会话引导态: localStorage 有 token 但 user 尚未拉取/校验完成时为 true.
+  // 期间 App 显示加载态而非登录页, 消除弱网/慢请求下"闪现登录页"的问题.
+  authChecking: boolean
   // Project / Issue / Session 三层结构
   projects: Project[]
   currentProject: Project | null
@@ -297,6 +300,8 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   token: localStorage.getItem('cc-token'),
   user: null,
+  // 启动时若 localStorage 已有 token, 先进入"会话校验中", 等 /api/auth/me 返回再翻 false.
+  authChecking: !!localStorage.getItem('cc-token'),
   // Project / Issue / Session
   projects: [],
   currentProject: null,
@@ -327,11 +332,11 @@ export const useStore = create<AppState>((set) => ({
   mobileNavBreakpoint: 900,
   setAuth: (token, user) => {
     localStorage.setItem('cc-token', token)
-    set({ token, user })
+    set({ token, user, authChecking: false })
   },
   logout: () => {
     localStorage.removeItem('cc-token')
-    set({ token: null, user: null, projects: [], currentProject: null, issues: [], issuesMap: {}, currentIssue: null, researches: [], researchesMap: {}, currentResearch: null, sessions: [], sessionsMap: {}, currentSession: null, turns: [], tasks: [], currentTask: null, messages: [] })
+    set({ token: null, user: null, authChecking: false, projects: [], currentProject: null, issues: [], issuesMap: {}, currentIssue: null, researches: [], researchesMap: {}, currentResearch: null, sessions: [], sessionsMap: {}, currentSession: null, turns: [], tasks: [], currentTask: null, messages: [] })
   },
   setProjects: (projects) => set({ projects }),
   setCurrentProject: (project) => set({ currentProject: project }),
