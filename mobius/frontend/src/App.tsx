@@ -7,6 +7,7 @@ import { THEME_NAMES } from './theme'
 import { applyCustomThemeToRoot, loadActiveCustomThemeId, loadCustomThemes } from './services/custom-themes'
 
 const Login = lazy(() => import('./pages/Login'))
+const Welcome = lazy(() => import('./pages/Welcome'))
 const UserPage = lazy(() => import('./pages/UserPage'))
 const ProjectPage = lazy(() => import('./pages/ProjectPage'))
 const IssuePage = lazy(() => import('./pages/IssuePage'))
@@ -175,6 +176,7 @@ function AuthenticatedApp() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
+          <Route path="/welcome" element={<Welcome />} />
           <Route path="/u/:user" element={<UserPage />} />
           <Route path="/u/:user/p/:project" element={<ProjectPage />} />
           <Route path="/u/:user/p/:project/i/:issue" element={<IssuePage />} />
