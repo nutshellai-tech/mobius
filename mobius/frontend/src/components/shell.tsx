@@ -77,11 +77,11 @@ export function timeAgoPrecise(date: string) {
   return `${d.getFullYear()}-${mmdd} ${hhmm}`
 }
 
-function LinklessRouteButton({ to, className = '', children, onClick, onAuxClick, ...props }: any) {
+function LinklessRouteButton({ to, className = '', children, onClick, onAuxClick, newTab = false, ...props }: any) {
   const navigate = useNavigate()
   const openTarget = (event: any) => {
     if (!to) return
-    if (event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
+    if (newTab || event?.metaKey || event?.ctrlKey || event?.shiftKey || event?.button === 1) {
       window.open(to, '_blank', 'noopener,noreferrer')
       return
     }
@@ -655,7 +655,7 @@ export function TopNav({ rightExtra }: { rightExtra?: React.ReactNode } = {}) {
         )}
         {/* Logo + 面包屑 */}
         <div className="mobius-topnav-crumb flex items-center gap-3 min-w-0 flex-1">
-          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0">
+          <LinklessRouteButton to={`/u/${user?.id}`} data-tour="top-nav-brand" className="flex items-center gap-2 flex-shrink-0" newTab>
             {!branding.hideLogo && <MobiusLogo size={28} />}
             {branding.systemNameEn && (
               <span className="mobius-topnav-brandtext font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text-primary)' }}>
