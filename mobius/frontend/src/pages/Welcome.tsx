@@ -395,7 +395,9 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
   const inputStyle = { background: 'var(--input-bg)', border: '1px solid var(--input-border)', color: dark ? '#f1f5f9' : '#1e293b' }
   const inputCls = 'w-full h-10 px-3 rounded-xl text-[13px] outline-none focus:border-blue-500/40 transition-colors'
 
-  const LocalPathField = () => (
+  // 注意: 这里用 render function (renderLocalPathField()) 而非内部组件 (<LocalPathField/>).
+  // 若写成组件内组件, 每次父组件按键重渲染都会让它是新组件类型 -> unmount/remount -> input 失焦.
+  const renderLocalPathField = () => (
     <div>
       <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>
         本地路径{flow.localPathVisible ? <> <span style={{ color: '#ef4444' }}>*</span></> : null}
@@ -437,7 +439,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
                 placeholder="例如：强化学习最新进展调研" className={inputCls} style={inputStyle} />
             </div>
 
-            {isDesktop && flow.localPathVisible && <LocalPathField />}
+            {isDesktop && flow.localPathVisible && renderLocalPathField()}
 
             {/* 高级选项 (折叠) */}
             <div className="rounded-xl" style={{ background: 'var(--input-bg)', border: '1px solid var(--input-border)' }}>
@@ -449,7 +451,7 @@ function WelcomeProject({ flow, dark, isDesktop, desktopPath, onBack, onIntoSess
               </button>
               {advancedOpen && (
                 <div className="px-3 pb-3 pt-1 space-y-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                  {isDesktop && !flow.localPathVisible && <LocalPathField />}
+                  {isDesktop && !flow.localPathVisible && renderLocalPathField()}
                   <div>
                     <label className="block text-[12px] mb-1.5" style={{ color: 'var(--text-muted)' }}>项目描述</label>
                     <ExpandableTextarea value={desc} onValueChange={setDesc} placeholder="一句话描述这个项目" overlayTitle="编辑项目描述"
