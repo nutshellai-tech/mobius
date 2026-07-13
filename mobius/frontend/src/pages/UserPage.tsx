@@ -126,7 +126,7 @@ export default function UserPage() {
     <button
       type="button"
       {...props}
-      className={`appearance-none border-0 bg-transparent text-left cursor-pointer ${className}`}
+      className={`appearance-none border-0 bg-transparent text-left cursor-pointer select-none ${className}`}
       onClick={(event) => {
         onClick?.(event)
         if (event.defaultPrevented) return
