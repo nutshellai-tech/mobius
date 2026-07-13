@@ -5718,3 +5718,22 @@ body.mobius-resizing .mobius-resizable-handle {
   .aimux-mode-menu { animation: none; }
   .aimux-link-indicator--firing { animation: none; }
 }
+
+/* ===== 桌面端旧版 project-path overlay 兜底 (2026-07-13) =====
+   旧版桌面客户端 (Electron 主进程 desktop/index.js, 现已移除注入但用户已安装的老版本仍会)
+   通过 wc.insertCSS({cssOrigin:"user"}) 注入 .mdpp-msg 绑定路径弹窗; 其 user-origin CSS
+   无断行处理, 长主机名/路径 token 单行溢出卡片, 尾部文字溢到深色遮罩上看不见 ("后面的字看不到")。
+   页面 author-origin CSS 优先级高于 user-origin, 在此强制换行 + 视口内滚动,
+   免重打包/免重装客户端, 用户硬刷新即生效。新版客户端已改用 React ProjectPathBindGate。 */
+#__mobius_project_path_overlay__ .mdpp-card {
+  max-width: calc(100vw - 40px) !important;
+  max-height: calc(100vh - 40px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  box-sizing: border-box !important;
+}
+#__mobius_project_path_overlay__ .mdpp-msg {
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  word-break: break-word !important;
+}
