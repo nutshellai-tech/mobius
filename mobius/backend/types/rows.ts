@@ -94,10 +94,8 @@ export interface ProjectRow extends Omit<ProjectRawRow,
   forgotten_flag_message_effective?: string;
   /** 计算字段：bind_path === APP_DIR */
   is_self_develop?: boolean;
-  /** 近 7 天 issue Session 数，用于主页近期活跃度排序 */
-  recent_session_count?: number;
-  /** 近 7 天 research-scoped agent Session 数，用于主页近期活跃度排序 */
-  recent_research_agent_count?: number;
+  /** 最近一次创建 issue/research Session 的时间，用于主页活跃度排序 */
+  last_session_activity_at?: string | null;
 }
 
 // ===== issues =====
