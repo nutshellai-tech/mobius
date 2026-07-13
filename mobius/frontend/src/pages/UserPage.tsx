@@ -129,6 +129,7 @@ export default function UserPage() {
     const navGuardRef = useRef(false)
     const tryNav = (event: any) => {
       if (event.defaultPrevented) return
+      if ((window as any).__blockNav) { console.debug('[diag3] nav blocked'); return }
       if (navGuardRef.current) return
       navGuardRef.current = true
       requestAnimationFrame(() => { navGuardRef.current = false })
@@ -168,6 +169,54 @@ export default function UserPage() {
     setCurrentSession(null)
     setCurrentTask(null)
   }, [userParam])
+
+  // TEMP DEBUG v3 (2026-07-13): 彻底定位按钮 DOM 节点为何被 React 替换(key={p.id} 稳定却 unmount).
+  // 用法: console 执行 window.__blockNav=true 后连点项目标题(此时不跳转), 看 [diag3] 输出;
+  //       domOps 显示 mousedown->mouseup 间被移除/添加的元素 + 最近 data-tour 祖先, 定位 reconciliation 层级.
+  //       完成后 window.__blockNav=false 恢复导航.
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    let mdNode: Element | null = null
+    let recording = false
+    let domOps: any[] = []
+    const describe = (n: Node) => {
+      const el = n as Element
+      if (!el.tagName) return { kind: 'text' }
+      return {
+        tag: el.tagName,
+        tour: el.getAttribute?.('data-tour') || '',
+        title: el.getAttribute?.('title') || '',
+        ancestorTour: el.closest?.('[data-tour]')?.getAttribute('data-tour') || '',
+        kids: el.childElementCount,
+      }
+    }
+    const mo = new MutationObserver((muts) => {
+      if (!recording) return
+      for (const m of muts) {
+        if (m.type !== 'childList') continue
+        m.removedNodes.forEach((n) => domOps.push({ op: 'rm', ...describe(n) }))
+        m.addedNodes.forEach((n) => domOps.push({ op: 'add', ...describe(n) }))
+      }
+      if (domOps.length > 100) domOps.splice(0, domOps.length - 100)
+    })
+    mo.observe(document.body, { childList: true, subtree: true })
+    const onMd = (e: Event) => { mdNode = e.target as Element; recording = true; domOps = [] }
+    const onMu = (e: Event) => {
+      recording = false
+      const ops = domOps.slice()
+      window.setTimeout(() => {
+        console.debug('[diag3]', { mdSameNode: e.target === mdNode, mdStillInDom: mdNode ? document.contains(mdNode) : null, domOps: ops })
+      }, 60)
+    }
+    document.addEventListener('mousedown', onMd, { capture: true, passive: true })
+    document.addEventListener('mouseup', onMu, { capture: true, passive: true })
+    console.debug('[diag3] installed. 先 window.__blockNav=true, 再连点标题, 看 [diag3]')
+    return () => {
+      mo.disconnect()
+      document.removeEventListener('mousedown', onMd)
+      document.removeEventListener('mouseup', onMu)
+    }
+  }, [])
 
   // 进入页面时拉取已屏蔽项目 ID
   useEffect(() => {

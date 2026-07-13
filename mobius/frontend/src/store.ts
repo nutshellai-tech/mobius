@@ -408,6 +408,11 @@ export const useStore = create<AppState>((set) => ({
   }),
 }))
 
+// TEMP DEBUG (2026-07-13): 暴露 store 给 Playwright 自动化复现连点按钮替换, 调查完移除.
+if (typeof window !== 'undefined') {
+  ;(window as any).__useStore = useStore
+}
+
 // API helper
 const API = ''
 export async function api(path: string, options?: RequestInit) {
