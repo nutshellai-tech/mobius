@@ -97,6 +97,8 @@ const READY_SENTINELS = [
   'permissions: YOLO mode',
   '/model to change',
 ]
+const READY_HISTORY_SIZE_THRESHOLD = 100
+const READY_HISTORY_CONSECUTIVE_POLLS = 2
 const TRUST_PROMPT_SENTINELS = [
   'Do you trust the contents of this directory',
   'Trusting the directory allows',
@@ -133,6 +135,13 @@ function windowExists(name) {
   const r = tmux(['list-windows', '-t', HUB, '-F', '#{window_name}'])
   if (r.status !== 0) return false
   return r.stdout.split('\n').includes(name)
+}
+
+function windowHistorySize(target) {
+  const result = tmux(['display-message', '-p', '-t', target, '#{history_size}'])
+  if (result.status !== 0) return 0
+  const historySize = Number((result.stdout || '').trim())
+  return Number.isFinite(historySize) ? historySize : 0
 }
 
 // list-windows 结果缓存 (仅状态查询用).
@@ -1182,6 +1191,8 @@ class TmuxCodexBackend extends AgentBackend {
     const deadline = Date.now() + READY_TIMEOUT_MS
     // ready 标记会在探测到所有 Codex ready 哨兵文本时置为 true。
     let ready = false
+    let readyReason = ''
+    let historyReadyPolls = 0
     // 记录上次自动按信任确认的时间，用来限频。
     let lastTrustPress = 0
     // 记录上次跳过更新提示的时间，用来限频。
@@ -1195,10 +1206,25 @@ class TmuxCodexBackend extends AgentBackend {
       const screen = take_tmux_window_text(target, 100)
       // 如果当前屏幕非空，就保存为最新屏幕快照。
       lastScreen = screen || lastScreen
-      // 看到所有 ready 哨兵文本就结束等待。
-      if (READY_SENTINELS.every((s) => screen.includes(s))) { ready = true; break }
+      const hasUpdatePrompt = UPDATE_PROMPT_SENTINELS.every((s) => screen.includes(s))
+      const hasTrustPrompt = TRUST_PROMPT_SENTINELS.some((s) => screen.includes(s))
+      // 看到所有 ready 哨兵文本，或恢复长会话后 tmux 历史行数稳定超过阈值，就结束等待。
+      if (READY_SENTINELS.every((s) => screen.includes(s))) {
+        ready = true
+        readyReason = 'sentinels'
+        break
+      }
+      const historySize = windowHistorySize(target)
+      historyReadyPolls = historySize > READY_HISTORY_SIZE_THRESHOLD && !hasUpdatePrompt && !hasTrustPrompt
+        ? historyReadyPolls + 1
+        : 0
+      if (historyReadyPolls >= READY_HISTORY_CONSECUTIVE_POLLS) {
+        ready = true
+        readyReason = `history_size=${historySize}>${READY_HISTORY_SIZE_THRESHOLD}`
+        break
+      }
       // 如果出现 Codex 更新提示，就自动选择跳过更新。
-      if (UPDATE_PROMPT_SENTINELS.every((s) => screen.includes(s))) {
+      if (hasUpdatePrompt) {
         // 读取当前时间，用于判断是否到达下一次按键间隔。
         const now = Date.now()
         // 防止过于频繁地向 TUI 发送跳过更新按键。
@@ -1212,7 +1238,7 @@ class TmuxCodexBackend extends AgentBackend {
         }
       }
       // 如果屏幕上出现目录信任提示，就进入自动确认逻辑。
-      if (TRUST_PROMPT_SENTINELS.some((s) => screen.includes(s))) {
+      if (hasTrustPrompt) {
         // 读取当前时间，用于判断是否到达下一次按键间隔。
         const now = Date.now()
         // 防止过于频繁地向 TUI 发送 Enter。
@@ -1238,7 +1264,7 @@ class TmuxCodexBackend extends AgentBackend {
       throw new Error(`Codex TUI was not ready within ${READY_TIMEOUT_MS}ms (cwd=${cwd})${detail ? `; last screen:\n${detail}` : ''}`)
     }
     // 记录 TUI 已可用。
-    log(`[tmux-codex] window=${sessionId} TUI ready`)
+    log(`[tmux-codex] window=${sessionId} TUI ready reason=${readyReason}`)
 
     // 新会话此时还不知道 Codex thread id，需要后续通过新增 rollout 绑定。
     if (!useResume) {
