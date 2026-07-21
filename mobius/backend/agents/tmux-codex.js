@@ -137,13 +137,6 @@ function windowExists(name) {
   return r.stdout.split('\n').includes(name)
 }
 
-function windowHistorySize(target) {
-  const result = tmux(['display-message', '-p', '-t', target, '#{history_size}'])
-  if (result.status !== 0) return 0
-  const historySize = Number((result.stdout || '').trim())
-  return Number.isFinite(historySize) ? historySize : 0
-}
-
 // list-windows 结果缓存 (仅状态查询用).
 // /status / syncer 每 2~5s 轮询, 一次 /status 内 isAlive + isWorking(内部再 isAlive)
 // + listSessions + getRecentError 的 isAlive 会重复 list-windows 多达 5 次 (全是 spawnSync,
@@ -1203,7 +1196,7 @@ class TmuxCodexBackend extends AgentBackend {
     // 在超时前持续轮询 tmux pane 内容。
     while (Date.now() < deadline) {
       // capture 失败时按空屏幕处理，下一轮继续尝试。
-      const screen = take_tmux_window_text(target, 100)
+      const { text: screen, historySize } = take_tmux_window_text(target, 100)
       // 如果当前屏幕非空，就保存为最新屏幕快照。
       lastScreen = screen || lastScreen
       const hasUpdatePrompt = UPDATE_PROMPT_SENTINELS.every((s) => screen.includes(s))
@@ -1214,7 +1207,6 @@ class TmuxCodexBackend extends AgentBackend {
         readyReason = 'sentinels'
         break
       }
-      const historySize = windowHistorySize(target)
       historyReadyPolls = historySize > READY_HISTORY_SIZE_THRESHOLD && !hasUpdatePrompt && !hasTrustPrompt
         ? historyReadyPolls + 1
         : 0
