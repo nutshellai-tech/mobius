@@ -35,8 +35,7 @@ interface TerminalSize {
   isTty: boolean
 }
 
-const VERSION = '0.2.7'
-const WELCOME_ROWS = 12
+const VERSION = '0.2.8'
 const CHROME_ROWS = 11
 
 const SLASH_COMMANDS = [
@@ -50,6 +49,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
   const [scrollBack, setScrollBack] = useState(0)
+  const [modelLabel, setModelLabel] = useState<string | null>(null)
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -80,11 +80,12 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     () => fitTranscript(chat.entries, transcriptRows, terminal.columns, scrollBack),
     [chat.entries, transcriptRows, terminal.columns, scrollBack],
   )
-  // Welcome card is for fresh / short sessions only. Once the conversation is
-  // long enough that fitTranscript hides older entries, switch to the compact
-  // header + full transcript — otherwise the 12-row welcome card crowds out the
-  // recent messages and the chat area reads as blank after "已隐藏较早的…".
-  const showWelcome = fitted.hiddenOlder === 0 && scrollBack === 0 && fitted.estimatedRows + WELCOME_ROWS <= transcriptRows
+  // Welcome card is for a truly fresh session only. Once there's any
+  // conversation (or an in-flight user message) it disappears, handing the
+  // compact header + bottom-anchored transcript the full height. Keeping it
+  // while chatting left recent messages stranded mid-screen with a blank gap
+  // above the composer.
+  const showWelcome = chat.entries.length === 0 && chat.pendingUser === null && scrollBack === 0
 
   // In-app history pager. Ink redraws only the live frame, so the terminal's
   // own scrollback holds no past turns — older entries are unreachable unless we
@@ -99,6 +100,19 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     prevLenRef.current = cur
     if (cur > prev && scrollBack > 0) setScrollBack(s => s + (cur - prev))
   }, [chat.entries.length, scrollBack])
+
+  // Show the model's friendly label (e.g. "GPT-5.6-Sol") in the header/status
+  // instead of its opaque key (e.g. "codex:mobiusdefaultaabb").
+  useEffect(() => {
+    const key = ready.prefs.model
+    if (!key) { setModelLabel(null); return }
+    let cancelled = false
+    client.modelOptions()
+      .then(opts => { if (!cancelled) setModelLabel(opts.find(o => o.key === key)?.label ?? null) })
+      .catch(() => { if (!cancelled) setModelLabel(null) })
+    return () => { cancelled = true }
+  }, [client, ready.prefs.model])
+  const modelDisplay = modelLabel ?? ready.prefs.model ?? 'default'
 
   useInput((_input, key) => {
     // The composer ignores pageUp/pageDown, so binding them here can't clash
@@ -118,7 +132,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
     >
       <Box flexDirection="column" flexGrow={1} overflowY="hidden">
         {showWelcome
-          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} />
+          ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} modelDisplay={modelDisplay} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} />}
 
         <Box flexGrow={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
@@ -157,6 +171,7 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
         columns={terminal.columns}
         webUrl={buildWebUrl(client.server, webUserId, ready, chat.sessionId)}
         aimuxStatus={aimuxStatus}
+        modelDisplay={modelDisplay}
       />
     </Box>
   )
@@ -180,7 +195,7 @@ function useTerminalSize(): TerminalSize {
   return size
 }
 
-function WelcomeCard({ ready, columns, resumed }: { ready: ReadyState; columns: number; resumed: boolean }) {
+function WelcomeCard({ ready, columns, resumed, modelDisplay }: { ready: ReadyState; columns: number; resumed: boolean; modelDisplay: string }) {
   const cwd = compactPath(process.cwd())
   const width = Math.max(38, Math.min(68, columns - 4))
   const labelWidth = 11
@@ -193,7 +208,7 @@ function WelcomeCard({ ready, columns, resumed }: { ready: ReadyState; columns: 
           <Text dimColor> (v{VERSION})</Text>
         </Text>
         <Text> </Text>
-        <MetaRow label="model:" value={ready.prefs.model ?? 'default'} hint="/help 查看命令" labelWidth={labelWidth} />
+        <MetaRow label="model:" value={modelDisplay} hint="/help 查看命令" labelWidth={labelWidth} />
         <MetaRow label="project:" value={ready.project.name} labelWidth={labelWidth} />
         <MetaRow label="task:" value={ready.issue.title} labelWidth={labelWidth} />
         <MetaRow label="directory:" value={cwd} labelWidth={labelWidth} />
@@ -461,14 +476,15 @@ function Composer({ onSubmit, onStop, onQuit, typing, commands }: ComposerProps)
   )
 }
 
-function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus }: {
+function StatusArea({ ready, sessionId, columns, webUrl, aimuxStatus, modelDisplay }: {
   ready: ReadyState
   sessionId: string | null
   columns: number
   webUrl: string
   aimuxStatus?: AimuxStatus
+  modelDisplay: string
 }) {
-  const model = ready.prefs.model ?? 'default'
+  const model = modelDisplay
   const language = ready.prefs.language === 'en' ? 'English' : '中文'
   const cwd = compactPath(process.cwd())
   const leftRaw = columns >= 100
