@@ -11,6 +11,7 @@ const WORLD = Object.freeze({
   maxProjectiles: 260,
 });
 const MAX_CANNONS = 8;
+const BOSS_HP_GROWTH = 1.72;
 
 const THEMES = Object.freeze({
   zombie: {
@@ -19,8 +20,8 @@ const THEMES = Object.freeze({
     title: '尸潮防线',
     english: 'HORDE OVERDRIVE',
     eyebrow: '把广告里玩不到的游戏真的做出来',
-    description: '左右移动主炮阵列，先割草，再在清场窗口里轰开三选一算术挡板。炮台翻倍、献祭增伤和随机法阵会不断改写这一局。',
-    features: ['错峰算术挡板', '炮台乘除法', '永久数值叠加', '尸王演出'],
+    description: '左右移动主炮阵列，在尸群中识别高频三路算术门。每次乘除、交换与武器特效选择都会决定指数生命 Boss 能不能被打穿。',
+    features: ['10 关尸城战役', '随队算术门', '指数生命 Boss', '精英角色混编'],
     roster: ['腐烂行尸', '狂奔者', '屠夫肉盾', '变异精英', '巨型尸王'],
     speech: {
       normal: ['脑——子——在哪边？', '开门！社区送温暖！', '我只是路过吃个夜宵。', '这路怎么还有炮？'],
@@ -68,7 +69,7 @@ const THEMES = Object.freeze({
     director: {
       frenzyIcon: '☣', frenzyLabel: '十倍尸潮', frenzyDescription: '8 秒敌潮 ×10，敌人变脆',
       overdriveIcon: '⚡', overdriveLabel: '火力超载', overdriveDescription: '10 秒伤害 ×2.45、射速 ×2.4',
-      bossIcon: '♛', bossLabel: '尸王立即登场', bossDescription: '不用等到最后',
+      bossIcon: '♛', bossLabel: '尸王立即登场', bossDescription: '提前挑战本关指数生命 Boss',
       frenzyToast: '十倍尸潮已启动：密度拉满，但敌人会稍微变脆',
       frenzyBanner: 'TENFOLD HORDE',
       overdriveToast: '火力超载：伤害与射速暴涨 10 秒',
@@ -80,7 +81,7 @@ const THEMES = Object.freeze({
       bossBanner: 'OMEGA BOSS INBOUND',
     },
     bossName: '巨型尸王 · OMEGA',
-    openingToast: '主炮台只打一条路：A / D 横移，优先抢下会发光的 Bonus 与结界',
+    openingToast: '主炮台只打一条路：A / D 横移；算术门会混在尸群里，选对构筑才能击杀 Boss',
     victoryTitle: '防线守住了',
     victoryDescription: '广告里的那一局，这次真的打完了。你可以直接重开，或者继续用导演台折腾下一局。',
     defeatTitle: '城墙被吃光了',
@@ -105,8 +106,8 @@ const THEMES = Object.freeze({
     title: '程序员保卫 DDL',
     english: 'SHIP IT OR DIE',
     eyebrow: '今晚不修完这些 Bug，谁都别想下班',
-    description: '滑动会敲键盘的救火工位，把 BUG 工单和用户反馈扔向当前服务。清场后轰开评审挡板，决定扩编、裁员提效还是赌一次随机上线。',
-    features: ['会敲键盘的工位', '工单反馈弹幕', '错峰评审挡板', '团队乘除法'],
+    description: '调度会敲键盘的救火工位，在需求队伍中识别高频评审算术门。每次扩编、裁员、冻结或调用链选择都会决定最终上线能否成功。',
+    features: ['10 关上线战役', '随队评审门', '指数需求 Boss', '办公室角色混编'],
     roster: ['开发同事', '狂奔实习生', '产品经理', '暴躁 Leader', '甲方老板'],
     speech: {
       normal: ['开发：这 Bug 不是我引入的！', '开发：我本地明明是好的。', '开发：谁动了我的分支？', '开发：先让我看一下日志。'],
@@ -154,7 +155,7 @@ const THEMES = Object.freeze({
     director: {
       frenzyIcon: '⚠', frenzyLabel: '需求井喷', frenzyDescription: '8 秒需求量 ×10，需求变脆',
       overdriveIcon: '☕', overdriveLabel: '咖啡续命', overdriveDescription: '10 秒修复 ×2.45、处理速度 ×2.4',
-      bossIcon: '☎', bossLabel: '甲方立即来电', bossDescription: '提前触发最终需求',
+      bossIcon: '☎', bossLabel: '甲方立即来电', bossDescription: '提前触发本关指数需求 Boss',
       frenzyToast: '群聊里突然多了 99+ 条新需求：需求井喷已启动',
       frenzyBanner: 'SCOPE CREEP ×10',
       overdriveToast: '咖啡因超频：编译与热修速度暴涨 10 秒',
@@ -166,7 +167,7 @@ const THEMES = Object.freeze({
       bossBanner: 'CLIENT CALL INBOUND',
     },
     bossName: '上线前临时改需求 · FINAL',
-    openingToast: '救火小组一次只修一个服务：A / D 调度，优先抢咖啡、补丁与隐藏需求',
+    openingToast: '救火小组一次只修一个服务：A / D 调度；评审门混在需求里，选对构筑才能拒绝甲方',
     victoryTitle: '居然准时上线了',
     victoryDescription: '所有 Bug 被压进了发布包，临时需求也被当场打回。现在可以再模拟一次更离谱的上线夜。',
     defeatTitle: '生产环境炸了',
@@ -187,12 +188,68 @@ const THEMES = Object.freeze({
   },
 });
 
+// 两个题材各自拥有 10 关。角色复用五套高质量剪影，但通过体型、颜色、速度、生命和身份台词形成更多可辨认角色。
+const ENEMY_ROLES = Object.freeze({
+  zombie: {
+    shambler: { name: '腐烂行尸', visual: 'normal', hp: 1, speed: 0.94, scale: 1, score: 11, damage: 5, tint: 0xffffff, weight: 34, lines: ['行尸：我就散个步。', '行尸：这条路以前没炮。'] },
+    crawler: { name: '贴地爬尸', visual: 'normal', hp: 0.58, speed: 1.48, scale: 0.72, score: 13, damage: 4, tint: 0xb6ff9b, weight: 19, lines: ['爬尸：低姿态也要挨炮？', '爬尸：我从地板下面来的。'] },
+    sprinter: { name: '红眼狂奔者', visual: 'runner', hp: 0.66, speed: 1.72, scale: 0.76, score: 16, damage: 5, tint: 0xffd28a, weight: 18, lines: ['狂奔者：刹车坏了！', '狂奔者：前面的让一让！'] },
+    spitter: { name: '酸液喷吐者', visual: 'runner', hp: 1.45, speed: 0.88, scale: 1.08, score: 26, damage: 8, tint: 0x9cff75, weight: 10, lines: ['喷吐者：请保持酸性距离。', '喷吐者：今天胃不太舒服。'] },
+    bloater: { name: '腐肉胖尸', visual: 'tank', hp: 3.3, speed: 0.55, scale: 1.44, score: 38, damage: 13, tint: 0xd8bdff, weight: 12, lines: ['胖尸：我只是骨架比较大。', '胖尸：炮弹能不能少放辣？'] },
+    armored: { name: '装甲防暴尸', visual: 'tank', hp: 5.1, speed: 0.45, scale: 1.6, score: 58, damage: 16, tint: 0xa7c6d8, weight: 8, lines: ['装甲尸：盾牌是单位发的。', '装甲尸：今天谁都别想通关。'] },
+    mutant: { name: '双臂变异体', visual: 'elite', hp: 6.1, speed: 0.74, scale: 1.72, score: 105, damage: 20, tint: 0xff8ea1, weight: 7, lines: ['变异体：普通僵尸靠边！', '变异体：我有两倍的拥抱。'] },
+    screamer: { name: '尖啸女尸', visual: 'elite', hp: 4.8, speed: 0.96, scale: 1.48, score: 96, damage: 18, tint: 0xff82e7, weight: 7, lines: ['尖啸者：啊——麦克风开了吗？', '尖啸者：这只是我的高音。'] },
+    nestGuard: { name: '尸巢守卫', visual: 'elite', hp: 8.8, speed: 0.54, scale: 2.05, score: 155, damage: 24, tint: 0xe776ff, weight: 5, lines: ['守卫：母巢禁止参观！', '守卫：先过我这一吨。'] },
+    alpha: { name: '阿尔法尸将', visual: 'elite', hp: 12.5, speed: 0.43, scale: 2.35, score: 240, damage: 30, tint: 0xff536d, weight: 4, lines: ['尸将：这一波由我带队。', '尸将：炮台数量报一下。'] },
+  },
+  deadline: {
+    bug: { name: '普通线上 Bug', visual: 'normal', hp: 1, speed: 0.96, scale: 1, score: 11, damage: 5, tint: 0xffffff, weight: 32, lines: ['Bug：我本地无法复现。', 'Bug：我已经存在三年了。'] },
+    intern: { name: '直推生产实习生', visual: 'runner', hp: 0.63, speed: 1.76, scale: 0.76, score: 17, damage: 5, tint: 0xffd073, weight: 18, lines: ['实习生：我直接推生产啦！', '实习生：回滚按钮在哪儿？'] },
+    qa: { name: '穷举测试同事', visual: 'normal', hp: 1.32, speed: 0.9, scale: 1.08, score: 22, damage: 7, tint: 0x85e9ff, weight: 16, lines: ['测试：我又发现了 37 个。', '测试：这不是偶现，是必现。'] },
+    product: { name: '五彩斑斓产品经理', visual: 'tank', hp: 3.4, speed: 0.56, scale: 1.44, score: 40, damage: 13, tint: 0x9b92ff, weight: 12, lines: ['产品：这个需求很简单。', '产品：只改亿点点。'] },
+    ops: { name: '报警轰炸运维', visual: 'runner', hp: 1.75, speed: 1.08, scale: 1.05, score: 34, damage: 9, tint: 0xffa66b, weight: 10, lines: ['运维：报警群已经 99+！', '运维：磁盘又满了！'] },
+    architect: { name: '重构架构师', visual: 'tank', hp: 5.3, speed: 0.46, scale: 1.6, score: 64, damage: 17, tint: 0x8ac7ff, weight: 8, lines: ['架构师：我们先重写一遍。', '架构师：这个抽象还不够纯。'] },
+    security: { name: '安全审计专家', visual: 'elite', hp: 6.4, speed: 0.72, scale: 1.7, score: 112, damage: 21, tint: 0xd389ff, weight: 7, lines: ['安全：这里有高危漏洞。', '安全：先全部下线再说。'] },
+    leader: { name: '暴躁技术 Leader', visual: 'elite', hp: 5, speed: 0.94, scale: 1.5, score: 102, damage: 19, tint: 0xff7bb7, weight: 7, lines: ['Leader：今晚必须上线！', 'Leader：为什么还是 99%？'] },
+    clientRep: { name: '驻场甲方代表', visual: 'elite', hp: 9.2, speed: 0.53, scale: 2.02, score: 165, damage: 25, tint: 0xff7292, weight: 5, lines: ['甲方代表：我再加一个小需求。', '甲方代表：原型不是能点了吗？'] },
+    executive: { name: '拍脑袋业务总监', visual: 'elite', hp: 13, speed: 0.42, scale: 2.34, score: 250, damage: 31, tint: 0xff4f7e, weight: 4, lines: ['总监：明早我要全球上线。', '总监：技术问题你们解决。'] },
+  },
+});
+
+const CAMPAIGNS = Object.freeze({
+  zombie: [
+    { title: '封锁线外缘', description: '基础尸群，熟悉三路火力和随队推进的算术门。', duration: 64, bossAt: 45, spawn: 0.82, hp: 0.72, speed: 0.9, bossHp: 1, roles: ['shambler', 'crawler', 'sprinter'], boss: '门卫尸长 · 大门牙', bossTint: 0xff6f65, bossScale: 3.05 },
+    { title: '废弃便利店', description: '腐肉胖尸开始顶在队伍前面，错误选择会明显漏怪。', duration: 68, bossAt: 48, spawn: 0.9, hp: 0.82, speed: 0.93, bossHp: 1.05, roles: ['shambler', 'crawler', 'sprinter', 'bloater'], boss: '冰柜屠夫 · FROZEN', bossTint: 0x9ddfff, bossScale: 3.15 },
+    { title: '地铁末班车', description: '狂奔者和喷吐者混编，要求更快切换攻击路线。', duration: 72, bossAt: 51, spawn: 0.98, hp: 0.92, speed: 0.97, bossHp: 1.1, roles: ['shambler', 'sprinter', 'spitter', 'bloater'], boss: '站台尖啸者 · LINE 13', bossTint: 0xff78dc, bossScale: 3.25 },
+    { title: '医院夜班', description: '装甲尸出现，算术选择开始决定能否穿透前排。', duration: 76, bossAt: 54, spawn: 1.05, hp: 1.02, speed: 1, bossHp: 1.16, roles: ['crawler', 'spitter', 'bloater', 'armored'], boss: '缝合护士长 · NIGHT SHIFT', bossTint: 0xd8c2ff, bossScale: 3.35 },
+    { title: '高速收费站', description: '变异精英加入冲线，炮台数量和单发火力需要取舍。', duration: 80, bossAt: 57, spawn: 1.12, hp: 1.12, speed: 1.03, bossHp: 1.22, roles: ['shambler', 'sprinter', 'armored', 'mutant'], boss: '收费站暴君 · NO EXIT', bossTint: 0xff685f, bossScale: 3.45 },
+    { title: '地下实验室', description: '尖啸者和变异体成群出现，错误构筑会被精英压垮。', duration: 84, bossAt: 60, spawn: 1.2, hp: 1.24, speed: 1.06, bossHp: 1.3, roles: ['spitter', 'armored', 'mutant', 'screamer'], boss: '失控实验体 · SUBJECT 06', bossTint: 0xd35bff, bossScale: 3.55 },
+    { title: '工业尸巢', description: '尸巢守卫进入战场，需要成型的爆炸、连锁或分裂构筑。', duration: 88, bossAt: 63, spawn: 1.28, hp: 1.36, speed: 1.08, bossHp: 1.38, roles: ['bloater', 'mutant', 'screamer', 'nestGuard'], boss: '孵化母体 · HIVE MOTHER', bossTint: 0xff55c8, bossScale: 3.65 },
+    { title: '军事封锁区', description: '装甲精英密集推进，Boss 生命正式进入指数区间。', duration: 92, bossAt: 66, spawn: 1.36, hp: 1.48, speed: 1.1, bossHp: 1.46, roles: ['armored', 'mutant', 'nestGuard', 'alpha'], boss: '装甲尸将 · WARLORD', bossTint: 0xff514f, bossScale: 3.78 },
+    { title: '核心尸城', description: '高阶角色全量混编，必须围绕前几次选择规划终局。', duration: 97, bossAt: 70, spawn: 1.46, hp: 1.62, speed: 1.12, bossHp: 1.56, roles: ['spitter', 'armored', 'screamer', 'nestGuard', 'alpha'], boss: '双头尸皇 · TWIN CROWN', bossTint: 0xff3d72, bossScale: 3.92 },
+    { title: '终焉防线', description: '最终试炼：只有连续做对算术选择，才有机会击穿尸王。', duration: 104, bossAt: 76, spawn: 1.58, hp: 1.78, speed: 1.15, bossHp: 1.68, roles: ['mutant', 'screamer', 'nestGuard', 'alpha'], boss: '巨型尸王 · OMEGA', bossTint: 0xff2e4f, bossScale: 4.15 },
+  ],
+  deadline: [
+    { title: '本地开发', description: '普通 Bug 与直推实习生，先熟悉工单算术门。', duration: 62, bossAt: 44, spawn: 0.86, hp: 0.68, speed: 0.93, bossHp: 0.96, roles: ['bug', 'intern', 'qa'], boss: '合并冲突 · FIRST BLOOD', bossTint: 0xff7182, bossScale: 3.05 },
+    { title: '测试环境', description: '测试同事不断补单，产品经理开始作为肉盾推进。', duration: 66, bossAt: 47, spawn: 0.94, hp: 0.78, speed: 0.97, bossHp: 1.02, roles: ['bug', 'intern', 'qa', 'product'], boss: '回归测试清单 · 999+', bossTint: 0x8b9cff, bossScale: 3.14 },
+    { title: '三方联调', description: '报警运维加入战场，反馈流速明显加快。', duration: 70, bossAt: 50, spawn: 1.02, hp: 0.88, speed: 1, bossHp: 1.08, roles: ['bug', 'qa', 'product', 'ops'], boss: '接口字段改名 · V2 FINAL', bossTint: 0xffa25f, bossScale: 3.24 },
+    { title: '需求评审', description: '产品与架构师组成厚血前排，需要重新评估团队编制。', duration: 74, bossAt: 53, spawn: 1.1, hp: 0.98, speed: 1.03, bossHp: 1.14, roles: ['intern', 'product', 'ops', 'architect'], boss: '五彩斑斓 PRD · 88 页', bossTint: 0xac8cff, bossScale: 3.34 },
+    { title: '灰度发布', description: '安全审计首次出现，单纯堆射速已经不够。', duration: 78, bossAt: 56, spawn: 1.18, hp: 1.08, speed: 1.06, bossHp: 1.2, roles: ['qa', 'ops', 'architect', 'security'], boss: '灰度异常 · 1% 用户全炸', bossTint: 0xd474ff, bossScale: 3.44 },
+    { title: '大促前夜', description: 'Leader 和报警一起到场，选择错误会拖垮生产稳定度。', duration: 82, bossAt: 59, spawn: 1.26, hp: 1.2, speed: 1.08, bossHp: 1.28, roles: ['product', 'ops', 'security', 'leader'], boss: '零点大促 · TRAFFIC ×100', bossTint: 0xff6da8, bossScale: 3.54 },
+    { title: '生产事故', description: '驻场甲方加入精英波次，工单构筑必须开始成型。', duration: 86, bossAt: 62, spawn: 1.34, hp: 1.32, speed: 1.1, bossHp: 1.36, roles: ['architect', 'security', 'leader', 'clientRep'], boss: '生产全红 · SEV-0', bossTint: 0xff4f68, bossScale: 3.64 },
+    { title: '安全审计', description: '高血量审计与甲方代表混编，Boss 生命进入指数区。', duration: 90, bossAt: 65, spawn: 1.42, hp: 1.44, speed: 1.12, bossHp: 1.44, roles: ['ops', 'security', 'leader', 'clientRep'], boss: '合规整改 · DEADLINE TODAY', bossTint: 0xe154ff, bossScale: 3.76 },
+    { title: '董事会 Demo', description: '业务总监加入战线，每一次算术选择都在决定演示生死。', duration: 96, bossAt: 69, spawn: 1.52, hp: 1.58, speed: 1.14, bossHp: 1.54, roles: ['security', 'leader', 'clientRep', 'executive'], boss: '董事会临时演示 · LIVE', bossTint: 0xff3f88, bossScale: 3.9 },
+    { title: '全球上线', description: '最终试炼：必须形成指数级工单输出，才能拒绝最终需求。', duration: 102, bossAt: 75, spawn: 1.64, hp: 1.74, speed: 1.17, bossHp: 1.66, roles: ['architect', 'leader', 'clientRep', 'executive'], boss: '全球上线前临时改需求 · FINAL', bossTint: 0xff285f, bossScale: 4.12 },
+  ],
+});
+
 const els = {
   shell: document.getElementById('gameShell'),
   stage: document.getElementById('stage'),
   fxCanvas: document.getElementById('fxCanvas'),
   brandKicker: document.getElementById('brandKicker'),
   brandTitle: document.getElementById('brandTitle'),
+  level: document.getElementById('levelValue'),
   score: document.getElementById('scoreValue'),
   kills: document.getElementById('killsValue'),
   combo: document.getElementById('comboValue'),
@@ -254,6 +311,11 @@ const els = {
   enemyRoster: document.getElementById('enemyRoster'),
   featureRow: document.getElementById('featureRow'),
   themeButtons: [...document.querySelectorAll('.theme-card')],
+  levelPicker: document.getElementById('levelPicker'),
+  levelTitle: document.getElementById('levelTitle'),
+  levelDescription: document.getElementById('levelDescription'),
+  levelEnemyHint: document.getElementById('levelEnemyHint'),
+  levelBossHint: document.getElementById('levelBossHint'),
   startBtn: document.getElementById('startBtn'),
   startButtonLabel: document.getElementById('startButtonLabel'),
   startButtonHint: document.getElementById('startButtonHint'),
@@ -281,6 +343,7 @@ const els = {
   finalRank: document.getElementById('finalRank'),
   newBestBadge: document.getElementById('newBestBadge'),
   againBtn: document.getElementById('againBtn'),
+  againButtonLabel: document.getElementById('againButtonLabel'),
   menuBtn: document.getElementById('menuBtn'),
 };
 
@@ -628,7 +691,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.7.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.8.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -744,6 +807,8 @@ const speechBubbles = [];
 const state = {
   mode: 'menu',
   themeId: THEMES[localStorage.getItem('toy-toy-toy-theme')] ? localStorage.getItem('toy-toy-toy-theme') : 'zombie',
+  level: 1,
+  lastVictory: false,
   seed: 0,
   random: Math.random,
   elapsed: 0,
@@ -759,7 +824,7 @@ const state = {
   nextBonusAt: 5.5,
   nextBarrierAt: 14,
   nextMysteryAt: 23,
-  nextGateAt: 18,
+  nextGateAt: 8.5,
   gatePhase: 'none',
   gatePrepUntil: 0,
   gateChoiceUntil: 0,
@@ -767,7 +832,7 @@ const state = {
   gateRound: 0,
   lastGateEffect: '',
   nextSpeechAt: 2.8,
-  nextUpgradeAt: 10,
+  nextUpgradeAt: Number.POSITIVE_INFINITY,
   upgradeDeadline: 0,
   currentUpgrades: [],
   speed: 1,
@@ -931,6 +996,54 @@ const GATE_EFFECTS = Object.freeze([
     },
   },
   {
+    id: 'blast_formula', icon: '✦+1', color: 0xff9f43, hits: 17,
+    copy: {
+      zombie: ['尸爆算式', '尸爆等级 +1，并追加永久火力 ×1.08'],
+      deadline: ['异常批量关闭', '异常扩散等级 +1，并追加修复力 ×1.08'],
+    },
+    apply() {
+      state.levels.blast = Math.min(5, state.levels.blast + 1);
+      state.bonuses.damage *= 1.08;
+      return `范围特效 Lv.${state.levels.blast}，火力 ×1.08`;
+    },
+  },
+  {
+    id: 'frost_formula', icon: '❄+1', color: 0x69d8ff, hits: 15,
+    copy: {
+      zombie: ['冷冻方程', '冰冻等级 +1，并追加永久射速 ×1.1'],
+      deadline: ['需求冻结令', '冻结等级 +1，并追加处理速度 ×1.1'],
+    },
+    apply() {
+      state.levels.frost = Math.min(4, state.levels.frost + 1);
+      state.bonuses.rate *= 1.1;
+      return `冻结特效 Lv.${state.levels.frost}，射速 ×1.1`;
+    },
+  },
+  {
+    id: 'chain_formula', icon: 'ϟ+1', color: 0xb37cff, hits: 19,
+    copy: {
+      zombie: ['连锁导电阵', '连锁等级 +1，并追加 3% 暴击'],
+      deadline: ['调用链追踪', '调用链等级 +1，并追加 3% 一次通过'],
+    },
+    apply() {
+      state.levels.chain = Math.min(5, state.levels.chain + 1);
+      state.bonuses.crit += 0.03;
+      return `连锁特效 Lv.${state.levels.chain}，暴击 +3%`;
+    },
+  },
+  {
+    id: 'crit_formula', icon: '※+1', color: 0xff6f91, hits: 18,
+    copy: {
+      zombie: ['猎杀暴击式', '暴击等级 +1，并追加永久火力 ×1.12'],
+      deadline: ['一次过编译', '一次通过等级 +1，并追加修复力 ×1.12'],
+    },
+    apply() {
+      state.levels.crit = Math.min(5, state.levels.crit + 1);
+      state.bonuses.damage *= 1.12;
+      return `暴击等级 Lv.${state.levels.crit}，火力 ×1.12`;
+    },
+  },
+  {
     id: 'swap_stats', icon: '⇄', color: 0x68b8ff, hits: 15,
     copy: {
       zombie: ['火力射速互换', '交换当前火力与射速倍率，并补 4% 暴击'],
@@ -1006,6 +1119,66 @@ function currentTheme() {
   return THEMES[state.themeId] || THEMES.zombie;
 }
 
+function currentLevel() {
+  const levels = CAMPAIGNS[state.themeId] || CAMPAIGNS.zombie;
+  return levels[clamp(state.level - 1, 0, levels.length - 1)];
+}
+
+function currentRoleMap() {
+  return ENEMY_ROLES[state.themeId] || ENEMY_ROLES.zombie;
+}
+
+function bossHpFactor(levelNumber = state.level) {
+  return Math.pow(BOSS_HP_GROWTH, Math.max(0, levelNumber - 1)) * currentLevel().bossHp;
+}
+
+function formatCompactNumber(value) {
+  const number = Math.max(0, Number(value) || 0);
+  if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(number >= 10_000_000 ? 0 : 1)}M`;
+  if (number >= 1_000) return `${(number / 1_000).toFixed(number >= 100_000 ? 0 : 1)}K`;
+  return String(Math.round(number));
+}
+
+function renderLevelPicker() {
+  const levels = CAMPAIGNS[state.themeId] || CAMPAIGNS.zombie;
+  const level = currentLevel();
+  els.levelPicker.innerHTML = '';
+  levels.forEach((entry, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `level-button${index === state.level - 1 ? ' active' : ''}${index >= 6 ? ' danger' : ''}${index === 9 ? ' final' : ''}`;
+    button.textContent = String(index + 1).padStart(2, '0');
+    button.title = `第 ${index + 1} 关 · ${entry.title}`;
+    button.addEventListener('click', () => selectLevel(index + 1));
+    els.levelPicker.appendChild(button);
+  });
+  const uniqueRoles = [...new Set(level.roles)].map((id) => currentRoleMap()[id]).filter(Boolean);
+  els.levelTitle.textContent = `第 ${state.level} 关 · ${level.title}`;
+  els.levelDescription.textContent = level.description;
+  els.levelEnemyHint.textContent = `敌方角色 ${uniqueRoles.length} 种 · ${state.level >= 5 ? '高阶精英已加入' : '逐步解锁精英'}`;
+  els.levelBossHint.textContent = `Boss 指数生命 ×${bossHpFactor().toFixed(state.level >= 7 ? 0 : 1)}`;
+  els.enemyRoster.innerHTML = [...uniqueRoles.slice(0, 4), { name: level.boss, visual: 'boss' }].map((role) => {
+    const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
+    return `
+      <div class="enemy-roster-item">
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.8.0');background-position:${frame * 25}% center"></i>
+        <span>${role.name}</span>
+      </div>
+    `;
+  }).join('');
+  els.startButtonHint.textContent = `${level.duration} 秒构筑 · 最终 Boss ${level.boss}`;
+  els.time.textContent = String(level.duration);
+  els.level.textContent = `${String(state.level).padStart(2, '0')}/10`;
+}
+
+function selectLevel(levelNumber, { persist = true } = {}) {
+  if (state.mode !== 'menu') return;
+  state.level = clamp(Math.trunc(Number(levelNumber) || 1), 1, 10);
+  if (persist) localStorage.setItem(`toy-toy-toy-level-${state.themeId}`, String(state.level));
+  renderLevelPicker();
+  updateHud(true);
+}
+
 function upgradePresentation(upgrade) {
   const copy = currentTheme().upgrades[upgrade.id];
   return {
@@ -1032,12 +1205,6 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.startTitle.textContent = theme.title;
   els.startEnglish.textContent = theme.english;
   els.startDescription.textContent = theme.description;
-  els.enemyRoster.innerHTML = theme.roster.map((name, index) => `
-    <div class="enemy-roster-item">
-      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.7.0');background-position:${index * 25}% center"></i>
-      <span>${name}</span>
-    </div>
-  `).join('');
   els.featureRow.innerHTML = theme.features.map((feature) => `<span>${feature}</span>`).join('');
   els.startButtonLabel.textContent = theme.startButton;
   els.startButtonHint.textContent = theme.startButtonHint;
@@ -1065,6 +1232,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.bossButtonLabel.textContent = theme.director.bossLabel;
   els.bossButtonDescription.textContent = theme.director.bossDescription;
   els.themeButtons.forEach((button) => button.classList.toggle('active', button.dataset.theme === themeId));
+  state.level = clamp(Number(localStorage.getItem(`toy-toy-toy-level-${themeId}`) || state.level || 1), 1, 10);
+  renderLevelPicker();
 
   scene.background.setHex(theme.palette.bg);
   scene.fog.color.setHex(theme.palette.fog);
@@ -1093,7 +1262,6 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
     ticket.visible = theme.id === 'deadline';
   });
 
-  els.time.textContent = String(theme.roundDuration);
   if (refreshLeaderboard) loadLeaderboard();
 }
 
@@ -1170,14 +1338,15 @@ function resetGame() {
   state.combo = 1;
   state.maxCombo = 1;
   state.comboUntil = 0;
+  state.lastVictory = false;
   state.baseHp = 100;
   state.focusLane = 1;
   state.fireAcc = Array(MAX_CANNONS).fill(0);
   state.spawnAcc = 0;
-  state.nextBonusAt = 5.5;
-  state.nextBarrierAt = 14;
-  state.nextMysteryAt = 23;
-  state.nextGateAt = 18;
+  state.nextBonusAt = Number.POSITIVE_INFINITY;
+  state.nextBarrierAt = Number.POSITIVE_INFINITY;
+  state.nextMysteryAt = Number.POSITIVE_INFINITY;
+  state.nextGateAt = 7.5 + randomBetween(0, 1.5);
   state.gatePhase = 'none';
   state.gatePrepUntil = 0;
   state.gateChoiceUntil = 0;
@@ -1185,7 +1354,7 @@ function resetGame() {
   state.gateRound = 0;
   state.lastGateEffect = '';
   state.nextSpeechAt = 2.8 + randomBetween(0, 1.6);
-  state.nextUpgradeAt = theme.firstUpgradeAt;
+  state.nextUpgradeAt = Number.POSITIVE_INFINITY;
   state.upgradeDeadline = 0;
   state.currentUpgrades = [];
   state.frenzyUntil = 0;
@@ -1231,7 +1400,7 @@ function startGame() {
   setOverlay(els.resultOverlay, false);
   setOverlay(els.pauseOverlay, false);
   setOverlay(els.upgradeOverlay, false);
-  showToast(theme.openingToast);
+  showToast(`第 ${state.level} 关「${currentLevel().title}」：${theme.openingToast}`, 2600);
   for (let i = 0; i < 10; i += 1) spawnEnemy(i < 2 ? 'runner' : 'normal');
 }
 
@@ -1241,6 +1410,7 @@ function showMenu() {
   setOverlay(els.pauseOverlay, false);
   setOverlay(els.upgradeOverlay, false);
   setOverlay(els.startOverlay, true);
+  renderLevelPicker();
   loadLeaderboard();
 }
 
@@ -1261,75 +1431,71 @@ function togglePause(forceResume = false) {
   }
 }
 
-function spawnEnemy(forceType = null) {
-  const theme = currentTheme();
-  if (enemies.filter((enemy) => enemy.active).length >= WORLD.maxEnemies) return null;
-  const progress = clamp(state.elapsed / theme.roundDuration, 0, 1);
-  let type = forceType;
-  if (!type) {
-    const roll = state.random();
-    if (progress > 0.48 && roll < 0.08) type = 'tank';
-    else if (progress > 0.2 && roll < 0.22) type = 'runner';
-    else if (progress > 0.66 && roll < 0.29) type = 'elite';
-    else type = 'normal';
+function pickEnemyRole(forceRole = null) {
+  const roleMap = currentRoleMap();
+  if (forceRole && roleMap[forceRole]) return { id: forceRole, ...roleMap[forceRole] };
+  let roleIds = [...currentLevel().roles];
+  if (forceRole && ['normal', 'runner', 'tank', 'elite'].includes(forceRole)) {
+    const matching = roleIds.filter((id) => roleMap[id]?.visual === forceRole);
+    if (matching.length) roleIds = matching;
   }
+  const weighted = roleIds.map((id) => ({ id, ...roleMap[id] })).filter((role) => role.name);
+  const total = weighted.reduce((sum, role) => sum + (role.weight || 1), 0);
+  let roll = state.random() * Math.max(1, total);
+  for (const role of weighted) {
+    roll -= role.weight || 1;
+    if (roll <= 0) return role;
+  }
+  return weighted[0] || { id: 'normal', name: '敌人', visual: 'normal', hp: 1, speed: 1, scale: 1, score: 11, damage: 5, tint: 0xffffff };
+}
 
-  const lane = type === 'boss' ? 1 : Math.floor(state.random() * 3);
-  const baseHp = (20 + state.elapsed * 0.72) * theme.hpMultiplier;
+function spawnEnemy(forceRole = null, options = {}) {
+  const theme = currentTheme();
+  const level = currentLevel();
+  if (enemies.filter((enemy) => enemy.active).length >= WORLD.maxEnemies) return null;
+  const progress = clamp(state.elapsed / level.duration, 0, 1);
+  const isBoss = forceRole === 'boss';
+  const role = isBoss ? null : pickEnemyRole(forceRole);
+  const type = isBoss ? 'boss' : role.visual;
+  const lane = isBoss ? 1 : clamp(Number.isFinite(options.lane) ? options.lane : Math.floor(state.random() * 3), 0, 2);
+  const regularBaseHp = (18 + state.level * 3.6 + progress * 34) * theme.hpMultiplier * level.hp;
+  const hp = isBoss
+    ? 9200 * bossHpFactor() * theme.bossHpMultiplier
+    : regularBaseHp * role.hp;
   const enemy = {
     active: true,
     id: `${state.seed}-${state.elapsed}-${enemies.length}`,
     type,
+    roleId: isBoss ? 'boss' : role.id,
+    roleName: isBoss ? level.boss : role.name,
     lane,
-    x: WORLD.lanes[lane] + randomBetween(-1.15, 1.15),
+    x: WORLD.lanes[lane] + (isBoss ? 0 : randomBetween(-1.15, 1.15)),
     y: 0.62,
-    z: WORLD.spawnZ - randomBetween(0, 2.2),
-    hp: baseHp,
-    maxHp: baseHp,
-    speed: (1.28 + progress * 1.05) * theme.speedMultiplier,
-    scale: 1,
-    score: 11,
-    baseDamage: 5,
+    z: Number.isFinite(options.z) ? options.z : WORLD.spawnZ - randomBetween(0, 2.2),
+    hp,
+    maxHp: hp,
+    speed: isBoss
+      ? Math.max(0.12, 0.235 - (state.level - 1) * 0.011)
+      : (1.18 + progress * 0.78) * theme.speedMultiplier * level.speed * role.speed,
+    scale: isBoss ? level.bossScale : role.scale,
+    score: isBoss ? Math.round(5000 * Math.pow(1.45, state.level - 1)) : Math.round(role.score * (1 + state.level * 0.12)),
+    baseDamage: isBoss ? 100 : role.damage,
+    tint: isBoss ? level.bossTint : role.tint,
     slowUntil: 0,
     hitUntil: 0,
     wobble: randomBetween(0, Math.PI * 2),
     speechCount: 0,
   };
 
-  if (type === 'runner') {
-    enemy.hp *= 0.62;
-    enemy.maxHp = enemy.hp;
-    enemy.speed *= 1.72;
-    enemy.scale = 0.72;
-    enemy.score = 14;
-    enemy.baseDamage = 4;
-  } else if (type === 'tank') {
-    enemy.hp *= 3.4;
-    enemy.maxHp = enemy.hp;
-    enemy.speed *= 0.55;
-    enemy.scale = 1.45;
-    enemy.score = 35;
-    enemy.baseDamage = 13;
-  } else if (type === 'elite') {
-    enemy.hp *= 5.5;
-    enemy.maxHp = enemy.hp;
-    enemy.speed *= 0.78;
-    enemy.scale = 1.72;
-    enemy.score = 90;
-    enemy.baseDamage = 19;
-  } else if (type === 'boss') {
+  if (isBoss) {
     enemy.x = 0;
     enemy.z = WORLD.spawnZ - 1.5;
-    enemy.hp = (1750 + state.elapsed * 14) * theme.bossHpMultiplier;
-    enemy.maxHp = enemy.hp;
-    enemy.speed = theme.bossSpeed;
-    enemy.scale = 3.2;
-    enemy.score = 5000;
-    enemy.baseDamage = 100;
     state.bossSpawned = true;
     state.bossAlive = true;
-    els.bossName.textContent = theme.bossName;
+    els.bossName.textContent = `${level.boss} · ${formatCompactNumber(enemy.maxHp)} HP`;
     els.bossHud.classList.remove('hidden');
+  } else if (role.weight <= 5 && state.random() < 0.08) {
+    addFxText(enemy.x, 1.15 * enemy.scale, enemy.z, role.name, cssHex(role.tint), 1.15, 11);
   }
 
   enemies.push(enemy);
@@ -1401,7 +1567,11 @@ function scheduleCharacterSpeech() {
   ));
   if (!candidates.length) return;
   const enemy = candidates[Math.floor(state.random() * candidates.length)];
-  const lines = currentTheme().speech?.[enemy.type] || currentTheme().speech?.normal || [];
+  const lines = currentRoleMap()[enemy.roleId]?.lines
+    || currentTheme().speech?.[enemy.roleId]
+    || currentTheme().speech?.[enemy.type]
+    || currentTheme().speech?.normal
+    || [];
   if (!lines.length) return;
   showEnemySpeech(enemy, lines[Math.floor(state.random() * lines.length)]);
 }
@@ -1610,8 +1780,9 @@ function gateBoardSprite(effect, hitsRemaining, color) {
 
 function createChoiceGate(effect, lane, requiredHits) {
   const color = effect.color;
+  const startZ = -8.4;
   const group = new THREE.Group();
-  group.position.set(WORLD.lanes[lane], 0.04, -1.35);
+  group.position.set(WORLD.lanes[lane], 0.04, startZ);
   const floor = new THREE.Mesh(
     new THREE.RingGeometry(1.35, 2.2, 36),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
@@ -1640,7 +1811,8 @@ function createChoiceGate(effect, lane, requiredHits) {
     lane,
     x: WORLD.lanes[lane],
     y: 1.2,
-    z: -1.35,
+    z: startZ,
+    speed: 0.58 + state.level * 0.012,
     hitsRemaining: requiredHits,
     requiredHits,
     scale: 1,
@@ -1743,48 +1915,41 @@ function grantBonus(target) {
 function beginGatePrep() {
   if (state.gatePhase !== 'none' || state.bossAlive || state.bossDefeated) return;
   state.gatePhase = 'prep';
-  state.gatePrepUntil = state.elapsed + 3.4;
-  state.frenzyUntil = Math.min(state.frenzyUntil, state.elapsed);
-  for (const enemy of enemies) {
-    if (enemy.active && enemy.type !== 'boss') enemy.slowUntil = Math.max(enemy.slowUntil, state.gatePrepUntil + 1.8);
-  }
-  for (const target of [...bonusTargets]) {
-    addFxText(target.x, 1.1, target.z, '选择阶段回收', '#8ba6b8', 0.85, 10);
-    expireBonusTarget(target);
-  }
-  showOverdriveBanner(currentTheme().id === 'deadline' ? 'REVIEW WINDOW' : 'CHOICE GATES');
+  state.gatePrepUntil = state.elapsed + 0.9;
+  showOverdriveBanner(currentTheme().id === 'deadline' ? 'REVIEW CONVOY' : 'ARITHMETIC CONVOY');
   showToast(currentTheme().id === 'deadline'
-    ? '需求流暂停：先清掉残余同事，评审挡板即将出现'
-    : '尸潮暂歇：先清理残余敌人，三扇算术挡板即将出现', 2500);
+    ? '评审方案混进需求队伍：准备调度工位，三选一击穿'
+    : '算术挡板混进尸群：准备切路，只能轰开其中一门', 1900);
 }
 
 function spawnChoiceGates() {
-  let cleared = 0;
-  for (const enemy of enemies) {
-    if (!enemy.active || enemy.type === 'boss') continue;
-    enemy.active = false;
-    cleared += 1;
-    state.score += Math.round(enemy.score * 0.35);
-    if (cleared <= 18) addFxParticle(enemy.x, 0.7, enemy.z, currentTheme().palette.secondary, 0.55);
-  }
-  if (cleared) addFxText(0, 1.8, -3.5, `波次清算 ${cleared}`, currentTheme().palette.secondary, 1.25, 15);
-  const pool = [...GATE_EFFECTS];
-  for (let index = pool.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(state.random() * (index + 1));
-    [pool[index], pool[swap]] = [pool[swap], pool[index]];
-  }
-  const selected = pool.slice(0, 3);
-  if (selected.every((effect) => effect.id !== 'team_double' && effect.id !== 'team_half' && effect.id !== 'odd_even')) {
-    const arithmetic = GATE_EFFECTS.filter((effect) => ['team_double', 'team_half', 'odd_even'].includes(effect.id));
-    selected[Math.floor(state.random() * 3)] = arithmetic[Math.floor(state.random() * arithmetic.length)];
+  const shuffle = (items) => {
+    const pool = [...items];
+    for (let index = pool.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(state.random() * (index + 1));
+      [pool[index], pool[swap]] = [pool[swap], pool[index]];
+    }
+    return pool;
+  };
+  const arithmeticIds = new Set(['team_double', 'team_half', 'rapid_flow', 'heavy_packet', 'swap_stats', 'odd_even', 'compound_risk']);
+  const arithmetic = shuffle(GATE_EFFECTS.filter((effect) => arithmeticIds.has(effect.id) && effect.id !== state.lastGateEffect));
+  const remainder = shuffle(GATE_EFFECTS.filter((effect) => !arithmetic.slice(0, 2).includes(effect) && effect.id !== state.lastGateEffect));
+  const selected = [...arithmetic.slice(0, 2), remainder[0]].filter(Boolean);
+  while (selected.length < 3) {
+    const fallback = shuffle(GATE_EFFECTS.filter((effect) => !selected.includes(effect)))[0];
+    if (!fallback) break;
+    selected.push(fallback);
   }
   selected.forEach((effect, lane) => {
-    const scaleByTeam = Math.max(0, state.levels.cannon - 1) * 1.4;
-    const requiredHits = Math.round(effect.hits + state.gateRound * 1.8 + scaleByTeam + randomBetween(0, 4));
+    const scaleByTeam = Math.max(0, state.levels.cannon - 1) * 0.8;
+    const requiredHits = Math.round(effect.hits + state.gateRound * 0.65 + state.level * 0.9 + scaleByTeam + randomBetween(-1, 3));
     createChoiceGate(effect, lane, requiredHits);
   });
+  for (let index = 0; index < 12 + state.level; index += 1) {
+    spawnEnemy(null, { lane: index % 3, z: -10.8 + randomBetween(0, 5.6) });
+  }
   state.gatePhase = 'active';
-  state.gateChoiceUntil = state.elapsed + 11;
+  state.gateChoiceUntil = state.elapsed + 13.5;
   state.gateRound += 1;
   state.telemetry.gatesOffered += 3;
   showToast(currentTheme().id === 'deadline'
@@ -1795,10 +1960,7 @@ function spawnChoiceGates() {
 function finishGateWindow(delay = 1.25) {
   state.gatePhase = 'resume';
   state.gateResumeAt = state.elapsed + delay;
-  state.nextGateAt = state.elapsed + 13 + randomBetween(0, 5);
-  state.nextBonusAt = Math.max(state.nextBonusAt, state.elapsed + 4.5);
-  state.nextBarrierAt = Math.max(state.nextBarrierAt, state.elapsed + 8);
-  state.nextMysteryAt = Math.max(state.nextMysteryAt, state.elapsed + 10);
+  state.nextGateAt = state.elapsed + 6.5 + randomBetween(0, 2.4);
 }
 
 function resolveChoiceGate(gate) {
@@ -1829,49 +1991,30 @@ function updateChoiceGates(dt) {
     return;
   }
   if (state.gatePhase === 'prep') {
-    const living = livingEnemies().filter((enemy) => enemy.type !== 'boss').length;
-    if (state.elapsed >= state.gatePrepUntil && (living <= 14 || state.elapsed >= state.gatePrepUntil + 2.2)) spawnChoiceGates();
+    if (state.elapsed >= state.gatePrepUntil) spawnChoiceGates();
     return;
   }
   if (state.gatePhase === 'active') {
+    let convoyEscaped = false;
     for (const gate of choiceGates) {
       if (!gate.active) continue;
       gate.wobble += dt * 2.5;
+      gate.z += gate.speed * dt;
+      gate.group.position.z = gate.z;
       gate.group.position.y = 0.04 + Math.sin(gate.wobble) * 0.055;
       gate.floor.rotation.z += dt * 0.55;
       const pulse = state.elapsed < gate.hitUntil ? 1.08 : 1 + Math.sin(gate.wobble * 1.6) * 0.025;
       gate.group.scale.setScalar(pulse);
+      if (gate.z >= WORLD.baseZ - 1.4) convoyEscaped = true;
     }
-    if (state.elapsed >= state.gateChoiceUntil) {
+    if (convoyEscaped || state.elapsed >= state.gateChoiceUntil) {
       for (const gate of [...choiceGates]) expireChoiceGate(gate, '选择超时');
-      showToast('选择超时：没有获得算术效果，敌潮即将恢复', 2200);
-      finishGateWindow(0.8);
+      showToast('算术车队已穿过防线：本轮没有获得构筑效果', 2200);
+      finishGateWindow(0.35);
     }
     return;
   }
   if (state.gatePhase === 'resume' && state.elapsed >= state.gateResumeAt) state.gatePhase = 'none';
-}
-
-function updateBonusSpawning() {
-  if (state.gatePhase !== 'none') return;
-  if (state.elapsed >= state.nextBonusAt) {
-    const lanes = [0, 1, 2].sort(() => state.random() - 0.5);
-    const types = ['damage', 'rate', 'crit'].sort(() => state.random() - 0.5);
-    createBonusTarget(types[0], lanes[0]);
-    createBonusTarget(types[1], lanes[1]);
-    state.nextBonusAt += 8.5 + randomBetween(0, 2.4);
-    showToast('两路 Bonus 已进入：移动炮台，选择你要的永久强化', 1600);
-  }
-  if (state.elapsed >= state.nextBarrierAt) {
-    createBonusTarget('barrier', Math.floor(state.random() * 3), WORLD.spawnZ + 2.4);
-    state.nextBarrierAt += 18 + randomBetween(0, 4);
-    showToast('结界出现：打穿它，炮台会继续进化', 1700);
-  }
-  if (state.elapsed >= state.nextMysteryAt) {
-    createBonusTarget('mystery', Math.floor(state.random() * 3), WORLD.spawnZ + 1.8);
-    state.nextMysteryAt += 24 + randomBetween(0, 4);
-    showToast('隐藏 Bonus 出现：里面可能是倍率，也可能直接复制炮台', 1800);
-  }
 }
 
 function updateBonusTargets(dt) {
@@ -1906,12 +2049,15 @@ function livingEnemies() {
 }
 
 function updateSpawning(dt) {
-  if (state.gatePhase !== 'none') return;
   const theme = currentTheme();
-  const progress = clamp(state.elapsed / theme.roundDuration, 0, 1);
+  const level = currentLevel();
+  const progress = clamp(state.elapsed / level.duration, 0, 1);
   const living = livingEnemies();
   const nearestZ = living.reduce((max, enemy) => Math.max(max, enemy.z), WORLD.spawnZ);
-  let spawnRate = (1.7 + progress * 5.5) * theme.spawnMultiplier;
+  let spawnRate = (1.55 + progress * 5.1) * theme.spawnMultiplier * level.spawn;
+  if (state.gatePhase === 'prep') spawnRate *= 0.72;
+  if (state.gatePhase === 'active') spawnRate *= 0.56;
+  if (state.gatePhase === 'resume') spawnRate *= 0.8;
   if (state.elapsed < state.frenzyUntil) spawnRate *= 10;
   if (living.length < 18 && nearestZ < 4) spawnRate *= 1.55;
   if (living.length > 360) spawnRate *= 0.42;
@@ -1928,7 +2074,7 @@ function updateSpawning(dt) {
     }
   }
 
-  if (!state.bossSpawned && state.elapsed >= theme.bossAt && state.gatePhase === 'none') summonBoss(false);
+  if (!state.bossSpawned && state.elapsed >= level.bossAt && state.gatePhase === 'none') summonBoss(false);
 }
 
 function updateEnemies(dt) {
@@ -2131,7 +2277,9 @@ function applyDamage(enemy, amount, options = {}) {
       enemy.x,
       1.55,
       enemy.z,
-      enemy.hitsRemaining > 0 ? `还差 ${enemy.hitsRemaining} 发` : '方案击穿！',
+      enemy.hitsRemaining > 0
+        ? `还差 ${enemy.hitsRemaining} ${currentTheme().id === 'deadline' ? '份' : '发'}`
+        : '方案击穿！',
       cssHex(enemy.effect.color),
       0.62,
       enemy.hitsRemaining > 0 ? 12 : 17,
@@ -2519,13 +2667,12 @@ function updateUpgradeCountdown(now) {
 }
 
 function updateGame(dt) {
-  const theme = currentTheme();
+  const level = currentLevel();
   state.elapsed += dt;
   if (state.elapsed > state.comboUntil) state.combo = 1;
 
   updateChoiceGates(dt);
   updateSpawning(dt);
-  updateBonusSpawning();
   updateCharacterSpeech(dt);
   updateEnemies(dt);
   updateBonusTargets(dt);
@@ -2535,19 +2682,22 @@ function updateGame(dt) {
   updateShockwaves(dt);
   updateFx(dt);
 
-  if (state.elapsed >= state.nextUpgradeAt && !state.bossDefeated && state.gatePhase === 'none') showUpgrade();
   if (state.bossDefeated && state.finishAt && state.elapsed >= state.finishAt) endGame(true);
-  if (state.elapsed >= theme.roundDuration && !state.bossSpawned && state.gatePhase === 'none') summonBoss(false);
+  if (state.elapsed >= level.duration && !state.bossSpawned && state.gatePhase === 'none') summonBoss(false);
 }
 
 function endGame(victory) {
   const theme = currentTheme();
   if (!['playing', 'upgrade'].includes(state.mode)) return;
+  state.lastVictory = victory;
   state.mode = 'result';
   setOverlay(els.upgradeOverlay, false);
   els.resultEyebrow.textContent = victory ? `RUN COMPLETE / ${theme.english}` : `SIMULATION FAILED / ${theme.english}`;
   els.resultTitle.textContent = victory ? theme.victoryTitle : theme.defeatTitle;
-  els.resultDescription.textContent = victory ? theme.victoryDescription : theme.defeatDescription;
+  els.resultDescription.textContent = victory
+    ? `第 ${state.level} 关「${currentLevel().title}」完成。${theme.victoryDescription}`
+    : `第 ${state.level} 关「${currentLevel().title}」失败。${theme.defeatDescription}`;
+  els.againButtonLabel.textContent = victory && state.level < 10 ? `进入第 ${state.level + 1} 关` : victory ? '重打最终关' : '重新挑战本关';
   els.finalScore.textContent = formatScore(state.score);
   els.finalKills.textContent = formatScore(state.kills);
   els.finalCombo.textContent = `×${state.maxCombo}`;
@@ -2555,6 +2705,14 @@ function endGame(victory) {
   els.newBestBadge.classList.add('hidden');
   setOverlay(els.resultOverlay, true);
   submitRun(victory);
+}
+
+function startNextOrReplay() {
+  if (state.lastVictory && state.level < 10) {
+    state.level += 1;
+    localStorage.setItem(`toy-toy-toy-level-${state.themeId}`, String(state.level));
+  }
+  startGame();
 }
 
 function renderEnemies() {
@@ -2576,7 +2734,7 @@ function renderEnemies() {
     matrixDummy.rotation.set(-0.72, 0, stride * (enemy.type === 'runner' ? 0.105 : 0.055));
     matrixDummy.updateMatrix();
     visual.mesh.setMatrixAt(index, matrixDummy.matrix);
-    enemyTint.setHex(hit ? 0xff6d78 : slowed ? 0x79d9ff : 0xffffff);
+    enemyTint.setHex(hit ? 0xff6d78 : slowed ? 0x79d9ff : (enemy.tint || 0xffffff));
     visual.mesh.setColorAt(index, enemyTint);
 
     shadowDummy.position.set(enemy.x, -0.065, enemy.z + 0.34 * enemy.scale);
@@ -2599,7 +2757,7 @@ function renderEnemies() {
   if (boss?.active) {
     const ratio = clamp(boss.hp / boss.maxHp, 0, 1);
     els.bossHpFill.style.width = `${ratio * 100}%`;
-    els.bossHpText.textContent = `${Math.ceil(ratio * 100)}%`;
+    els.bossHpText.textContent = `${Math.ceil(ratio * 100)}% · ${formatCompactNumber(boss.hp)}`;
   }
 }
 
@@ -2611,7 +2769,8 @@ function updateHud(force = false) {
   els.score.textContent = formatScore(state.score);
   els.kills.textContent = formatScore(state.kills);
   els.combo.textContent = `×${state.combo}`;
-  const remaining = Math.max(0, Math.ceil(theme.roundDuration - state.elapsed));
+  els.level.textContent = `${String(state.level).padStart(2, '0')}/10`;
+  const remaining = Math.max(0, Math.ceil(currentLevel().duration - state.elapsed));
   els.time.textContent = remaining > 0 ? String(remaining) : state.bossAlive ? 'BOSS' : '0';
   els.baseHpText.textContent = `${Math.ceil(state.baseHp)}%`;
   els.baseHpFill.style.width = `${clamp(state.baseHp, 0, 100)}%`;
@@ -2625,13 +2784,13 @@ function updateHud(force = false) {
   els.bonusRateValue.textContent = `×${state.bonuses.rate.toFixed(2)}`;
   els.cannonCountValue.textContent = `${state.levels.cannon} / ${MAX_CANNONS}`;
   els.cannonShardValue.textContent = state.levels.cannon >= MAX_CANNONS ? 'MAX' : `${state.bonuses.shards} / 2`;
-  els.bonusCountValue.textContent = `BONUS ×${state.bonuses.count}`;
+  els.bonusCountValue.textContent = `选择 ×${state.telemetry.gatesChosen}`;
   const frenzyRemaining = Math.max(0, state.frenzyUntil - state.elapsed);
   const overdriveRemaining = Math.max(0, state.overdriveUntil - state.elapsed);
   const choosingGate = state.gatePhase === 'active';
-  if (state.gatePhase === 'prep') els.bonusCountValue.textContent = '清场准备选择';
-  else if (choosingGate) els.bonusCountValue.textContent = `算术选择 ${Math.max(0, state.gateChoiceUntil - state.elapsed).toFixed(1)}s`;
-  else if (state.gatePhase === 'resume') els.bonusCountValue.textContent = '敌潮即将恢复';
+  if (state.gatePhase === 'prep') els.bonusCountValue.textContent = '算术车队接近';
+  else if (choosingGate) els.bonusCountValue.textContent = `随队选择 ${Math.max(0, state.gateChoiceUntil - state.elapsed).toFixed(1)}s`;
+  else if (state.gatePhase === 'resume') els.bonusCountValue.textContent = '选择已锁定';
   els.frenzyBtn.classList.toggle('active', frenzyRemaining > 0);
   els.overdriveBtn.classList.toggle('active', overdriveRemaining > 0);
   els.bossBtn.classList.toggle('active', state.bossAlive);
@@ -2639,7 +2798,7 @@ function updateHud(force = false) {
   els.overdriveBtn.setAttribute('aria-pressed', overdriveRemaining > 0 ? 'true' : 'false');
   els.bossBtn.setAttribute('aria-pressed', state.bossAlive ? 'true' : 'false');
   els.frenzyDescription.textContent = state.gatePhase !== 'none'
-    ? '选择阶段锁定：尸潮已经暂停'
+    ? '算术车队中：普通敌潮仍以低密度推进'
     : frenzyRemaining > 0
     ? `生效中 ${frenzyRemaining.toFixed(1)} 秒 · 实际敌潮 ×10`
     : `${theme.director.frenzyDescription}${state.telemetry.frenzyUses ? ` · 已触发 ${state.telemetry.frenzyUses} 次` : ''}`;
@@ -2652,9 +2811,9 @@ function updateHud(force = false) {
     ? '已登场 · 固定中路 · 仅当前路可攻击'
     : state.bossSpawned
       ? '本局 Boss 已处理，不能重复召唤'
-      : theme.director.bossDescription;
+      : `${theme.director.bossDescription} · 本关生命约 ${formatCompactNumber(9200 * bossHpFactor() * theme.bossHpMultiplier)}`;
   els.laneHint.textContent = choosingGate
-    ? (theme.id === 'deadline' ? '评审窗口：工单只打当前一路，击穿一项后其余锁死' : '选择窗口：炮弹只打当前一路，击穿一门后其余锁死')
+    ? (theme.id === 'deadline' ? '评审车队混在需求中：工单只打一条服务，击穿一项后其余锁死' : '算术门混在尸群中：炮弹只打一条路，击穿一门后其余锁死')
     : theme.laneHint;
   els.frenzyBtn.disabled = state.mode !== 'playing' || state.gatePhase !== 'none';
   els.overdriveBtn.disabled = state.mode !== 'playing';
@@ -2700,7 +2859,7 @@ function renderLeaderboard(rows) {
     const item = document.createElement('li');
     const name = document.createElement('b');
     const score = document.createElement('em');
-    name.textContent = row.display_name || row.username || '匿名玩家';
+    name.textContent = `${row.display_name || row.username || '匿名玩家'} · L${row.level || 1}`;
     score.textContent = formatScore(row.score || 0);
     item.append(name, score);
     els.leaderboardList.appendChild(item);
@@ -2740,6 +2899,7 @@ async function submitRun(victory) {
       score: Math.round(state.score),
       kills: state.kills,
       duration: Math.round(state.elapsed),
+      level: state.level,
       victory,
       seed: state.seed,
     });
@@ -2757,9 +2917,15 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.7.0',
+      version: '0.8.0',
       mode: state.mode,
       theme: state.themeId,
+      level: state.level,
+      levelTitle: currentLevel().title,
+      levelDuration: currentLevel().duration,
+      levelBossAt: currentLevel().bossAt,
+      bossHpFactor: bossHpFactor(),
+      roleCatalog: currentLevel().roles.map((id) => currentRoleMap()[id]?.name).filter(Boolean),
       elapsed: state.elapsed,
       speed: state.speed,
       focusLane: state.focusLane,
@@ -2783,6 +2949,9 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         overdriveRemaining: Math.max(0, state.overdriveUntil - state.elapsed),
         bossSpawned: state.bossSpawned,
         bossAlive: state.bossAlive,
+        bossHp: enemies.find((enemy) => enemy.active && enemy.type === 'boss')?.hp || 0,
+        bossMaxHp: enemies.find((enemy) => enemy.active && enemy.type === 'boss')?.maxHp || 0,
+        bossSpeed: enemies.find((enemy) => enemy.active && enemy.type === 'boss')?.speed || 0,
       },
       combat: {
         damage: combat.damage,
@@ -2817,7 +2986,7 @@ els.themeButtons.forEach((button) => button.addEventListener('click', () => {
   applyTheme(button.dataset.theme);
   updateHud(true);
 }));
-els.againBtn.addEventListener('click', startGame);
+els.againBtn.addEventListener('click', startNextOrReplay);
 els.menuBtn.addEventListener('click', showMenu);
 els.pauseBtn.addEventListener('click', () => togglePause());
 els.resumeBtn.addEventListener('click', () => togglePause(true));
