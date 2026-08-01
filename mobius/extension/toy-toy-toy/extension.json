@@ -1,8 +1,8 @@
 {
   "name": "toy-toy-toy",
   "display_name": "广告爽游实验室",
-  "description": "双题材广告爽游实验室：横移主炮、隐藏 Bonus、结界与永久数值叠加。",
-  "version": "0.5.0",
+  "description": "双题材广告爽游实验室：身份台词、横移主炮、隐藏 Bonus 与真实导演效果。",
+  "version": "0.6.0",
   "icon": "favicon.svg",
   "project": {
     "sync": true

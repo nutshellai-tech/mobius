@@ -21,6 +21,13 @@ const THEMES = Object.freeze({
     description: '左右移动唯一的主炮台，决定这一秒守哪一路。打爆尸潮结界和隐藏补给，让火力、射速与炮台数量在一局里不断膨胀。',
     features: ['横移主炮台', '可击破 Bonus', '永久数值叠加', '尸王演出'],
     roster: ['腐烂行尸', '狂奔者', '屠夫肉盾', '变异精英', '巨型尸王'],
+    speech: {
+      normal: ['脑——子——在哪边？', '开门！社区送温暖！', '我只是路过吃个夜宵。', '这路怎么还有炮？'],
+      runner: ['等等我，鞋跑掉了！', '冲错路了！先别开炮！', '我为什么跑这么快？', '前面的僵尸让一让！'],
+      tank: ['轻点，我刚吃饱。', '大块头申请优先通行！', '这炮是在给我挠痒吗？', '谁把门修得这么结实？'],
+      elite: ['谁把我从午睡里叫醒的？', '今天这座基地必须拆！', '我闻到了人类加班的味道。', '普通僵尸都靠边站！'],
+      boss: ['都别挤，我才是尸王！', '广告里我可是最终主角！', '这城墙看起来很有嚼劲。', '三路都让开，我走中间！'],
+    },
     startButton: '开始守城',
     startButtonHint: '点击后尸潮立即来袭',
     startHint: 'A / D 左右移动 · S 回到中路 · P 暂停 · 空格触发超载',
@@ -58,8 +65,8 @@ const THEMES = Object.freeze({
       barrier: ['◇', '尸潮结界', '击碎可获得强化与炮台碎片'],
     },
     director: {
-      frenzyIcon: '☣', frenzyLabel: '十倍尸潮', frenzyDescription: '8 秒高密度送爽怪',
-      overdriveIcon: '⚡', overdriveLabel: '火力超载', overdriveDescription: '10 秒射速与伤害暴涨',
+      frenzyIcon: '☣', frenzyLabel: '十倍尸潮', frenzyDescription: '8 秒敌潮 ×10，敌人变脆',
+      overdriveIcon: '⚡', overdriveLabel: '火力超载', overdriveDescription: '10 秒伤害 ×2.45、射速 ×2.4',
       bossIcon: '♛', bossLabel: '尸王立即登场', bossDescription: '不用等到最后',
       frenzyToast: '十倍尸潮已启动：密度拉满，但敌人会稍微变脆',
       frenzyBanner: 'TENFOLD HORDE',
@@ -100,6 +107,13 @@ const THEMES = Object.freeze({
     description: '把唯一的救火小组左右调度到前端、后端或生产。击破咖啡补给、隐藏需求和流程结界，让修复倍率一路失控。',
     features: ['横移救火小组', '隐藏需求 Bonus', '永久数值叠加', '甲方 Boss'],
     roster: ['开发同事', '狂奔实习生', '产品经理', '暴躁 Leader', '甲方老板'],
+    speech: {
+      normal: ['开发：这 Bug 不是我引入的！', '开发：我本地明明是好的。', '开发：谁动了我的分支？', '开发：先让我看一下日志。'],
+      runner: ['实习生：我直接改生产了！', '实习生：测试环境在哪儿？', '实习生：我只删了一个分号。', '实习生：Leader，我先提交啦！'],
+      tank: ['产品经理：这个需求很简单。', '产品经理：就改亿点点。', '产品经理：用户说今天必须上。', '产品经理：按钮要五彩斑斓的黑。'],
+      elite: ['Leader：今晚必须上线！', 'Leader：大家再坚持五分钟。', 'Leader：先解决问题，锅以后分。', 'Leader：进度为什么还是 99%？'],
+      boss: ['甲方：上线前我再改一下。', '甲方：我不懂技术，但这很简单。', '甲方：明早给我看完整版本。', '甲方：原型不是已经能点了吗？'],
+    },
     startButton: '开始上线',
     startButtonHint: '点击后立即进入救火模式',
     startHint: 'A / D 左右调度 · S 回到后端 · P 暂停 · 空格咖啡续命',
@@ -137,8 +151,8 @@ const THEMES = Object.freeze({
       barrier: ['▦', '流程结界', '击穿可获得算力与团队碎片'],
     },
     director: {
-      frenzyIcon: '⚠', frenzyLabel: '需求井喷', frenzyDescription: '8 秒临时需求疯狂涌入',
-      overdriveIcon: '☕', overdriveLabel: '咖啡续命', overdriveDescription: '10 秒编译与修复速度暴涨',
+      frenzyIcon: '⚠', frenzyLabel: '需求井喷', frenzyDescription: '8 秒需求量 ×10，需求变脆',
+      overdriveIcon: '☕', overdriveLabel: '咖啡续命', overdriveDescription: '10 秒修复 ×2.45、处理速度 ×2.4',
       bossIcon: '☎', bossLabel: '甲方立即来电', bossDescription: '提前触发最终需求',
       frenzyToast: '群聊里突然多了 99+ 条新需求：需求井喷已启动',
       frenzyBanner: 'SCOPE CREEP ×10',
@@ -160,7 +174,7 @@ const THEMES = Object.freeze({
     victoryToast: '临时改需求已被拒绝：正在生成上线战报',
     upgrades: {
       damage: ['代码热修', '每次修复能够消灭更多 Bug，严重异常也会快速掉血'],
-      rate: ['咖啡因超频', '缩短编译与部署间隔，焦点服务获得额外线程'],
+      rate: ['咖啡因超频', '真实缩短当前服务的编译与部署间隔'],
       blast: ['异常连锁', '修掉一个异常时顺便清理附近同类堆栈'],
       chain: ['调用链追踪', '沿调用关系跳转并修复附近 Bug'],
       frost: ['冻结需求', '临时冻结需求流入，为生产环境争取时间'],
@@ -505,7 +519,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.5.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.6.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -586,6 +600,7 @@ const BONUS_CONFIG = Object.freeze({
 const shockwaves = [];
 const fxItems = [];
 const lightningItems = [];
+const speechBubbles = [];
 
 const state = {
   mode: 'menu',
@@ -605,6 +620,7 @@ const state = {
   nextBonusAt: 5.5,
   nextBarrierAt: 14,
   nextMysteryAt: 23,
+  nextSpeechAt: 2.8,
   nextUpgradeAt: 10,
   upgradeDeadline: 0,
   currentUpgrades: [],
@@ -622,6 +638,15 @@ const state = {
   lastUiAt: 0,
   lastShotSoundAt: 0,
   lastKillSoundAt: 0,
+  telemetry: {
+    spawned: 0,
+    shots: 0,
+    speech: 0,
+    frenzyUses: 0,
+    overdriveUses: 0,
+    bossUses: 0,
+    upgrades: 0,
+  },
   bonuses: {
     damage: 1,
     rate: 1,
@@ -725,7 +750,7 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.startDescription.textContent = theme.description;
   els.enemyRoster.innerHTML = theme.roster.map((name, index) => `
     <div class="enemy-roster-item">
-      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.5.0');background-position:${index * 25}% center"></i>
+      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.6.0');background-position:${index * 25}% center"></i>
       <span>${name}</span>
     </div>
   `).join('');
@@ -824,6 +849,7 @@ function resize() {
 
 function clearWorldState() {
   enemies.length = 0;
+  speechBubbles.length = 0;
   bonusTargets.splice(0).forEach(disposeBonusTarget);
   Object.values(enemyVisuals).forEach((visual) => { visual.mesh.count = 0; });
   enemyShadowMesh.count = 0;
@@ -857,6 +883,7 @@ function resetGame() {
   state.nextBonusAt = 5.5;
   state.nextBarrierAt = 14;
   state.nextMysteryAt = 23;
+  state.nextSpeechAt = 2.8 + randomBetween(0, 1.6);
   state.nextUpgradeAt = theme.firstUpgradeAt;
   state.upgradeDeadline = 0;
   state.currentUpgrades = [];
@@ -869,6 +896,7 @@ function resetGame() {
   state.finishAt = 0;
   state.shake = 0;
   state.flash = 0;
+  state.telemetry = { spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0, upgrades: 0 };
   state.bonuses = { damage: 1, rate: 1, crit: 0, count: 0, shards: 0, barriers: 0 };
   state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0, cannon: 1 };
   wallMaterial.color.setHex(theme.palette.wall);
@@ -918,6 +946,7 @@ function togglePause(forceResume = false) {
     state.mode = 'paused';
     setOverlay(els.pauseOverlay, true);
     els.pauseBtn.textContent = '继续';
+    updateHud(true);
     return;
   }
   if (state.mode === 'paused') {
@@ -925,6 +954,7 @@ function togglePause(forceResume = false) {
     state.lastTs = performance.now();
     setOverlay(els.pauseOverlay, false);
     els.pauseBtn.textContent = '暂停';
+    updateHud(true);
   }
 }
 
@@ -960,6 +990,7 @@ function spawnEnemy(forceType = null) {
     slowUntil: 0,
     hitUntil: 0,
     wobble: randomBetween(0, Math.PI * 2),
+    speechCount: 0,
   };
 
   if (type === 'runner') {
@@ -999,40 +1030,86 @@ function spawnEnemy(forceType = null) {
   }
 
   enemies.push(enemy);
+  state.telemetry.spawned += 1;
   return enemy;
 }
 
 function summonBoss(manual = false) {
   const theme = currentTheme();
-  if (state.mode !== 'playing' || state.bossAlive || state.bossDefeated) return;
-  state.bossSpawned = true;
+  if (state.mode !== 'playing' || state.bossSpawned || state.bossAlive || state.bossDefeated) return;
   const boss = spawnEnemy('boss');
-  if (!boss) return;
+  if (!boss) {
+    showToast('战场单位已满，清出空间后才能召唤 Boss', 1800);
+    return;
+  }
+  if (manual) state.telemetry.bossUses += 1;
   state.shake = Math.max(state.shake, 0.85);
   showToast(manual ? theme.director.manualBossToast : theme.director.bossToast, 2600);
   showOverdriveBanner(theme.director.bossBanner);
   sfx.boss();
   for (let i = 0; i < 18; i += 1) addFxParticle(boss.x, 1, boss.z, cssHex(theme.palette.enemies.boss), 1.1);
+  const bossLines = theme.speech?.boss || [];
+  if (bossLines.length) showEnemySpeech(boss, bossLines[Math.floor(state.random() * bossLines.length)], 3.6);
 }
 
 function triggerFrenzy() {
   const theme = currentTheme();
   if (state.mode !== 'playing') return;
+  state.telemetry.frenzyUses += 1;
   state.frenzyUntil = Math.max(state.frenzyUntil, state.elapsed + 8);
   showToast(theme.director.frenzyToast);
   showOverdriveBanner(theme.director.frenzyBanner);
   state.shake = Math.max(state.shake, 0.42);
-  for (let i = 0; i < 24; i += 1) spawnEnemy(i % 4 === 0 ? 'runner' : 'normal');
+  sfx.warning();
+  for (let i = 0; i < 30; i += 1) spawnEnemy(i % 4 === 0 ? 'runner' : 'normal');
 }
 
 function triggerOverdrive(auto = false) {
   const theme = currentTheme();
   if (state.mode !== 'playing') return;
+  state.telemetry.overdriveUses += 1;
   state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 10);
   showToast(auto ? theme.director.bailoutToast : theme.director.overdriveToast);
   showOverdriveBanner(auto ? theme.director.bailoutBanner : theme.director.overdriveBanner);
   state.shake = Math.max(state.shake, 0.36);
   sfx.overdrive();
+}
+
+function showEnemySpeech(enemy, text, life = 2.8) {
+  if (!enemy?.active || !text) return;
+  enemy.speechCount += 1;
+  speechBubbles.push({ enemy, text, life, maxLife: life });
+  state.telemetry.speech += 1;
+}
+
+function scheduleCharacterSpeech() {
+  if (state.elapsed < state.nextSpeechAt || speechBubbles.length >= 2) return;
+  state.nextSpeechAt = state.elapsed + randomBetween(2.6, 5.2);
+  // 大多数时间让战场保持干净，台词只作为偶尔冒出来的身份彩蛋。
+  if (state.random() > 0.72) return;
+  const activeSpeechLanes = new Set(speechBubbles.map((bubble) => bubble.enemy?.lane));
+  const candidates = enemies.filter((enemy) => (
+    enemy.active
+    && enemy.type !== 'boss'
+    && enemy.speechCount < 1
+    && enemy.z > WORLD.spawnZ + 1.2
+    && enemy.z < WORLD.baseZ - 3.5
+    && !activeSpeechLanes.has(enemy.lane)
+  ));
+  if (!candidates.length) return;
+  const enemy = candidates[Math.floor(state.random() * candidates.length)];
+  const lines = currentTheme().speech?.[enemy.type] || currentTheme().speech?.normal || [];
+  if (!lines.length) return;
+  showEnemySpeech(enemy, lines[Math.floor(state.random() * lines.length)]);
+}
+
+function updateCharacterSpeech(dt) {
+  scheduleCharacterSpeech();
+  for (let index = speechBubbles.length - 1; index >= 0; index -= 1) {
+    const bubble = speechBubbles[index];
+    bubble.life -= dt;
+    if (bubble.life <= 0 || !bubble.enemy?.active) speechBubbles.splice(index, 1);
+  }
 }
 
 function bonusCanvasSprite(icon, title, color) {
@@ -1303,7 +1380,7 @@ function updateSpawning(dt) {
   const living = livingEnemies();
   const nearestZ = living.reduce((max, enemy) => Math.max(max, enemy.z), WORLD.spawnZ);
   let spawnRate = (1.7 + progress * 5.5) * theme.spawnMultiplier;
-  if (state.elapsed < state.frenzyUntil) spawnRate *= 4.8;
+  if (state.elapsed < state.frenzyUntil) spawnRate *= 10;
   if (living.length < 18 && nearestZ < 4) spawnRate *= 1.55;
   if (living.length > 360) spawnRate *= 0.42;
   if (state.bossAlive) spawnRate *= 0.62;
@@ -1378,16 +1455,32 @@ function fireProjectile(turret, target, damage) {
   projectile.lane = state.focusLane;
   projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
   turret.recoil = 1;
+  state.telemetry.shots += 1;
+}
+
+function currentCombatStats() {
+  const overdrive = state.elapsed < state.overdriveUntil;
+  return {
+    overdrive,
+    fireInterval: 0.24
+      / (1 + (state.levels.rate - 1) * 0.22)
+      / state.bonuses.rate
+      / (overdrive ? 2.4 : 1),
+    damage: 22
+      * Math.pow(1.5, state.levels.damage - 1)
+      * state.bonuses.damage
+      * (overdrive ? 2.45 : 1),
+  };
 }
 
 function updateTurrets(dt) {
-  const overdrive = state.elapsed < state.overdriveUntil;
   const cannonCount = Math.min(3, state.levels.cannon);
   const laneX = WORLD.lanes[state.focusLane];
   focusLaneGlow.position.x = lerp(focusLaneGlow.position.x, laneX, Math.min(1, dt * 10));
   focusRail.position.x = lerp(focusRail.position.x, laneX, Math.min(1, dt * 12));
-  const baseInterval = 0.24 / (1 + (state.levels.rate - 1) * 0.22) / state.bonuses.rate;
-  const baseDamage = 22 * Math.pow(1.5, state.levels.damage - 1) * state.bonuses.damage * (overdrive ? 2.45 : 1);
+  const combat = currentCombatStats();
+  const baseInterval = combat.fireInterval;
+  const baseDamage = combat.damage;
   const targetCount = 1 + Math.min(3, state.levels.multi);
   const targets = findTargets(state.focusLane, targetCount);
   const offsets = cannonCount === 1 ? [0] : cannonCount === 2 ? [-0.72, 0.72] : [-1.05, 0, 1.05];
@@ -1660,6 +1753,74 @@ function projectToScreen(x, y, z) {
   };
 }
 
+function wrapSpeechText(text, maxWidth) {
+  const lines = [];
+  let line = '';
+  for (const character of [...text]) {
+    const candidate = `${line}${character}`;
+    if (line && fxCtx.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = character;
+      if (lines.length === 2) break;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line && lines.length < 2) lines.push(line);
+  if (lines.length === 2 && lines.join('').length < text.length) {
+    while (lines[1].length > 1 && fxCtx.measureText(`${lines[1]}…`).width > maxWidth) lines[1] = lines[1].slice(0, -1);
+    lines[1] = `${lines[1]}…`;
+  }
+  return lines;
+}
+
+function renderSpeechBubble(bubble, stageWidth, stageHeight) {
+  const enemy = bubble.enemy;
+  if (!enemy?.active) return;
+  const point = projectToScreen(enemy.x, Math.max(1.75, enemy.scale * 1.75), enemy.z);
+  if (!point.visible || point.x < -80 || point.x > stageWidth + 80 || point.y < 20 || point.y > stageHeight - 30) return;
+  const progress = clamp(bubble.life / bubble.maxLife, 0, 1);
+  const alpha = Math.min(1, (1 - progress) * 7, progress * 4.5);
+  const fontSize = stageWidth < 620 ? 10 : 12;
+  const maxTextWidth = stageWidth < 620 ? 126 : 176;
+  fxCtx.save();
+  fxCtx.font = `800 ${fontSize}px Inter, system-ui, sans-serif`;
+  const lines = wrapSpeechText(bubble.text, maxTextWidth);
+  const lineHeight = fontSize + 4;
+  const widest = Math.max(...lines.map((line) => fxCtx.measureText(line).width), 60);
+  const bubbleWidth = Math.min(maxTextWidth + 22, widest + 22);
+  const bubbleHeight = lines.length * lineHeight + 16;
+  const left = clamp(point.x - bubbleWidth / 2, 8, stageWidth - bubbleWidth - 8);
+  const top = clamp(point.y - bubbleHeight - 18, 68, stageHeight - bubbleHeight - 22);
+  const tailX = clamp(point.x, left + 16, left + bubbleWidth - 16);
+  const accent = currentTheme().palette.accent;
+  fxCtx.globalAlpha = alpha;
+  fxCtx.fillStyle = 'rgba(4, 12, 21, 0.94)';
+  fxCtx.strokeStyle = accent;
+  fxCtx.lineWidth = 1.4;
+  fxCtx.shadowColor = accent;
+  fxCtx.shadowBlur = 10;
+  fxCtx.beginPath();
+  fxCtx.roundRect(left, top, bubbleWidth, bubbleHeight, 9);
+  fxCtx.fill();
+  fxCtx.stroke();
+  fxCtx.shadowBlur = 0;
+  fxCtx.beginPath();
+  fxCtx.moveTo(tailX - 6, top + bubbleHeight - 1);
+  fxCtx.lineTo(tailX, top + bubbleHeight + 8);
+  fxCtx.lineTo(tailX + 7, top + bubbleHeight - 1);
+  fxCtx.closePath();
+  fxCtx.fill();
+  fxCtx.stroke();
+  fxCtx.fillStyle = '#f4fbff';
+  fxCtx.textAlign = 'center';
+  fxCtx.textBaseline = 'middle';
+  lines.forEach((line, index) => {
+    fxCtx.fillText(line, left + bubbleWidth / 2, top + 9 + lineHeight * (index + 0.5));
+  });
+  fxCtx.restore();
+}
+
 function renderFx() {
   const width = els.stage.clientWidth;
   const height = els.stage.clientHeight;
@@ -1708,6 +1869,8 @@ function renderFx() {
     }
     fxCtx.restore();
   }
+
+  for (const bubble of speechBubbles) renderSpeechBubble(bubble, width, height);
 }
 
 function showUpgrade() {
@@ -1752,6 +1915,7 @@ function selectUpgrade(index) {
   if (!upgrade) return;
   const presentation = upgradePresentation(upgrade);
   upgrade.apply();
+  state.telemetry.upgrades += 1;
   state.mode = 'playing';
   state.lastTs = performance.now();
   state.nextUpgradeAt += currentTheme().upgradeInterval;
@@ -1778,6 +1942,7 @@ function updateGame(dt) {
 
   updateSpawning(dt);
   updateBonusSpawning();
+  updateCharacterSpeech(dt);
   updateEnemies(dt);
   updateBonusTargets(dt);
   if (state.mode !== 'playing') return;
@@ -1877,6 +2042,25 @@ function updateHud(force = false) {
   els.cannonCountValue.textContent = `${state.levels.cannon} / 3`;
   els.cannonShardValue.textContent = state.levels.cannon >= 3 ? 'MAX' : `${state.bonuses.shards} / 2`;
   els.bonusCountValue.textContent = `BONUS ×${state.bonuses.count}`;
+  const frenzyRemaining = Math.max(0, state.frenzyUntil - state.elapsed);
+  const overdriveRemaining = Math.max(0, state.overdriveUntil - state.elapsed);
+  els.frenzyBtn.classList.toggle('active', frenzyRemaining > 0);
+  els.overdriveBtn.classList.toggle('active', overdriveRemaining > 0);
+  els.bossBtn.classList.toggle('active', state.bossAlive);
+  els.frenzyBtn.setAttribute('aria-pressed', frenzyRemaining > 0 ? 'true' : 'false');
+  els.overdriveBtn.setAttribute('aria-pressed', overdriveRemaining > 0 ? 'true' : 'false');
+  els.bossBtn.setAttribute('aria-pressed', state.bossAlive ? 'true' : 'false');
+  els.frenzyDescription.textContent = frenzyRemaining > 0
+    ? `生效中 ${frenzyRemaining.toFixed(1)} 秒 · 实际敌潮 ×10`
+    : `${theme.director.frenzyDescription}${state.telemetry.frenzyUses ? ` · 已触发 ${state.telemetry.frenzyUses} 次` : ''}`;
+  els.overdriveDescription.textContent = overdriveRemaining > 0
+    ? `生效中 ${overdriveRemaining.toFixed(1)} 秒 · 伤害 ×2.45 / 射速 ×2.4`
+    : `${theme.director.overdriveDescription}${state.telemetry.overdriveUses ? ` · 已触发 ${state.telemetry.overdriveUses} 次` : ''}`;
+  els.bossButtonDescription.textContent = state.bossAlive
+    ? '已登场 · 固定中路 · 仅当前路可攻击'
+    : state.bossSpawned
+      ? '本局 Boss 已处理，不能重复召唤'
+      : theme.director.bossDescription;
   els.frenzyBtn.disabled = state.mode !== 'playing';
   els.overdriveBtn.disabled = state.mode !== 'playing';
   els.bossBtn.disabled = state.mode !== 'playing' || state.bossSpawned;
@@ -1973,6 +2157,45 @@ async function submitRun(victory) {
     els.newBestBadge.classList.toggle('hidden', !localBest);
   }
 }
+
+window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
+  snapshot() {
+    const combat = currentCombatStats();
+    return {
+      version: '0.6.0',
+      mode: state.mode,
+      theme: state.themeId,
+      elapsed: state.elapsed,
+      speed: state.speed,
+      focusLane: state.focusLane,
+      livingEnemies: livingEnemies().length,
+      activeBonusTargets: bonusTargets.filter((target) => target.active).map((target) => target.rewardType),
+      activeSpeech: speechBubbles.map((bubble) => ({ type: bubble.enemy?.type, text: bubble.text })),
+      effects: {
+        frenzyRemaining: Math.max(0, state.frenzyUntil - state.elapsed),
+        overdriveRemaining: Math.max(0, state.overdriveUntil - state.elapsed),
+        bossSpawned: state.bossSpawned,
+        bossAlive: state.bossAlive,
+      },
+      combat: {
+        damage: combat.damage,
+        fireInterval: combat.fireInterval,
+        cannonCount: state.levels.cannon,
+        targetCount: 1 + Math.min(3, state.levels.multi),
+      },
+      bonuses: { ...state.bonuses },
+      levels: { ...state.levels },
+      telemetry: { ...state.telemetry },
+      controls: {
+        autoPick: els.autoPickInput.checked,
+        muted,
+        frenzyDisabled: els.frenzyBtn.disabled,
+        overdriveDisabled: els.overdriveBtn.disabled,
+        bossDisabled: els.bossBtn.disabled,
+      },
+    };
+  },
+});
 
 els.startBtn.addEventListener('click', startGame);
 els.themeButtons.forEach((button) => button.addEventListener('click', () => {
