@@ -10,6 +10,7 @@ const WORLD = Object.freeze({
   maxEnemies: 700,
   maxProjectiles: 260,
 });
+const MAX_CANNONS = 8;
 
 const THEMES = Object.freeze({
   zombie: {
@@ -18,8 +19,8 @@ const THEMES = Object.freeze({
     title: '尸潮防线',
     english: 'HORDE OVERDRIVE',
     eyebrow: '把广告里玩不到的游戏真的做出来',
-    description: '左右移动唯一的主炮台，决定这一秒守哪一路。打爆尸潮结界和隐藏补给，让火力、射速与炮台数量在一局里不断膨胀。',
-    features: ['横移主炮台', '可击破 Bonus', '永久数值叠加', '尸王演出'],
+    description: '左右移动主炮阵列，先割草，再在清场窗口里轰开三选一算术挡板。炮台翻倍、献祭增伤和随机法阵会不断改写这一局。',
+    features: ['错峰算术挡板', '炮台乘除法', '永久数值叠加', '尸王演出'],
     roster: ['腐烂行尸', '狂奔者', '屠夫肉盾', '变异精英', '巨型尸王'],
     speech: {
       normal: ['脑——子——在哪边？', '开门！社区送温暖！', '我只是路过吃个夜宵。', '这路怎么还有炮？'],
@@ -104,8 +105,8 @@ const THEMES = Object.freeze({
     title: '程序员保卫 DDL',
     english: 'SHIP IT OR DIE',
     eyebrow: '今晚不修完这些 Bug，谁都别想下班',
-    description: '把唯一的救火小组左右调度到前端、后端或生产。击破咖啡补给、隐藏需求和流程结界，让修复倍率一路失控。',
-    features: ['横移救火小组', '隐藏需求 Bonus', '永久数值叠加', '甲方 Boss'],
+    description: '滑动会敲键盘的救火工位，把 BUG 工单和用户反馈扔向当前服务。清场后轰开评审挡板，决定扩编、裁员提效还是赌一次随机上线。',
+    features: ['会敲键盘的工位', '工单反馈弹幕', '错峰评审挡板', '团队乘除法'],
     roster: ['开发同事', '狂奔实习生', '产品经理', '暴躁 Leader', '甲方老板'],
     speech: {
       normal: ['开发：这 Bug 不是我引入的！', '开发：我本地明明是好的。', '开发：谁动了我的分支？', '开发：先让我看一下日志。'],
@@ -179,7 +180,7 @@ const THEMES = Object.freeze({
       chain: ['调用链追踪', '沿调用关系跳转并修复附近 Bug'],
       frost: ['冻结需求', '临时冻结需求流入，为生产环境争取时间'],
       multi: ['多线程处理', '当前服务同时锁定更多问题并行修复'],
-      cannon: ['召集支援小组', '增加一个救火小组；所有小组仍只处理当前服务'],
+      cannon: ['召集支援小组', '增加一个会敲键盘的救火工位；所有小组仍只处理当前服务'],
       crit: ['一次过编译', '提高无警告通过概率，出现夸张的绿色通过数字'],
       repair: ['紧急回滚', '恢复服务器稳定度，并获得短暂咖啡因加成'],
     },
@@ -205,6 +206,8 @@ const els = {
   bossHpFill: document.getElementById('bossHpFill'),
   bonusDamageValue: document.getElementById('bonusDamageValue'),
   bonusRateValue: document.getElementById('bonusRateValue'),
+  cannonMetricLabel: document.getElementById('cannonMetricLabel'),
+  shardMetricLabel: document.getElementById('shardMetricLabel'),
   cannonCountValue: document.getElementById('cannonCountValue'),
   cannonShardValue: document.getElementById('cannonShardValue'),
   bonusCountValue: document.getElementById('bonusCountValue'),
@@ -330,7 +333,12 @@ function tone(frequency, duration = 0.08, type = 'square', gainValue = 0.035, de
 }
 
 const sfx = {
-  shoot() { tone(180, 0.025, 'square', 0.008); },
+  shoot() {
+    if (state.themeId === 'deadline') {
+      tone(520, 0.018, 'triangle', 0.009);
+      tone(760, 0.016, 'square', 0.006, 0.012);
+    } else tone(180, 0.025, 'square', 0.008);
+  },
   hit() { tone(95, 0.035, 'sawtooth', 0.01); },
   upgrade() {
     tone(440, 0.09, 'triangle', 0.04);
@@ -474,17 +482,49 @@ const core = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.8, 2.3, 8), coreM
 core.position.set(0, 1.2, 13.1);
 baseGroup.add(core);
 
+// 程序员题材的工位需要一眼能认出“正在救火”，给每个工位挂一块会呼吸的 BUG 牌。
+const workbenchBadgeCanvas = document.createElement('canvas');
+workbenchBadgeCanvas.width = 320;
+workbenchBadgeCanvas.height = 112;
+const workbenchBadgeCtx = workbenchBadgeCanvas.getContext('2d');
+workbenchBadgeCtx.fillStyle = '#101c35';
+workbenchBadgeCtx.fillRect(4, 4, 312, 104);
+workbenchBadgeCtx.fillStyle = '#ff4d68';
+workbenchBadgeCtx.fillRect(4, 4, 88, 104);
+workbenchBadgeCtx.fillStyle = '#ffffff';
+workbenchBadgeCtx.font = '1000 36px system-ui, sans-serif';
+workbenchBadgeCtx.textAlign = 'center';
+workbenchBadgeCtx.textBaseline = 'middle';
+workbenchBadgeCtx.fillText('BUG', 48, 54);
+workbenchBadgeCtx.textAlign = 'left';
+workbenchBadgeCtx.font = '1000 24px system-ui, sans-serif';
+workbenchBadgeCtx.fillText('在线救火', 108, 42);
+workbenchBadgeCtx.fillStyle = '#9bd7ff';
+workbenchBadgeCtx.font = '700 17px system-ui, sans-serif';
+workbenchBadgeCtx.fillText('别让它进生产', 108, 76);
+const workbenchBadgeTexture = new THREE.CanvasTexture(workbenchBadgeCanvas);
+workbenchBadgeTexture.colorSpace = THREE.SRGBColorSpace;
+const workbenchBadgeMaterial = new THREE.SpriteMaterial({
+  map: workbenchBadgeTexture,
+  transparent: true,
+  depthTest: false,
+  depthWrite: false,
+  fog: true,
+  toneMapped: false,
+});
+
 const turretGroups = [];
-for (let lane = 0; lane < WORLD.lanes.length; lane += 1) {
+for (let index = 0; index < MAX_CANNONS; index += 1) {
   const turret = new THREE.Group();
   turret.position.set(0, 0, 10.2);
-  turret.visible = lane === 0;
+  turret.visible = index === 0;
+  const cannonModel = new THREE.Group();
   const pedestal = new THREE.Mesh(
     new THREE.CylinderGeometry(0.72, 0.92, 0.75, 10),
     new THREE.MeshStandardMaterial({ color: 0x28475b, metalness: 0.72, roughness: 0.28 }),
   );
   pedestal.position.y = 0.36;
-  turret.add(pedestal);
+  cannonModel.add(pedestal);
 
   const pivot = new THREE.Group();
   pivot.position.y = 0.9;
@@ -507,8 +547,77 @@ for (let lane = 0; lane < WORLD.lanes.length; lane += 1) {
   const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.85), barrelMaterial);
   barrel.position.z = -1.18;
   pivot.add(barrel);
-  turret.add(pivot);
-  turretGroups.push({ group: turret, pivot, housingMaterial, barrelMaterial, targetRotation: 0, recoil: 0 });
+  cannonModel.add(pivot);
+  turret.add(cannonModel);
+
+  // 程序员题材不再使用炮台：每个“炮台”变成一个会敲键盘、甩工单的移动救火工位。
+  const workbenchModel = new THREE.Group();
+  const desk = new THREE.Mesh(
+    new THREE.BoxGeometry(1.34, 0.16, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x254d83, metalness: 0.42, roughness: 0.36, emissive: 0x0b2d62, emissiveIntensity: 0.55 }),
+  );
+  desk.position.y = 0.92;
+  workbenchModel.add(desk);
+  const screenPivot = new THREE.Group();
+  screenPivot.position.set(0, 1.04, -0.12);
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.72, 0.5, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x79d8ff, emissive: 0x2388d4, emissiveIntensity: 1.2, metalness: 0.18, roughness: 0.2 }),
+  );
+  screenPivot.add(screen);
+  const screenStand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.25, 0.1), new THREE.MeshStandardMaterial({ color: 0x9cb5c7, metalness: 0.62, roughness: 0.26 }));
+  screenStand.position.y = -0.36;
+  screenPivot.add(screenStand);
+  workbenchModel.add(screenPivot);
+  const keyboard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.055, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0xe9f4ff, emissive: 0x4ca9ff, emissiveIntensity: 0.28, metalness: 0.2, roughness: 0.34 }),
+  );
+  keyboard.position.set(0.08, 1.04, 0.26);
+  workbenchModel.add(keyboard);
+  const chair = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.15, 12), new THREE.MeshStandardMaterial({ color: 0xd66bff, metalness: 0.28, roughness: 0.42 }));
+  chair.position.set(0, 0.45, 0.42);
+  workbenchModel.add(chair);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 }));
+  head.position.set(0, 1.45, 0.34);
+  workbenchModel.add(head);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.24), new THREE.MeshStandardMaterial({ color: 0x45f0d0, emissive: 0x116e71, emissiveIntensity: 0.4, roughness: 0.56 }));
+  torso.position.set(0, 1.12, 0.34);
+  workbenchModel.add(torso);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.12), new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 }));
+  arm.position.set(-0.23, 1.04, 0.2);
+  arm.rotation.z = -0.65;
+  workbenchModel.add(arm);
+  const coffee = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 10), new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0x7e4c14, emissiveIntensity: 0.45 }));
+  coffee.position.set(0.47, 1.12, 0.2);
+  workbenchModel.add(coffee);
+  const wheelBar = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: 0x7e9db9, metalness: 0.62, roughness: 0.3 }));
+  wheelBar.position.y = 0.12;
+  workbenchModel.add(wheelBar);
+  const badge = new THREE.Sprite(workbenchBadgeMaterial);
+  badge.position.set(0, 2.08, 0.02);
+  badge.scale.set(1.42, 0.5, 1);
+  badge.renderOrder = 18;
+  workbenchModel.add(badge);
+  workbenchModel.scale.setScalar(1.58);
+  workbenchModel.position.y = 0.62;
+  workbenchModel.visible = false;
+  turret.add(workbenchModel);
+  turretGroups.push({
+    group: turret,
+    cannonModel,
+    workbenchModel,
+    pivot,
+    screenPivot,
+    keyboard,
+    coffee,
+    badge,
+    housingMaterial,
+    barrelMaterial,
+    targetRotation: 0,
+    recoil: 0,
+    phase: index * 0.7,
+  });
   baseGroup.add(turret);
 }
 
@@ -519,7 +628,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.6.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.7.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -577,12 +686,41 @@ worldGroup.add(enemyShadowMesh);
 
 const projectileGeometry = new THREE.SphereGeometry(0.13, 8, 6);
 const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffe36d, toneMapped: false });
+const ticketCanvas = document.createElement('canvas');
+ticketCanvas.width = 320;
+ticketCanvas.height = 200;
+const ticketCtx = ticketCanvas.getContext('2d');
+ticketCtx.fillStyle = '#f5fbff';
+ticketCtx.fillRect(4, 4, 312, 192);
+ticketCtx.fillStyle = '#ff526a';
+ticketCtx.fillRect(4, 4, 312, 48);
+ticketCtx.fillStyle = '#ffffff';
+ticketCtx.font = '1000 30px system-ui, sans-serif';
+ticketCtx.fillText('BUG 工单', 18, 38);
+ticketCtx.fillStyle = '#19324a';
+ticketCtx.font = '900 28px system-ui, sans-serif';
+ticketCtx.fillText('用户反馈', 18, 92);
+ticketCtx.fillStyle = '#7a94a8';
+ticketCtx.fillRect(18, 115, 260, 10);
+ticketCtx.fillRect(18, 140, 210, 10);
+ticketCtx.fillRect(18, 165, 245, 10);
+const ticketTexture = new THREE.CanvasTexture(ticketCanvas);
+ticketTexture.colorSpace = THREE.SRGBColorSpace;
+const ticketMaterial = new THREE.MeshBasicMaterial({ map: ticketTexture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
 const projectilePool = [];
 for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
-  const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  const mesh = new THREE.Group();
+  const energy = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  const ticket = new THREE.Group();
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.52), ticketMaterial);
+  ticket.add(paper);
+  ticket.rotation.x = -0.72;
+  ticket.scale.setScalar(1.38);
+  ticket.visible = false;
+  mesh.add(energy, ticket);
   mesh.visible = false;
   worldGroup.add(mesh);
-  projectilePool.push({ active: false, mesh, x: 0, y: 0, z: 0, target: null, damage: 0, lane: 0 });
+  projectilePool.push({ active: false, mesh, energy, ticket, x: 0, y: 0, z: 0, target: null, damage: 0, lane: 0, spin: i * 0.17 });
 }
 
 const matrixDummy = new THREE.Object3D();
@@ -590,6 +728,7 @@ const shadowDummy = new THREE.Object3D();
 const enemyTint = new THREE.Color();
 const enemies = [];
 const bonusTargets = [];
+const choiceGates = [];
 const BONUS_CONFIG = Object.freeze({
   damage: { color: 0xffc857, hp: 72, speed: 1.28, score: 320, scale: 1 },
   rate: { color: 0x4fffd2, hp: 68, speed: 1.34, score: 320, scale: 1 },
@@ -615,11 +754,18 @@ const state = {
   comboUntil: 0,
   baseHp: 100,
   focusLane: 1,
-  fireAcc: [0, 0, 0],
+  fireAcc: Array(MAX_CANNONS).fill(0),
   spawnAcc: 0,
   nextBonusAt: 5.5,
   nextBarrierAt: 14,
   nextMysteryAt: 23,
+  nextGateAt: 18,
+  gatePhase: 'none',
+  gatePrepUntil: 0,
+  gateChoiceUntil: 0,
+  gateResumeAt: 0,
+  gateRound: 0,
+  lastGateEffect: '',
   nextSpeechAt: 2.8,
   nextUpgradeAt: 10,
   upgradeDeadline: 0,
@@ -646,6 +792,8 @@ const state = {
     overdriveUses: 0,
     bossUses: 0,
     upgrades: 0,
+    gatesOffered: 0,
+    gatesChosen: 0,
   },
   bonuses: {
     damage: 1,
@@ -704,9 +852,9 @@ const upgrades = [
     apply: () => { state.levels.crit += 1; },
   },
   {
-    id: 'cannon', icon: '▥', title: '炮台复制', color: '#ff7cf4', max: 3,
+    id: 'cannon', icon: '▥', title: '炮台复制', color: '#ff7cf4', max: MAX_CANNONS,
     describe: () => '增加一座并排炮台，但所有炮台始终只攻击当前战线',
-    apply: () => { state.levels.cannon = Math.min(3, state.levels.cannon + 1); },
+    apply: () => { state.levels.cannon = Math.min(MAX_CANNONS, state.levels.cannon + 1); },
   },
   {
     id: 'repair', icon: '✚', title: '防线焊死', color: '#76ff9d', max: 99,
@@ -717,6 +865,142 @@ const upgrades = [
     },
   },
 ];
+
+const GATE_EFFECTS = Object.freeze([
+  {
+    id: 'team_double', icon: '×2', color: 0xff72e8, hits: 18,
+    copy: {
+      zombie: ['炮台复制矩阵', '当前炮台数量 ×2，最多 8 座'],
+      deadline: ['团队原地扩编', '当前救火工位数量 ×2，最多 8 组'],
+    },
+    apply() {
+      const before = state.levels.cannon;
+      state.levels.cannon = Math.min(MAX_CANNONS, Math.max(2, before * 2));
+      if (state.levels.cannon === before) state.bonuses.damage *= 1.22;
+      return `${before} → ${state.levels.cannon}${state.levels.cannon === before ? '，已满编改为火力 ×1.22' : ''}`;
+    },
+  },
+  {
+    id: 'team_half', icon: '÷2', color: 0xff8a55, hits: 12,
+    copy: {
+      zombie: ['献祭半数炮台', '炮台 ÷2，但余下炮台火力 ×2.25、射速 ×1.18'],
+      deadline: ['裁员提效', '救火组 ÷2，但留下的人修复 ×2.25、手速 ×1.18'],
+    },
+    apply() {
+      const before = state.levels.cannon;
+      state.levels.cannon = Math.max(1, Math.ceil(before / 2));
+      state.bonuses.damage *= 2.25;
+      state.bonuses.rate *= 1.18;
+      return `${before} → ${state.levels.cannon}，单组输出暴涨`;
+    },
+  },
+  {
+    id: 'rapid_flow', icon: '»2', color: 0x42efd2, hits: 16,
+    copy: {
+      zombie: ['供弹流水线', '永久射速 ×1.55，但火力暂时打九折'],
+      deadline: ['工单自动流转', '永久处理速度 ×1.55，但单张反馈力度 ×0.9'],
+    },
+    apply() {
+      state.bonuses.rate *= 1.55;
+      state.bonuses.damage = Math.max(1, state.bonuses.damage * 0.9);
+      return '速度 ×1.55，火力 ×0.9';
+    },
+  },
+  {
+    id: 'heavy_packet', icon: '×1.7', color: 0xffcf55, hits: 22,
+    copy: {
+      zombie: ['超重弹头', '永久火力 ×1.7，并追加 6% 暴击'],
+      deadline: ['高优先级反馈', '每张工单力度 ×1.7，并追加 6% 一次通过'],
+    },
+    apply() {
+      state.bonuses.damage *= 1.7;
+      state.bonuses.crit += 0.06;
+      return '火力 ×1.7，暴击 +6%';
+    },
+  },
+  {
+    id: 'split_queue', icon: '⑶+', color: 0x8fff65, hits: 20,
+    copy: {
+      zombie: ['弹头分叉', '多目标等级 +1，射速额外 ×1.12'],
+      deadline: ['反馈自动抄送', '并行目标 +1，工单流转速度 ×1.12'],
+    },
+    apply() {
+      state.levels.multi = Math.min(3, state.levels.multi + 1);
+      state.bonuses.rate *= 1.12;
+      return `并行目标 ${1 + state.levels.multi}，射速 ×1.12`;
+    },
+  },
+  {
+    id: 'swap_stats', icon: '⇄', color: 0x68b8ff, hits: 15,
+    copy: {
+      zombie: ['火力射速互换', '交换当前火力与射速倍率，并补 4% 暴击'],
+      deadline: ['开发测试互换', '交换当前修复力与处理速度，并补 4% 一次通过'],
+    },
+    apply() {
+      const damage = state.bonuses.damage;
+      state.bonuses.damage = Math.max(1.05, state.bonuses.rate);
+      state.bonuses.rate = Math.max(1.05, damage);
+      state.bonuses.crit += 0.04;
+      return `火力 ×${state.bonuses.damage.toFixed(2)}，射速 ×${state.bonuses.rate.toFixed(2)}`;
+    },
+  },
+  {
+    id: 'odd_even', icon: '奇偶', color: 0xb980ff, hits: 17,
+    copy: {
+      zombie: ['奇偶炮阵', '奇数炮台则 ×2；偶数炮台则 ÷2 并火力 ×1.9'],
+      deadline: ['奇偶编制', '奇数组则扩编 ×2；偶数组则裁半并效率 ×1.9'],
+    },
+    apply() {
+      const before = state.levels.cannon;
+      if (before % 2 === 1) state.levels.cannon = Math.min(MAX_CANNONS, before * 2);
+      else {
+        state.levels.cannon = Math.max(1, before / 2);
+        state.bonuses.damage *= 1.9;
+      }
+      return before % 2 === 1 ? `${before} 为奇数：扩编至 ${state.levels.cannon}` : `${before} 为偶数：减至 ${state.levels.cannon}，火力 ×1.9`;
+    },
+  },
+  {
+    id: 'compound_risk', icon: '+30%', color: 0xff5f7a, hits: 14,
+    copy: {
+      zombie: ['透支城墙', '基地 -12%，火力与射速同时 ×1.3'],
+      deadline: ['带病上线', '服务器 -12%，修复力与处理速度同时 ×1.3'],
+    },
+    apply() {
+      state.baseHp = Math.max(1, state.baseHp - 12);
+      state.bonuses.damage *= 1.3;
+      state.bonuses.rate *= 1.3;
+      return '基地 -12%，双倍率 ×1.3';
+    },
+  },
+  {
+    id: 'recovery', icon: '+25', color: 0x72ffad, hits: 13,
+    copy: {
+      zombie: ['战地回收', '基地 +25%，碎片 +1，射速 +8%'],
+      deadline: ['回滚成功', '服务器 +25%，团队碎片 +1，处理速度 +8%'],
+    },
+    apply() {
+      state.baseHp = Math.min(100, state.baseHp + 25);
+      addCannonShard(1);
+      state.bonuses.rate *= 1.08;
+      return '恢复 25%，碎片 +1，射速 ×1.08';
+    },
+  },
+  {
+    id: 'roulette', icon: '?', color: 0xffffff, hits: 10,
+    copy: {
+      zombie: ['未知变异门', '从其他算术效果里随机执行一个'],
+      deadline: ['未经评审直接上线', '从其他团队策略里随机执行一个'],
+    },
+    apply() {
+      const pool = GATE_EFFECTS.filter((effect) => effect.id !== 'roulette');
+      const picked = pool[Math.floor(state.random() * pool.length)];
+      const detail = picked.apply();
+      const title = picked.copy[currentTheme().id]?.[0] || picked.id;
+      return `随机命中「${title}」：${detail}`;
+    },
+  },
+]);
 
 function currentTheme() {
   return THEMES[state.themeId] || THEMES.zombie;
@@ -750,7 +1034,7 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.startDescription.textContent = theme.description;
   els.enemyRoster.innerHTML = theme.roster.map((name, index) => `
     <div class="enemy-roster-item">
-      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.6.0');background-position:${index * 25}% center"></i>
+      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.7.0');background-position:${index * 25}% center"></i>
       <span>${name}</span>
     </div>
   `).join('');
@@ -761,6 +1045,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.leaderboardKicker.textContent = theme.leaderboardKicker;
   els.leaderboardTitle.textContent = theme.leaderboardTitle;
   els.baseStatusLabel.textContent = theme.baseLabel;
+  els.cannonMetricLabel.textContent = theme.id === 'deadline' ? '救火组' : '炮台';
+  els.shardMetricLabel.textContent = theme.id === 'deadline' ? '团队碎片' : '碎片';
   els.laneControlLabel.textContent = theme.laneControlLabel;
   theme.lanes.forEach((label, index) => { els.laneLabels[index].textContent = label; });
   els.laneHint.textContent = theme.laneHint;
@@ -787,6 +1073,7 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   wallMaterial.emissive.setHex(theme.palette.wallEmissive);
   coreMaterial.emissive.setHex(theme.palette.core);
   coreMaterial.color.setHex(theme.palette.wall);
+  core.visible = theme.id === 'zombie';
   baseLight.color.setHex(theme.palette.core);
   projectileMaterial.color.setHex(theme.palette.projectile);
   focusLaneMaterial.color.setHex(theme.palette.core);
@@ -794,10 +1081,16 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   for (const visual of Object.values(enemyVisuals)) {
     visual.mesh.material = visual.materials[theme.id];
   }
-  turretGroups.forEach(({ housingMaterial, barrelMaterial }) => {
+  turretGroups.forEach(({ housingMaterial, barrelMaterial, cannonModel, workbenchModel }) => {
     housingMaterial.color.setHex(theme.palette.core);
     housingMaterial.emissive.setHex(theme.palette.core);
     barrelMaterial.emissive.setHex(theme.palette.core);
+    cannonModel.visible = theme.id === 'zombie';
+    workbenchModel.visible = theme.id === 'deadline';
+  });
+  projectilePool.forEach(({ energy, ticket }) => {
+    energy.visible = theme.id === 'zombie';
+    ticket.visible = theme.id === 'deadline';
   });
 
   els.time.textContent = String(theme.roundDuration);
@@ -851,6 +1144,7 @@ function clearWorldState() {
   enemies.length = 0;
   speechBubbles.length = 0;
   bonusTargets.splice(0).forEach(disposeBonusTarget);
+  choiceGates.splice(0).forEach(disposeChoiceGate);
   Object.values(enemyVisuals).forEach((visual) => { visual.mesh.count = 0; });
   enemyShadowMesh.count = 0;
   projectilePool.forEach((projectile) => {
@@ -878,11 +1172,18 @@ function resetGame() {
   state.comboUntil = 0;
   state.baseHp = 100;
   state.focusLane = 1;
-  state.fireAcc = [0, 0, 0];
+  state.fireAcc = Array(MAX_CANNONS).fill(0);
   state.spawnAcc = 0;
   state.nextBonusAt = 5.5;
   state.nextBarrierAt = 14;
   state.nextMysteryAt = 23;
+  state.nextGateAt = 18;
+  state.gatePhase = 'none';
+  state.gatePrepUntil = 0;
+  state.gateChoiceUntil = 0;
+  state.gateResumeAt = 0;
+  state.gateRound = 0;
+  state.lastGateEffect = '';
   state.nextSpeechAt = 2.8 + randomBetween(0, 1.6);
   state.nextUpgradeAt = theme.firstUpgradeAt;
   state.upgradeDeadline = 0;
@@ -896,7 +1197,7 @@ function resetGame() {
   state.finishAt = 0;
   state.shake = 0;
   state.flash = 0;
-  state.telemetry = { spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0, upgrades: 0 };
+  state.telemetry = { spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0, upgrades: 0, gatesOffered: 0, gatesChosen: 0 };
   state.bonuses = { damage: 1, rate: 1, crit: 0, count: 0, shards: 0, barriers: 0 };
   state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0, cannon: 1 };
   wallMaterial.color.setHex(theme.palette.wall);
@@ -909,8 +1210,10 @@ function resetGame() {
   turretGroups.forEach((turret, index) => {
     turret.group.visible = index === 0;
     turret.group.position.x = 0;
+    turret.group.position.z = 10.2;
     turret.group.scale.setScalar(1);
     turret.pivot.position.z = 0;
+    turret.keyboard.rotation.x = 0;
     turret.recoil = 0;
   });
   els.bossHud.classList.add('hidden');
@@ -1036,7 +1339,7 @@ function spawnEnemy(forceType = null) {
 
 function summonBoss(manual = false) {
   const theme = currentTheme();
-  if (state.mode !== 'playing' || state.bossSpawned || state.bossAlive || state.bossDefeated) return;
+  if (state.mode !== 'playing' || state.gatePhase !== 'none' || state.bossSpawned || state.bossAlive || state.bossDefeated) return;
   const boss = spawnEnemy('boss');
   if (!boss) {
     showToast('战场单位已满，清出空间后才能召唤 Boss', 1800);
@@ -1054,7 +1357,7 @@ function summonBoss(manual = false) {
 
 function triggerFrenzy() {
   const theme = currentTheme();
-  if (state.mode !== 'playing') return;
+  if (state.mode !== 'playing' || state.gatePhase !== 'none') return;
   state.telemetry.frenzyUses += 1;
   state.frenzyUntil = Math.max(state.frenzyUntil, state.elapsed + 8);
   showToast(theme.director.frenzyToast);
@@ -1257,6 +1560,121 @@ function disposeBonusTarget(target) {
   target.active = false;
 }
 
+function gateBoardSprite(effect, hitsRemaining, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 320;
+  const ctx = canvas.getContext('2d');
+  const redraw = (hits) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(4, 10, 20, 0.95)';
+    ctx.strokeStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.roundRect(10, 10, 620, 300, 30);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.font = '1000 82px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(effect.icon, 90, 92);
+    ctx.fillStyle = '#effaff';
+    ctx.font = '1000 40px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(effect.copy[currentTheme().id]?.[0] || effect.id, 160, 72);
+    ctx.fillStyle = '#9bb1c0';
+    const description = effect.copy[currentTheme().id]?.[1] || '';
+    let descriptionSize = 23;
+    do {
+      ctx.font = `700 ${descriptionSize}px system-ui, sans-serif`;
+      descriptionSize -= 1;
+    } while (ctx.measureText(description).width > 450 && descriptionSize > 15);
+    ctx.fillText(description, 160, 116);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '1000 40px system-ui, sans-serif';
+    ctx.fillText(currentTheme().id === 'deadline' ? `需要 ${hits} 份工单反馈` : `需要 ${hits} 发炮弹`, 160, 178);
+    ctx.fillStyle = '#ffcf55';
+    ctx.font = '1000 29px system-ui, sans-serif';
+    ctx.fillText(`击破后锁定这一项`, 160, 230);
+  };
+  redraw(hitsRemaining);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: true }));
+  sprite.scale.set(4.8, 2.4, 1);
+  sprite.position.y = 1.85;
+  sprite.renderOrder = 15;
+  return { sprite, texture, redraw };
+}
+
+function createChoiceGate(effect, lane, requiredHits) {
+  const color = effect.color;
+  const group = new THREE.Group();
+  group.position.set(WORLD.lanes[lane], 0.04, -1.35);
+  const floor = new THREE.Mesh(
+    new THREE.RingGeometry(1.35, 2.2, 36),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.34, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  group.add(floor);
+  const wall = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.8, 2.65),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+  );
+  wall.rotation.x = -0.72;
+  wall.position.y = 1.25;
+  group.add(wall);
+  [-2.15, 2.15].forEach((x) => {
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.9, 0.25), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending }));
+    pillar.position.set(x, 1.4, 0);
+    group.add(pillar);
+  });
+  const board = gateBoardSprite(effect, requiredHits, color);
+  group.add(board.sprite);
+  worldGroup.add(group);
+  const gate = {
+    active: true,
+    kind: 'gate',
+    effect,
+    lane,
+    x: WORLD.lanes[lane],
+    y: 1.2,
+    z: -1.35,
+    hitsRemaining: requiredHits,
+    requiredHits,
+    scale: 1,
+    wobble: randomBetween(0, Math.PI * 2),
+    hitUntil: 0,
+    group,
+    board,
+    floor,
+  };
+  choiceGates.push(gate);
+  return gate;
+}
+
+function disposeChoiceGate(gate) {
+  if (!gate?.group) return;
+  worldGroup.remove(gate.group);
+  gate.group.traverse((child) => {
+    if (!child.isMesh && !child.isSprite) return;
+    child.geometry?.dispose();
+    const material = child.material;
+    if (material?.map) material.map.dispose();
+    material?.dispose();
+  });
+  gate.active = false;
+}
+
+function expireChoiceGate(gate, text = '挡板锁定') {
+  if (!gate?.active) return;
+  addFxText(gate.x, 1.35, gate.z, text, '#94afbf', 1.05, 12);
+  disposeChoiceGate(gate);
+  const index = choiceGates.indexOf(gate);
+  if (index >= 0) choiceGates.splice(index, 1);
+}
+
 function expireBonusTarget(target, missed = false) {
   if (!target?.active) return;
   if (missed) addFxText(target.x, 1.05, target.z, 'BONUS 错过', '#8ba6b8', 0.8, 11);
@@ -1268,7 +1686,7 @@ function expireBonusTarget(target, missed = false) {
 function addCannonShard(amount) {
   state.bonuses.shards += amount;
   let gained = 0;
-  while (state.bonuses.shards >= 2 && state.levels.cannon < 3) {
+  while (state.bonuses.shards >= 2 && state.levels.cannon < MAX_CANNONS) {
     state.bonuses.shards -= 2;
     state.levels.cannon += 1;
     gained += 1;
@@ -1322,7 +1740,120 @@ function grantBonus(target) {
   updateHud(true);
 }
 
+function beginGatePrep() {
+  if (state.gatePhase !== 'none' || state.bossAlive || state.bossDefeated) return;
+  state.gatePhase = 'prep';
+  state.gatePrepUntil = state.elapsed + 3.4;
+  state.frenzyUntil = Math.min(state.frenzyUntil, state.elapsed);
+  for (const enemy of enemies) {
+    if (enemy.active && enemy.type !== 'boss') enemy.slowUntil = Math.max(enemy.slowUntil, state.gatePrepUntil + 1.8);
+  }
+  for (const target of [...bonusTargets]) {
+    addFxText(target.x, 1.1, target.z, '选择阶段回收', '#8ba6b8', 0.85, 10);
+    expireBonusTarget(target);
+  }
+  showOverdriveBanner(currentTheme().id === 'deadline' ? 'REVIEW WINDOW' : 'CHOICE GATES');
+  showToast(currentTheme().id === 'deadline'
+    ? '需求流暂停：先清掉残余同事，评审挡板即将出现'
+    : '尸潮暂歇：先清理残余敌人，三扇算术挡板即将出现', 2500);
+}
+
+function spawnChoiceGates() {
+  let cleared = 0;
+  for (const enemy of enemies) {
+    if (!enemy.active || enemy.type === 'boss') continue;
+    enemy.active = false;
+    cleared += 1;
+    state.score += Math.round(enemy.score * 0.35);
+    if (cleared <= 18) addFxParticle(enemy.x, 0.7, enemy.z, currentTheme().palette.secondary, 0.55);
+  }
+  if (cleared) addFxText(0, 1.8, -3.5, `波次清算 ${cleared}`, currentTheme().palette.secondary, 1.25, 15);
+  const pool = [...GATE_EFFECTS];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(state.random() * (index + 1));
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  const selected = pool.slice(0, 3);
+  if (selected.every((effect) => effect.id !== 'team_double' && effect.id !== 'team_half' && effect.id !== 'odd_even')) {
+    const arithmetic = GATE_EFFECTS.filter((effect) => ['team_double', 'team_half', 'odd_even'].includes(effect.id));
+    selected[Math.floor(state.random() * 3)] = arithmetic[Math.floor(state.random() * arithmetic.length)];
+  }
+  selected.forEach((effect, lane) => {
+    const scaleByTeam = Math.max(0, state.levels.cannon - 1) * 1.4;
+    const requiredHits = Math.round(effect.hits + state.gateRound * 1.8 + scaleByTeam + randomBetween(0, 4));
+    createChoiceGate(effect, lane, requiredHits);
+  });
+  state.gatePhase = 'active';
+  state.gateChoiceUntil = state.elapsed + 11;
+  state.gateRound += 1;
+  state.telemetry.gatesOffered += 3;
+  showToast(currentTheme().id === 'deadline'
+    ? '评审开始：A / D 切换工位，只能轰开一份方案'
+    : '三门选择开始：A / D 切路，只能击破一扇挡板', 2200);
+}
+
+function finishGateWindow(delay = 1.25) {
+  state.gatePhase = 'resume';
+  state.gateResumeAt = state.elapsed + delay;
+  state.nextGateAt = state.elapsed + 13 + randomBetween(0, 5);
+  state.nextBonusAt = Math.max(state.nextBonusAt, state.elapsed + 4.5);
+  state.nextBarrierAt = Math.max(state.nextBarrierAt, state.elapsed + 8);
+  state.nextMysteryAt = Math.max(state.nextMysteryAt, state.elapsed + 10);
+}
+
+function resolveChoiceGate(gate) {
+  if (!gate?.active || state.gatePhase !== 'active') return;
+  const copy = gate.effect.copy[currentTheme().id] || gate.effect.copy.zombie;
+  const detail = gate.effect.apply();
+  state.lastGateEffect = gate.effect.id;
+  state.telemetry.gatesChosen += 1;
+  state.bonuses.count += 1;
+  state.score += 1300 + state.gateRound * 260;
+  const color = cssHex(gate.effect.color);
+  addShockwave(gate.x, gate.z, color, 3.8);
+  for (let index = 0; index < 26; index += 1) addFxParticle(gate.x, 1.3, gate.z, color, 1.2);
+  for (const other of [...choiceGates]) {
+    if (other === gate) expireChoiceGate(other, 'CHOICE LOCKED');
+    else expireChoiceGate(other, '另外两项已锁死');
+  }
+  showOverdriveBanner(`${gate.effect.icon} ${copy[0]}`);
+  showToast(`${copy[0]}：${detail}`, 3100);
+  sfx.upgrade();
+  finishGateWindow();
+  updateHud(true);
+}
+
+function updateChoiceGates(dt) {
+  if (state.gatePhase === 'none') {
+    if (state.elapsed >= state.nextGateAt && !state.bossSpawned) beginGatePrep();
+    return;
+  }
+  if (state.gatePhase === 'prep') {
+    const living = livingEnemies().filter((enemy) => enemy.type !== 'boss').length;
+    if (state.elapsed >= state.gatePrepUntil && (living <= 14 || state.elapsed >= state.gatePrepUntil + 2.2)) spawnChoiceGates();
+    return;
+  }
+  if (state.gatePhase === 'active') {
+    for (const gate of choiceGates) {
+      if (!gate.active) continue;
+      gate.wobble += dt * 2.5;
+      gate.group.position.y = 0.04 + Math.sin(gate.wobble) * 0.055;
+      gate.floor.rotation.z += dt * 0.55;
+      const pulse = state.elapsed < gate.hitUntil ? 1.08 : 1 + Math.sin(gate.wobble * 1.6) * 0.025;
+      gate.group.scale.setScalar(pulse);
+    }
+    if (state.elapsed >= state.gateChoiceUntil) {
+      for (const gate of [...choiceGates]) expireChoiceGate(gate, '选择超时');
+      showToast('选择超时：没有获得算术效果，敌潮即将恢复', 2200);
+      finishGateWindow(0.8);
+    }
+    return;
+  }
+  if (state.gatePhase === 'resume' && state.elapsed >= state.gateResumeAt) state.gatePhase = 'none';
+}
+
 function updateBonusSpawning() {
+  if (state.gatePhase !== 'none') return;
   if (state.elapsed >= state.nextBonusAt) {
     const lanes = [0, 1, 2].sort(() => state.random() - 0.5);
     const types = ['damage', 'rate', 'crit'].sort(() => state.random() - 0.5);
@@ -1375,6 +1906,7 @@ function livingEnemies() {
 }
 
 function updateSpawning(dt) {
+  if (state.gatePhase !== 'none') return;
   const theme = currentTheme();
   const progress = clamp(state.elapsed / theme.roundDuration, 0, 1);
   const living = livingEnemies();
@@ -1396,7 +1928,7 @@ function updateSpawning(dt) {
     }
   }
 
-  if (!state.bossSpawned && state.elapsed >= theme.bossAt) summonBoss(false);
+  if (!state.bossSpawned && state.elapsed >= theme.bossAt && state.gatePhase === 'none') summonBoss(false);
 }
 
 function updateEnemies(dt) {
@@ -1428,6 +1960,10 @@ function updateEnemies(dt) {
 }
 
 function findTargets(lane, count = 1) {
+  const gates = choiceGates
+    .filter((gate) => gate.active && gate.lane === lane)
+    .sort((a, b) => b.z - a.z);
+  if (gates.length) return [gates[0]];
   const rewards = bonusTargets
     .filter((target) => target.active && target.lane === lane)
     .sort((a, b) => b.z - a.z);
@@ -1449,11 +1985,12 @@ function fireProjectile(turret, target, damage) {
   projectile.mesh.visible = true;
   projectile.x = turret.group.position.x + randomBetween(-0.14, 0.14);
   projectile.y = 1.02;
-  projectile.z = 9.1;
+  projectile.z = turret.group.position.z - 1.1;
   projectile.target = target;
   projectile.damage = damage;
   projectile.lane = state.focusLane;
   projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
+  projectile.ticket.rotation.z = randomBetween(-0.22, 0.22);
   turret.recoil = 1;
   state.telemetry.shots += 1;
 }
@@ -1473,8 +2010,20 @@ function currentCombatStats() {
   };
 }
 
+function formationSlot(index, count) {
+  const row = count > 4 ? Math.floor(index / 4) : 0;
+  const rowStart = row * 4;
+  const rowCount = Math.min(count > 4 ? 4 : count, count - rowStart);
+  const column = index - rowStart;
+  return {
+    x: (column - (rowCount - 1) / 2) * 0.72,
+    z: row * 0.72,
+    scale: count > 4 ? 0.88 : count > 2 ? 0.98 : 1.1,
+  };
+}
+
 function updateTurrets(dt) {
-  const cannonCount = Math.min(3, state.levels.cannon);
+  const cannonCount = Math.min(MAX_CANNONS, state.levels.cannon);
   const laneX = WORLD.lanes[state.focusLane];
   focusLaneGlow.position.x = lerp(focusLaneGlow.position.x, laneX, Math.min(1, dt * 10));
   focusRail.position.x = lerp(focusRail.position.x, laneX, Math.min(1, dt * 12));
@@ -1483,7 +2032,6 @@ function updateTurrets(dt) {
   const baseDamage = combat.damage;
   const targetCount = 1 + Math.min(3, state.levels.multi);
   const targets = findTargets(state.focusLane, targetCount);
-  const offsets = cannonCount === 1 ? [0] : cannonCount === 2 ? [-0.72, 0.72] : [-1.05, 0, 1.05];
 
   turretGroups.forEach((turret, index) => {
     const active = index < cannonCount;
@@ -1491,19 +2039,30 @@ function updateTurrets(dt) {
     if (!active) {
       turret.recoil = 0;
       turret.pivot.position.z = 0;
+      turret.keyboard.rotation.x = 0;
       return;
     }
-    const targetX = laneX + offsets[index];
+    const slot = formationSlot(index, cannonCount);
+    const targetX = laneX + slot.x;
+    const targetZ = 10.2 + slot.z;
     turret.group.position.x = lerp(turret.group.position.x, targetX, Math.min(1, dt * 11));
+    turret.group.position.z = lerp(turret.group.position.z, targetZ, Math.min(1, dt * 11));
     if (targets[0]) {
       const dx = targets[0].x - turret.group.position.x;
-      const dz = targets[0].z - 10.2;
+      const dz = targets[0].z - turret.group.position.z;
       turret.targetRotation = -Math.atan2(dx, -dz);
     }
     turret.pivot.rotation.y = lerp(turret.pivot.rotation.y, turret.targetRotation, Math.min(1, dt * 9));
+    turret.screenPivot.rotation.y = lerp(turret.screenPivot.rotation.y, turret.targetRotation * 0.28, Math.min(1, dt * 7));
     turret.recoil = Math.max(0, turret.recoil - dt * 11);
     turret.pivot.position.z = turret.recoil * 0.16;
-    const scale = 1.14 + (state.focusLane === 1 ? 0.02 : 0);
+    turret.keyboard.rotation.x = -turret.recoil * 0.72;
+    turret.keyboard.position.y = 1.04 - turret.recoil * 0.07;
+    turret.coffee.rotation.z = Math.sin(state.elapsed * 7 + turret.phase) * 0.06 + turret.recoil * 0.22;
+    turret.workbenchModel.position.y = 0.62 + Math.abs(Math.sin(state.elapsed * 5.8 + turret.phase)) * 0.08;
+    const badgePulse = 1 + Math.sin(state.elapsed * 4.2 + turret.phase) * 0.045 + turret.recoil * 0.08;
+    turret.badge.scale.set(1.42 * badgePulse, 0.5 * badgePulse, 1);
+    const scale = slot.scale + (state.focusLane === 1 ? 0.02 : 0);
     turret.group.scale.lerp(new THREE.Vector3(scale, scale, scale), Math.min(1, dt * 8));
     state.fireAcc[index] += dt;
     const aligned = Math.abs(turret.group.position.x - targetX) < 0.28;
@@ -1534,7 +2093,7 @@ function updateProjectiles(dt) {
       retireProjectile(projectile);
       continue;
     }
-    const targetY = target.kind === 'bonus' ? 1.05 * target.scale : 0.68 * target.scale;
+    const targetY = target.kind === 'gate' ? 1.35 : target.kind === 'bonus' ? 1.05 * target.scale : 0.68 * target.scale;
     const dx = target.x - projectile.x;
     const dy = targetY - projectile.y;
     const dz = target.z - projectile.z;
@@ -1552,11 +2111,35 @@ function updateProjectiles(dt) {
     projectile.y += (dy / distance) * step;
     projectile.z += (dz / distance) * step;
     projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
+    projectile.spin += dt * 8;
+    if (state.themeId === 'deadline') {
+      projectile.ticket.rotation.z = Math.sin(projectile.spin) * 0.34;
+      projectile.ticket.rotation.y += dt * 7.5;
+    }
   }
 }
 
 function applyDamage(enemy, amount, options = {}) {
   if (!enemy?.active) return;
+  if (enemy.kind === 'gate') {
+    if (!options.primary) return;
+    enemy.hitsRemaining = Math.max(0, enemy.hitsRemaining - 1);
+    enemy.hitUntil = state.elapsed + 0.12;
+    enemy.board.redraw(enemy.hitsRemaining);
+    enemy.board.texture.needsUpdate = true;
+    addFxText(
+      enemy.x,
+      1.55,
+      enemy.z,
+      enemy.hitsRemaining > 0 ? `还差 ${enemy.hitsRemaining} 发` : '方案击穿！',
+      cssHex(enemy.effect.color),
+      0.62,
+      enemy.hitsRemaining > 0 ? 12 : 17,
+    );
+    state.shake = Math.max(state.shake, enemy.hitsRemaining > 0 ? 0.055 : 0.34);
+    if (enemy.hitsRemaining <= 0) resolveChoiceGate(enemy);
+    return;
+  }
   if (enemy.kind === 'bonus') {
     let bonusDamage = amount;
     const bonusCriticalChance = 0.06 + state.levels.crit * 0.085 + state.bonuses.crit;
@@ -1940,6 +2523,7 @@ function updateGame(dt) {
   state.elapsed += dt;
   if (state.elapsed > state.comboUntil) state.combo = 1;
 
+  updateChoiceGates(dt);
   updateSpawning(dt);
   updateBonusSpawning();
   updateCharacterSpeech(dt);
@@ -1951,9 +2535,9 @@ function updateGame(dt) {
   updateShockwaves(dt);
   updateFx(dt);
 
-  if (state.elapsed >= state.nextUpgradeAt && !state.bossDefeated) showUpgrade();
+  if (state.elapsed >= state.nextUpgradeAt && !state.bossDefeated && state.gatePhase === 'none') showUpgrade();
   if (state.bossDefeated && state.finishAt && state.elapsed >= state.finishAt) endGame(true);
-  if (state.elapsed >= theme.roundDuration && !state.bossSpawned) summonBoss(false);
+  if (state.elapsed >= theme.roundDuration && !state.bossSpawned && state.gatePhase === 'none') summonBoss(false);
 }
 
 function endGame(victory) {
@@ -2039,31 +2623,42 @@ function updateHud(force = false) {
   els.frostLevel.textContent = `Lv.${state.levels.frost}`;
   els.bonusDamageValue.textContent = `×${state.bonuses.damage.toFixed(2)}`;
   els.bonusRateValue.textContent = `×${state.bonuses.rate.toFixed(2)}`;
-  els.cannonCountValue.textContent = `${state.levels.cannon} / 3`;
-  els.cannonShardValue.textContent = state.levels.cannon >= 3 ? 'MAX' : `${state.bonuses.shards} / 2`;
+  els.cannonCountValue.textContent = `${state.levels.cannon} / ${MAX_CANNONS}`;
+  els.cannonShardValue.textContent = state.levels.cannon >= MAX_CANNONS ? 'MAX' : `${state.bonuses.shards} / 2`;
   els.bonusCountValue.textContent = `BONUS ×${state.bonuses.count}`;
   const frenzyRemaining = Math.max(0, state.frenzyUntil - state.elapsed);
   const overdriveRemaining = Math.max(0, state.overdriveUntil - state.elapsed);
+  const choosingGate = state.gatePhase === 'active';
+  if (state.gatePhase === 'prep') els.bonusCountValue.textContent = '清场准备选择';
+  else if (choosingGate) els.bonusCountValue.textContent = `算术选择 ${Math.max(0, state.gateChoiceUntil - state.elapsed).toFixed(1)}s`;
+  else if (state.gatePhase === 'resume') els.bonusCountValue.textContent = '敌潮即将恢复';
   els.frenzyBtn.classList.toggle('active', frenzyRemaining > 0);
   els.overdriveBtn.classList.toggle('active', overdriveRemaining > 0);
   els.bossBtn.classList.toggle('active', state.bossAlive);
   els.frenzyBtn.setAttribute('aria-pressed', frenzyRemaining > 0 ? 'true' : 'false');
   els.overdriveBtn.setAttribute('aria-pressed', overdriveRemaining > 0 ? 'true' : 'false');
   els.bossBtn.setAttribute('aria-pressed', state.bossAlive ? 'true' : 'false');
-  els.frenzyDescription.textContent = frenzyRemaining > 0
+  els.frenzyDescription.textContent = state.gatePhase !== 'none'
+    ? '选择阶段锁定：尸潮已经暂停'
+    : frenzyRemaining > 0
     ? `生效中 ${frenzyRemaining.toFixed(1)} 秒 · 实际敌潮 ×10`
     : `${theme.director.frenzyDescription}${state.telemetry.frenzyUses ? ` · 已触发 ${state.telemetry.frenzyUses} 次` : ''}`;
   els.overdriveDescription.textContent = overdriveRemaining > 0
     ? `生效中 ${overdriveRemaining.toFixed(1)} 秒 · 伤害 ×2.45 / 射速 ×2.4`
     : `${theme.director.overdriveDescription}${state.telemetry.overdriveUses ? ` · 已触发 ${state.telemetry.overdriveUses} 次` : ''}`;
-  els.bossButtonDescription.textContent = state.bossAlive
+  els.bossButtonDescription.textContent = state.gatePhase !== 'none'
+    ? '选择阶段锁定：完成挡板后可召唤'
+    : state.bossAlive
     ? '已登场 · 固定中路 · 仅当前路可攻击'
     : state.bossSpawned
       ? '本局 Boss 已处理，不能重复召唤'
       : theme.director.bossDescription;
-  els.frenzyBtn.disabled = state.mode !== 'playing';
+  els.laneHint.textContent = choosingGate
+    ? (theme.id === 'deadline' ? '评审窗口：工单只打当前一路，击穿一项后其余锁死' : '选择窗口：炮弹只打当前一路，击穿一门后其余锁死')
+    : theme.laneHint;
+  els.frenzyBtn.disabled = state.mode !== 'playing' || state.gatePhase !== 'none';
   els.overdriveBtn.disabled = state.mode !== 'playing';
-  els.bossBtn.disabled = state.mode !== 'playing' || state.bossSpawned;
+  els.bossBtn.disabled = state.mode !== 'playing' || state.gatePhase !== 'none' || state.bossSpawned;
   baseLight.intensity = state.elapsed < state.overdriveUntil ? 34 : 18;
   baseLight.color.setHex(state.elapsed < state.overdriveUntil ? 0xffd84f : state.baseHp < 30 ? 0xff5f57 : theme.palette.core);
   wallMaterial.emissive.setHex(state.baseHp < 30 ? 0x66141a : state.elapsed < state.overdriveUntil ? 0x5c4810 : theme.palette.wallEmissive);
@@ -2162,7 +2757,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.6.0',
+      version: '0.7.0',
       mode: state.mode,
       theme: state.themeId,
       elapsed: state.elapsed,
@@ -2170,6 +2765,18 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
       focusLane: state.focusLane,
       livingEnemies: livingEnemies().length,
       activeBonusTargets: bonusTargets.filter((target) => target.active).map((target) => target.rewardType),
+      gate: {
+        phase: state.gatePhase,
+        round: state.gateRound,
+        lastEffect: state.lastGateEffect,
+        catalog: GATE_EFFECTS.map((effect) => effect.id),
+        choices: choiceGates.filter((gate) => gate.active).map((gate) => ({
+          id: gate.effect.id,
+          lane: gate.lane,
+          hitsRemaining: gate.hitsRemaining,
+          requiredHits: gate.requiredHits,
+        })),
+      },
       activeSpeech: speechBubbles.map((bubble) => ({ type: bubble.enemy?.type, text: bubble.text })),
       effects: {
         frenzyRemaining: Math.max(0, state.frenzyUntil - state.elapsed),
@@ -2181,7 +2788,14 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         damage: combat.damage,
         fireInterval: combat.fireInterval,
         cannonCount: state.levels.cannon,
+        projectileStyle: state.themeId === 'deadline' ? 'ticket-feedback' : 'energy-shell',
         targetCount: 1 + Math.min(3, state.levels.multi),
+      },
+      visuals: {
+        visibleCannons: turretGroups.filter((turret) => turret.group.visible && turret.cannonModel.visible).length,
+        visibleWorkbenches: turretGroups.filter((turret) => turret.group.visible && turret.workbenchModel.visible).length,
+        activeTickets: projectilePool.filter((projectile) => projectile.active && projectile.ticket.visible).length,
+        activeShells: projectilePool.filter((projectile) => projectile.active && projectile.energy.visible).length,
       },
       bonuses: { ...state.bonuses },
       levels: { ...state.levels },
