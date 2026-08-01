@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react'
-import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, Users, X } from 'lucide-react'
+import { Copy, Download, FolderOpen, MoreHorizontal, Plus, Trash2, Upload, X } from 'lucide-react'
 import { ProjectUserContextWhitelist } from '../context-whitelist'
 import { ToggleSwitch } from '../toggle-switch'
 import { MemoriesManager } from '../memories'
@@ -1349,23 +1349,16 @@ export function ProjectSettingsPanel({
                   </p>
                 </div>
               </div>
-              {/* 项目可见性已收敛为「私有 / 公开」, 加成员的能力统一放在「项目组」Tab.
-                  但顶部 Tab 在中/窄视口会被 ProjectOverflowTabs 收进「⋯」溢出菜单,
-                  用户在权限设置卡片里看不到入口 → 误以为"加用户功能被删了".
-                  这里给一个一键直达按钮绕开 Tab 可见性问题, 仍保持单一真相源在项目组. */}
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
-                <Users className="h-3.5 w-3.5 shrink-0" style={{ color: '#60a5fa' }} strokeWidth={1.8} />
-                <p className="text-[11px] leading-5 flex-1 min-w-0" style={{ color: 'var(--text-muted)' }}>
-                  项目可见性现为「私有 / 公开」。添加 / 移除项目成员与角色，请在「项目组」统一管理。
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActivePane('members')}
-                  className="inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-blue-500/20 bg-blue-500/15 px-2.5 text-[11px] text-blue-400 transition-colors hover:bg-blue-500/25"
-                >
-                  管理项目成员
-                </button>
-              </div>
+              {/* 项目成员管理直接内嵌在此 (与主页「编辑项目」弹窗 modals.tsx 一致) ——
+                  用户要求权限设置卡能直接加 / 改 / 删成员, 不再跳转到「项目组」tab. */}
+              <details className="rounded-lg border p-3" style={{ borderColor: 'var(--input-border)', background: 'var(--input-bg)' }}>
+                <summary className="text-[12px] cursor-pointer select-none font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  项目成员
+                </summary>
+                <div className="mt-3">
+                  <ProjectTeamPanel projectId={project.id} canManage={canManageProject} actorRole={project.project_role || null} />
+                </div>
+              </details>
             </SettingsCard>
           )}
 
