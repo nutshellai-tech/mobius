@@ -35,7 +35,7 @@ interface TerminalSize {
   isTty: boolean
 }
 
-const VERSION = '0.2.5'
+const VERSION = '0.2.6'
 const WELCOME_ROWS = 12
 const CHROME_ROWS = 11
 
@@ -49,6 +49,7 @@ const SLASH_COMMANDS = [
 export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear, onResume, onQuit, aimuxStatus }: ChatProps) {
   const chat = useChat({ client, ready, resumeSessionId })
   const [showHelp, setShowHelp] = useState(false)
+  const [scrollBack, setScrollBack] = useState(0)
   const terminal = useTerminalSize()
 
   const runSlash = useCallback((raw: string) => {
@@ -70,19 +71,42 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
       return
     }
     setShowHelp(false)
+    setScrollBack(0)
     void chat.send(t)
   }, [chat, runSlash])
 
   const transcriptRows = Math.max(5, terminal.rows - CHROME_ROWS)
   const fitted = useMemo(
-    () => fitTranscript(chat.entries, transcriptRows, terminal.columns),
-    [chat.entries, transcriptRows, terminal.columns],
+    () => fitTranscript(chat.entries, transcriptRows, terminal.columns, scrollBack),
+    [chat.entries, transcriptRows, terminal.columns, scrollBack],
   )
   // Welcome card is for fresh / short sessions only. Once the conversation is
   // long enough that fitTranscript hides older entries, switch to the compact
   // header + full transcript — otherwise the 12-row welcome card crowds out the
   // recent messages and the chat area reads as blank after "已隐藏较早的…".
-  const showWelcome = fitted.hiddenCount === 0 && fitted.estimatedRows + WELCOME_ROWS <= transcriptRows
+  const showWelcome = fitted.hiddenOlder === 0 && scrollBack === 0 && fitted.estimatedRows + WELCOME_ROWS <= transcriptRows
+
+  // In-app history pager. Ink redraws only the live frame, so the terminal's
+  // own scrollback holds no past turns — older entries are unreachable unless we
+  // page through them here. PageUp/PageDown move the viewport back/forward over
+  // the transcript. While reading history (scrollBack > 0) we keep the view
+  // pinned as new entries stream in; sending a message (onSubmit above) snaps
+  // back to the latest so the conversation auto-follows again.
+  const prevLenRef = useRef(chat.entries.length)
+  useEffect(() => {
+    const prev = prevLenRef.current
+    const cur = chat.entries.length
+    prevLenRef.current = cur
+    if (cur > prev && scrollBack > 0) setScrollBack(s => s + (cur - prev))
+  }, [chat.entries.length, scrollBack])
+
+  useInput((_input, key) => {
+    // The composer ignores pageUp/pageDown, so binding them here can't clash
+    // with text entry, history navigation, or the slash-command popup.
+    const step = Math.max(1, fitted.entries.length)
+    if (key.pageUp) setScrollBack(s => Math.min(chat.entries.length, s + step))
+    else if (key.pageDown) setScrollBack(s => Math.max(0, s - step))
+  })
 
   return (
     <Box
@@ -97,14 +121,17 @@ export function ChatScreen({ client, ready, webUserId, resumeSessionId, onClear,
           ? <WelcomeCard ready={ready} columns={terminal.columns} resumed={Boolean(resumeSessionId)} />
           : <CompactHeader ready={ready} sessionId={chat.sessionId} />}
 
-        <Box flexDirection="column" marginTop={showWelcome ? 1 : 0}>
-          {fitted.hiddenCount > 0
-            ? <Text dimColor>  … 已隐藏较早的 {fitted.hiddenCount} 条记录；使用 /resume 可重新载入会话</Text>
+        <Box flexGrow={1} flexDirection="column" justifyContent={showWelcome ? 'flex-start' : 'flex-end'} overflowY="hidden">
+          {fitted.hiddenOlder > 0 || scrollBack > 0
+            ? <Text dimColor>  ↑ {fitted.hiddenOlder > 0 ? `还有 ${fitted.hiddenOlder} 条较早记录 · PageUp 向上翻页` : '已到最早记录 · PageDown 向下翻页'}</Text>
             : null}
           {fitted.entries.map((entry, index) => (
             <EntryBlock key={entry.__id ?? `entry-${index}`} entry={entry} />
           ))}
           {chat.pendingUser !== null ? <UserLine text={chat.pendingUser} /> : null}
+          {fitted.hiddenRecent > 0
+            ? <Text dimColor>  ↓ PageDown 向下翻页 · 较新 {fitted.hiddenRecent} 条</Text>
+            : null}
         </Box>
 
         {chat.entries.length === 0 && chat.pendingUser === null && !showHelp
@@ -506,18 +533,29 @@ function entryRows(entry: AnyEntry, columns: number): number {
   }, 0)
 }
 
-function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number): {
+function fitTranscript(entries: AnyEntry[], rowBudget: number, columns: number, scrollBack = 0): {
   entries: AnyEntry[]
-  hiddenCount: number
+  hiddenOlder: number
+  hiddenRecent: number
   estimatedRows: number
 } {
+  // `scrollBack` = how many of the most-recent entries are paged out of view
+  // below the viewport (the user pressed PageUp). The visible window is then
+  // fit from the tail of what remains, backward, until the row budget is full.
+  const tail = Math.max(0, entries.length - scrollBack)
+  const avail = tail === 0 ? [] : entries.slice(0, tail)
   let rows = 0
-  let first = entries.length
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const nextRows = entryRows(entries[index], columns)
-    if (first < entries.length && rows + nextRows > rowBudget) break
+  let first = avail.length
+  for (let index = avail.length - 1; index >= 0; index--) {
+    const nextRows = entryRows(avail[index], columns)
+    if (first < avail.length && rows + nextRows > rowBudget) break
     rows += nextRows
     first = index
   }
-  return { entries: entries.slice(first), hiddenCount: first, estimatedRows: rows }
+  return {
+    entries: avail.slice(first),
+    hiddenOlder: first,                       // entries older than the viewport
+    hiddenRecent: entries.length - tail,      // == scrollBack: entries newer than the viewport
+    estimatedRows: rows,
+  }
 }
