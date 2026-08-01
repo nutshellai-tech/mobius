@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <title>广告爽游实验室</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./styles.css?v=0.4.0">
+  <link rel="stylesheet" href="./styles.css?v=0.5.0">
   <script type="importmap">
   {
     "imports": {
@@ -55,6 +55,15 @@
       <div class="boss-track"><i id="bossHpFill"></i></div>
     </section>
 
+    <section class="bonus-hud" aria-label="永久加成">
+      <span>本局永久加成</span>
+      <div><b>火力</b><em id="bonusDamageValue">×1.00</em></div>
+      <div><b>射速</b><em id="bonusRateValue">×1.00</em></div>
+      <div><b>炮台</b><em id="cannonCountValue">1 / 3</em></div>
+      <div><b>碎片</b><em id="cannonShardValue">0 / 2</em></div>
+      <strong id="bonusCountValue">BONUS ×0</strong>
+    </section>
+
     <aside class="director-panel">
       <div class="director-head">
         <div>
@@ -96,7 +105,7 @@
         <button class="lane-button active" data-lane="1" type="button"><kbd>S</kbd> <span id="laneLabel1">中路</span></button>
         <button class="lane-button" data-lane="2" type="button"><kbd>D</kbd> <span id="laneLabel2">右路</span></button>
       </div>
-      <small id="laneHint">点击战场或按 A / S / D 切换；焦点路射速更快</small>
+      <small id="laneHint">一次只能攻击当前一路；A / D 左右移动</small>
     </section>
 
     <section class="weapon-rack" id="weaponRack">
@@ -187,6 +196,6 @@
     </section>
   </main>
 
-  <script type="module" src="./main.js?v=0.4.0"></script>
+  <script type="module" src="./main.js?v=0.5.0"></script>
 </body>
 </html>

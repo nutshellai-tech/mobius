@@ -18,19 +18,19 @@ const THEMES = Object.freeze({
     title: '尸潮防线',
     english: 'HORDE OVERDRIVE',
     eyebrow: '把广告里玩不到的游戏真的做出来',
-    description: '腐烂行尸、狂奔者、屠夫肉盾和变异体会一起压境。炮台自动开火，你只管切换战线，把尸潮轰成烟花。',
-    features: ['五类真实尸群', '自动开火', '三选一升级', '尸王演出'],
+    description: '左右移动唯一的主炮台，决定这一秒守哪一路。打爆尸潮结界和隐藏补给，让火力、射速与炮台数量在一局里不断膨胀。',
+    features: ['横移主炮台', '可击破 Bonus', '永久数值叠加', '尸王演出'],
     roster: ['腐烂行尸', '狂奔者', '屠夫肉盾', '变异精英', '巨型尸王'],
     startButton: '开始守城',
     startButtonHint: '点击后尸潮立即来袭',
-    startHint: 'A / S / D 切换战线 · P 暂停 · 空格触发超载',
+    startHint: 'A / D 左右移动 · S 回到中路 · P 暂停 · 空格触发超载',
     brandKicker: 'AD FANTASY LAB / 01',
     leaderboardKicker: 'TOP SURVIVORS',
     leaderboardTitle: '尸潮最高战绩',
     baseLabel: '基地完整度',
-    laneControlLabel: '火力焦点',
+    laneControlLabel: '主炮台横移',
     lanes: ['左路', '中路', '右路'],
-    laneHint: '点击战场或按 A / S / D 切换；焦点路射速更快',
+    laneHint: '一次只能攻击当前一路；A / D 左右横移，点击战场可直接换路',
     weaponLabels: ['火力', '射速', '尸爆', '连锁', '冰冻'],
     upgradeEyebrow: '火力模块已就绪',
     upgradeTitle: '选择一项夸张升级',
@@ -50,6 +50,13 @@ const THEMES = Object.freeze({
       accent: '#4fffd2', secondary: '#8fff65', yellow: '#ffd84f', projectile: 0xffe36d,
       enemies: { normal: 0x83f26e, runner: 0xffa943, tank: 0xb47cff, elite: 0xff668a, boss: 0xff4f5d },
     },
+    bonus: {
+      damage: ['▰', '高爆弹匣', '永久火力 +18%'],
+      rate: ['⚡', '电磁供弹', '永久射速 +14%'],
+      crit: ['◎', '猎杀标记', '永久暴击率 +5%'],
+      mystery: ['?', '诅咒宝箱', '击破后揭晓隐藏大奖'],
+      barrier: ['◇', '尸潮结界', '击碎可获得强化与炮台碎片'],
+    },
     director: {
       frenzyIcon: '☣', frenzyLabel: '十倍尸潮', frenzyDescription: '8 秒高密度送爽怪',
       overdriveIcon: '⚡', overdriveLabel: '火力超载', overdriveDescription: '10 秒射速与伤害暴涨',
@@ -65,7 +72,7 @@ const THEMES = Object.freeze({
       bossBanner: 'OMEGA BOSS INBOUND',
     },
     bossName: '巨型尸王 · OMEGA',
-    openingToast: '尸潮已接近：炮台自动开火，切换战线可以集中火力',
+    openingToast: '主炮台只打一条路：A / D 横移，优先抢下会发光的 Bonus 与结界',
     victoryTitle: '防线守住了',
     victoryDescription: '广告里的那一局，这次真的打完了。你可以直接重开，或者继续用导演台折腾下一局。',
     defeatTitle: '城墙被吃光了',
@@ -74,11 +81,12 @@ const THEMES = Object.freeze({
     victoryToast: '巨型尸王已击杀：正在统计这场离谱战绩',
     upgrades: {
       damage: ['口径膨胀', '所有子弹伤害继续暴涨，普通尸群更快蒸发'],
-      rate: ['射速失控', '三座炮台射击间隔缩短，火力焦点路收益更高'],
+      rate: ['射速失控', '当前战线的全部炮台射击间隔继续缩短'],
       blast: ['尸爆协议', '子弹命中产生范围爆炸，等级越高波及范围越大'],
       chain: ['连锁闪电', '命中有概率跳向附近敌人，形成可见的闪电链'],
       frost: ['绝对零度', '命中有概率冻结敌人两秒，减慢整片尸潮'],
-      multi: ['同步齐射', '每座炮台同时锁定更多目标，子弹数量肉眼可见地增加'],
+      multi: ['分裂弹头', '当前战线同时锁定更多目标，子弹数量肉眼可见地增加'],
+      cannon: ['炮台复制', '增加一座炮台；所有炮台仍然只攻击你当前选择的一路'],
       crit: ['暴击算法', '提高暴击概率与倍率，让伤害数字更不讲道理'],
       repair: ['防线焊死', '立即修复基地，并获得一段短暂火力加成'],
     },
@@ -89,19 +97,19 @@ const THEMES = Object.freeze({
     title: '程序员保卫 DDL',
     english: 'SHIP IT OR DIE',
     eyebrow: '今晚不修完这些 Bug，谁都别想下班',
-    description: '实习生抱着电脑狂奔，产品经理举着需求文档，暴躁 Leader 和甲方老板正冲向服务器。你负责分配算力和咖啡。',
-    features: ['五类办公室同事', '自动修 Bug', '紧急回滚', '甲方 Boss'],
+    description: '把唯一的救火小组左右调度到前端、后端或生产。击破咖啡补给、隐藏需求和流程结界，让修复倍率一路失控。',
+    features: ['横移救火小组', '隐藏需求 Bonus', '永久数值叠加', '甲方 Boss'],
     roster: ['开发同事', '狂奔实习生', '产品经理', '暴躁 Leader', '甲方老板'],
     startButton: '开始上线',
     startButtonHint: '点击后立即进入救火模式',
-    startHint: 'A 前端 / S 后端 / D 生产 · P 暂停 · 空格咖啡续命',
+    startHint: 'A / D 左右调度 · S 回到后端 · P 暂停 · 空格咖啡续命',
     brandKicker: 'AD FANTASY LAB / 02',
     leaderboardKicker: 'TOP ENGINEERS',
     leaderboardTitle: '上线最高战绩',
     baseLabel: '服务器稳定度',
-    laneControlLabel: '算力焦点',
+    laneControlLabel: '救火小组调度',
     lanes: ['前端', '后端', '生产'],
-    laneHint: '点击战场或按 A / S / D 分配算力；焦点服务修复更快',
+    laneHint: '一次只修当前服务；A / D 左右调度，点击战场可直接切换',
     weaponLabels: ['修复', '编译', '异常', '调用链', '冻结'],
     upgradeEyebrow: '新的补丁已经通过 Review',
     upgradeTitle: '选择一项上线前热修',
@@ -121,6 +129,13 @@ const THEMES = Object.freeze({
       accent: '#62a8ff', secondary: '#45f0d0', yellow: '#ffca5c', projectile: 0x88d9ff,
       enemies: { normal: 0xff5c6c, runner: 0xffc857, tank: 0x7c83ff, elite: 0xd66bff, boss: 0xff3d81 },
     },
+    bonus: {
+      damage: ['⌘', '热修补丁', '永久修复力 +18%'],
+      rate: ['☕', '咖啡补给', '永久处理速度 +14%'],
+      crit: ['✓', '一次通过', '永久无警告率 +5%'],
+      mystery: ['?', '隐藏需求', '击破后揭晓离谱加成'],
+      barrier: ['▦', '流程结界', '击穿可获得算力与团队碎片'],
+    },
     director: {
       frenzyIcon: '⚠', frenzyLabel: '需求井喷', frenzyDescription: '8 秒临时需求疯狂涌入',
       overdriveIcon: '☕', overdriveLabel: '咖啡续命', overdriveDescription: '10 秒编译与修复速度暴涨',
@@ -136,7 +151,7 @@ const THEMES = Object.freeze({
       bossBanner: 'CLIENT CALL INBOUND',
     },
     bossName: '上线前临时改需求 · FINAL',
-    openingToast: 'DDL 已经变红：三条服务自动修 Bug，切换算力焦点可以加速修复',
+    openingToast: '救火小组一次只修一个服务：A / D 调度，优先抢咖啡、补丁与隐藏需求',
     victoryTitle: '居然准时上线了',
     victoryDescription: '所有 Bug 被压进了发布包，临时需求也被当场打回。现在可以再模拟一次更离谱的上线夜。',
     defeatTitle: '生产环境炸了',
@@ -149,7 +164,8 @@ const THEMES = Object.freeze({
       blast: ['异常连锁', '修掉一个异常时顺便清理附近同类堆栈'],
       chain: ['调用链追踪', '沿调用关系跳转并修复附近 Bug'],
       frost: ['冻结需求', '临时冻结需求流入，为生产环境争取时间'],
-      multi: ['多线程处理', '三个团队同时锁定更多问题并行修复'],
+      multi: ['多线程处理', '当前服务同时锁定更多问题并行修复'],
+      cannon: ['召集支援小组', '增加一个救火小组；所有小组仍只处理当前服务'],
       crit: ['一次过编译', '提高无警告通过概率，出现夸张的绿色通过数字'],
       repair: ['紧急回滚', '恢复服务器稳定度，并获得短暂咖啡因加成'],
     },
@@ -173,6 +189,11 @@ const els = {
   bossName: document.getElementById('bossName'),
   bossHpText: document.getElementById('bossHpText'),
   bossHpFill: document.getElementById('bossHpFill'),
+  bonusDamageValue: document.getElementById('bonusDamageValue'),
+  bonusRateValue: document.getElementById('bonusRateValue'),
+  cannonCountValue: document.getElementById('cannonCountValue'),
+  cannonShardValue: document.getElementById('cannonShardValue'),
+  bonusCountValue: document.getElementById('bonusCountValue'),
   soundBtn: document.getElementById('soundBtn'),
   pauseBtn: document.getElementById('pauseBtn'),
   directorPanel: document.querySelector('.director-panel'),
@@ -370,6 +391,23 @@ for (const x of [-3, 3]) {
   worldGroup.add(divider);
 }
 
+const focusLaneMaterial = new THREE.MeshBasicMaterial({
+  color: 0x4fffd2,
+  transparent: true,
+  opacity: 0.075,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const focusLaneGlow = new THREE.Mesh(new THREE.PlaneGeometry(5.25, WORLD.depth), focusLaneMaterial);
+focusLaneGlow.rotation.x = -Math.PI / 2;
+focusLaneGlow.position.set(0, -0.045, 0);
+worldGroup.add(focusLaneGlow);
+
+const focusRailMaterial = new THREE.MeshBasicMaterial({ color: 0x4fffd2, transparent: true, opacity: 0.75 });
+const focusRail = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.08, 0.16), focusRailMaterial);
+focusRail.position.set(0, 0.06, 9.55);
+worldGroup.add(focusRail);
+
 for (let side = -1; side <= 1; side += 2) {
   for (let i = 0; i < 11; i += 1) {
     const height = 0.6 + ((i * 17) % 9) * 0.22;
@@ -425,7 +463,8 @@ baseGroup.add(core);
 const turretGroups = [];
 for (let lane = 0; lane < WORLD.lanes.length; lane += 1) {
   const turret = new THREE.Group();
-  turret.position.set(WORLD.lanes[lane], 0, 10.2);
+  turret.position.set(0, 0, 10.2);
+  turret.visible = lane === 0;
   const pedestal = new THREE.Mesh(
     new THREE.CylinderGeometry(0.72, 0.92, 0.75, 10),
     new THREE.MeshStandardMaterial({ color: 0x28475b, metalness: 0.72, roughness: 0.28 }),
@@ -466,7 +505,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.4.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.5.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -536,6 +575,14 @@ const matrixDummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
 const enemyTint = new THREE.Color();
 const enemies = [];
+const bonusTargets = [];
+const BONUS_CONFIG = Object.freeze({
+  damage: { color: 0xffc857, hp: 72, speed: 1.28, score: 320, scale: 1 },
+  rate: { color: 0x4fffd2, hp: 68, speed: 1.34, score: 320, scale: 1 },
+  crit: { color: 0xff6fbc, hp: 82, speed: 1.22, score: 420, scale: 1.04 },
+  mystery: { color: 0xb37cff, hp: 145, speed: 1.05, score: 900, scale: 1.16 },
+  barrier: { color: 0xff7a55, hp: 260, speed: 0.82, score: 1400, scale: 1.35 },
+});
 const shockwaves = [];
 const fxItems = [];
 const lightningItems = [];
@@ -555,6 +602,9 @@ const state = {
   focusLane: 1,
   fireAcc: [0, 0, 0],
   spawnAcc: 0,
+  nextBonusAt: 5.5,
+  nextBarrierAt: 14,
+  nextMysteryAt: 23,
   nextUpgradeAt: 10,
   upgradeDeadline: 0,
   currentUpgrades: [],
@@ -572,6 +622,14 @@ const state = {
   lastUiAt: 0,
   lastShotSoundAt: 0,
   lastKillSoundAt: 0,
+  bonuses: {
+    damage: 1,
+    rate: 1,
+    crit: 0,
+    count: 0,
+    shards: 0,
+    barriers: 0,
+  },
   levels: {
     damage: 1,
     rate: 1,
@@ -580,6 +638,7 @@ const state = {
     frost: 0,
     multi: 0,
     crit: 0,
+    cannon: 1,
   },
 };
 
@@ -591,7 +650,7 @@ const upgrades = [
   },
   {
     id: 'rate', icon: '»', title: '射速失控', color: '#4fffd2', max: 7,
-    describe: () => '三座炮台射击间隔继续缩短，火力焦点路收益更高',
+    describe: () => '当前战线的全部炮台射击间隔继续缩短',
     apply: () => { state.levels.rate += 1; },
   },
   {
@@ -618,6 +677,11 @@ const upgrades = [
     id: 'crit', icon: '※', title: '暴击算法', color: '#ff6f91', max: 5,
     describe: () => '提高暴击概率与暴击倍率，伤害数字变得更不讲道理',
     apply: () => { state.levels.crit += 1; },
+  },
+  {
+    id: 'cannon', icon: '▥', title: '炮台复制', color: '#ff7cf4', max: 3,
+    describe: () => '增加一座并排炮台，但所有炮台始终只攻击当前战线',
+    apply: () => { state.levels.cannon = Math.min(3, state.levels.cannon + 1); },
   },
   {
     id: 'repair', icon: '✚', title: '防线焊死', color: '#76ff9d', max: 99,
@@ -661,7 +725,7 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   els.startDescription.textContent = theme.description;
   els.enemyRoster.innerHTML = theme.roster.map((name, index) => `
     <div class="enemy-roster-item">
-      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.4.0');background-position:${index * 25}% center"></i>
+      <i style="background-image:url('./assets/characters/${theme.id}-atlas.svg?v=0.5.0');background-position:${index * 25}% center"></i>
       <span>${name}</span>
     </div>
   `).join('');
@@ -700,6 +764,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   coreMaterial.color.setHex(theme.palette.wall);
   baseLight.color.setHex(theme.palette.core);
   projectileMaterial.color.setHex(theme.palette.projectile);
+  focusLaneMaterial.color.setHex(theme.palette.core);
+  focusRailMaterial.color.setHex(theme.palette.core);
   for (const visual of Object.values(enemyVisuals)) {
     visual.mesh.material = visual.materials[theme.id];
   }
@@ -758,6 +824,7 @@ function resize() {
 
 function clearWorldState() {
   enemies.length = 0;
+  bonusTargets.splice(0).forEach(disposeBonusTarget);
   Object.values(enemyVisuals).forEach((visual) => { visual.mesh.count = 0; });
   enemyShadowMesh.count = 0;
   projectilePool.forEach((projectile) => {
@@ -787,6 +854,9 @@ function resetGame() {
   state.focusLane = 1;
   state.fireAcc = [0, 0, 0];
   state.spawnAcc = 0;
+  state.nextBonusAt = 5.5;
+  state.nextBarrierAt = 14;
+  state.nextMysteryAt = 23;
   state.nextUpgradeAt = theme.firstUpgradeAt;
   state.upgradeDeadline = 0;
   state.currentUpgrades = [];
@@ -799,12 +869,22 @@ function resetGame() {
   state.finishAt = 0;
   state.shake = 0;
   state.flash = 0;
-  state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0 };
+  state.bonuses = { damage: 1, rate: 1, crit: 0, count: 0, shards: 0, barriers: 0 };
+  state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0, cannon: 1 };
   wallMaterial.color.setHex(theme.palette.wall);
   wallMaterial.emissive.setHex(theme.palette.wallEmissive);
   coreMaterial.emissive.setHex(theme.palette.core);
   baseLight.color.setHex(theme.palette.core);
   baseLight.intensity = 18;
+  focusLaneGlow.position.x = 0;
+  focusRail.position.x = 0;
+  turretGroups.forEach((turret, index) => {
+    turret.group.visible = index === 0;
+    turret.group.position.x = 0;
+    turret.group.scale.setScalar(1);
+    turret.pivot.position.z = 0;
+    turret.recoil = 0;
+  });
   els.bossHud.classList.add('hidden');
   selectLane(1);
   updateHud(true);
@@ -955,9 +1035,262 @@ function triggerOverdrive(auto = false) {
   sfx.overdrive();
 }
 
+function bonusCanvasSprite(icon, title, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 192;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(3, 10, 18, 0.9)';
+  ctx.strokeStyle = `#${color.toString(16).padStart(6, '0')}`;
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 496, 176, 28);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+  ctx.font = '900 84px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(icon, 84, 96);
+  ctx.fillStyle = '#effaff';
+  ctx.font = '900 31px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(title, 145, 78);
+  ctx.fillStyle = '#94afbf';
+  ctx.font = '700 22px system-ui, sans-serif';
+  ctx.fillText('击破获取永久强化', 145, 119);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: true }));
+  sprite.scale.set(3.15, 1.18, 1);
+  sprite.position.y = 1.62;
+  sprite.renderOrder = 12;
+  return sprite;
+}
+
+function createBonusTarget(type, lane, z = WORLD.spawnZ + 4.2) {
+  const theme = currentTheme();
+  const config = BONUS_CONFIG[type];
+  const copy = theme.bonus[type] || theme.bonus.mystery;
+  const group = new THREE.Group();
+  group.position.set(WORLD.lanes[lane], 0.04, z);
+  const ringMaterial = new THREE.MeshBasicMaterial({
+    color: config.color,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.84, 0.105, 10, 30), ringMaterial);
+  ring.rotation.x = -0.72;
+  ring.renderOrder = 10;
+  group.add(ring);
+  const coreMaterial = new THREE.MeshBasicMaterial({
+    color: config.color,
+    transparent: true,
+    opacity: type === 'barrier' ? 0.14 : 0.28,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const coreMesh = new THREE.Mesh(new THREE.CircleGeometry(0.69, 24), coreMaterial);
+  coreMesh.rotation.x = -0.72;
+  coreMesh.renderOrder = 9;
+  group.add(coreMesh);
+  const floorMaterial = new THREE.MeshBasicMaterial({
+    color: config.color,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const floorHalo = new THREE.Mesh(new THREE.RingGeometry(0.76, 1.08, 28), floorMaterial);
+  floorHalo.rotation.x = -Math.PI / 2;
+  floorHalo.position.y = 0.02;
+  group.add(floorHalo);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.16, 3.2, 10),
+    new THREE.MeshBasicMaterial({ color: config.color, transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  beam.position.y = 1.6;
+  group.add(beam);
+  if (type === 'barrier') {
+    const barrierMaterial = new THREE.MeshBasicMaterial({
+      color: config.color,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const barrier = new THREE.Mesh(new THREE.PlaneGeometry(4.3, 1.72), barrierMaterial);
+    barrier.rotation.x = -0.72;
+    barrier.position.y = 0.9;
+    group.add(barrier);
+    [-1.7, 1.7].forEach((x) => {
+      const pylon = new THREE.Mesh(
+        new THREE.BoxGeometry(0.22, 2.2, 0.22),
+        new THREE.MeshBasicMaterial({ color: config.color, transparent: true, opacity: 0.82, blending: THREE.AdditiveBlending }),
+      );
+      pylon.position.set(x, 1.05, 0);
+      group.add(pylon);
+    });
+  }
+  group.add(bonusCanvasSprite(copy[0], copy[1], config.color));
+  worldGroup.add(group);
+  const target = {
+    active: true,
+    kind: 'bonus',
+    rewardType: type,
+    lane,
+    x: WORLD.lanes[lane],
+    y: 0.8,
+    z,
+    hp: config.hp * (1 + state.elapsed * 0.018),
+    maxHp: config.hp * (1 + state.elapsed * 0.018),
+    scale: config.scale,
+    speed: config.speed,
+    score: config.score,
+    wobble: randomBetween(0, Math.PI * 2),
+    hitUntil: 0,
+    group,
+    ring,
+    ringMaterial,
+    coreMaterial,
+  };
+  bonusTargets.push(target);
+  return target;
+}
+
+function disposeBonusTarget(target) {
+  if (!target?.group) return;
+  worldGroup.remove(target.group);
+  target.group.traverse((child) => {
+    if (!child.isMesh && !child.isSprite) return;
+    child.geometry?.dispose();
+    const material = child.material;
+    if (material?.map) material.map.dispose();
+    material?.dispose();
+  });
+  target.active = false;
+}
+
+function expireBonusTarget(target, missed = false) {
+  if (!target?.active) return;
+  if (missed) addFxText(target.x, 1.05, target.z, 'BONUS 错过', '#8ba6b8', 0.8, 11);
+  disposeBonusTarget(target);
+  const index = bonusTargets.indexOf(target);
+  if (index >= 0) bonusTargets.splice(index, 1);
+}
+
+function addCannonShard(amount) {
+  state.bonuses.shards += amount;
+  let gained = 0;
+  while (state.bonuses.shards >= 2 && state.levels.cannon < 3) {
+    state.bonuses.shards -= 2;
+    state.levels.cannon += 1;
+    gained += 1;
+  }
+  return gained;
+}
+
+function grantBonus(target) {
+  const theme = currentTheme();
+  const copy = theme.bonus[target.rewardType] || theme.bonus.mystery;
+  let message = copy[2];
+  let banner = `${copy[0]} ${copy[1]}`;
+  let cannonGained = 0;
+  if (target.rewardType === 'damage') state.bonuses.damage += 0.18;
+  else if (target.rewardType === 'rate') state.bonuses.rate += 0.14;
+  else if (target.rewardType === 'crit') state.bonuses.crit += 0.05;
+  else if (target.rewardType === 'barrier') {
+    state.bonuses.barriers += 1;
+    state.bonuses.damage += 0.12;
+    state.bonuses.rate += 0.1;
+    cannonGained = addCannonShard(1);
+    state.baseHp = Math.min(100, state.baseHp + 8);
+    message = `结界击破：火力 +12%，射速 +10%，炮台碎片 +1${cannonGained ? '，新炮台解锁' : ''}`;
+    banner = `${copy[0]} 结界击破`;
+  } else {
+    const roll = state.random();
+    if (roll < 0.34) {
+      state.bonuses.damage += 0.28;
+      state.bonuses.rate += 0.2;
+      message = '隐藏大奖：火力 +28%，射速 +20%';
+    } else if (roll < 0.68) {
+      cannonGained = addCannonShard(2);
+      state.bonuses.damage += 0.1;
+      message = `隐藏大奖：火力 +10%，炮台碎片 +2${cannonGained ? '，新炮台解锁' : ''}`;
+    } else {
+      state.bonuses.crit += 0.12;
+      state.bonuses.damage += 0.15;
+      message = '隐藏大奖：暴击率 +12%，火力 +15%';
+    }
+    banner = `${copy[0]} 隐藏大奖`;
+  }
+  state.bonuses.count += 1;
+  state.score += Math.round(target.score * (1 + state.bonuses.count * 0.08));
+  addShockwave(target.x, target.z, cssHex(BONUS_CONFIG[target.rewardType].color), target.rewardType === 'barrier' ? 2.8 : 1.25);
+  for (let i = 0; i < (target.rewardType === 'barrier' ? 22 : 10); i += 1) {
+    addFxParticle(target.x, 1, target.z, cssHex(BONUS_CONFIG[target.rewardType].color), target.rewardType === 'barrier' ? 1.2 : 0.8);
+  }
+  showOverdriveBanner(banner);
+  showToast(message, 2500);
+  sfx.upgrade();
+  updateHud(true);
+}
+
+function updateBonusSpawning() {
+  if (state.elapsed >= state.nextBonusAt) {
+    const lanes = [0, 1, 2].sort(() => state.random() - 0.5);
+    const types = ['damage', 'rate', 'crit'].sort(() => state.random() - 0.5);
+    createBonusTarget(types[0], lanes[0]);
+    createBonusTarget(types[1], lanes[1]);
+    state.nextBonusAt += 8.5 + randomBetween(0, 2.4);
+    showToast('两路 Bonus 已进入：移动炮台，选择你要的永久强化', 1600);
+  }
+  if (state.elapsed >= state.nextBarrierAt) {
+    createBonusTarget('barrier', Math.floor(state.random() * 3), WORLD.spawnZ + 2.4);
+    state.nextBarrierAt += 18 + randomBetween(0, 4);
+    showToast('结界出现：打穿它，炮台会继续进化', 1700);
+  }
+  if (state.elapsed >= state.nextMysteryAt) {
+    createBonusTarget('mystery', Math.floor(state.random() * 3), WORLD.spawnZ + 1.8);
+    state.nextMysteryAt += 24 + randomBetween(0, 4);
+    showToast('隐藏 Bonus 出现：里面可能是倍率，也可能直接复制炮台', 1800);
+  }
+}
+
+function updateBonusTargets(dt) {
+  for (let index = bonusTargets.length - 1; index >= 0; index -= 1) {
+    const target = bonusTargets[index];
+    if (!target.active) {
+      bonusTargets.splice(index, 1);
+      continue;
+    }
+    target.z += target.speed * dt;
+    target.wobble += dt * 3.5;
+    target.group.position.set(target.x, 0.04 + Math.sin(target.wobble) * 0.05, target.z);
+    const pulse = target.scale * (1 + Math.sin(target.wobble * 1.7) * 0.08);
+    target.group.scale.setScalar(state.elapsed < target.hitUntil ? pulse * 1.12 : pulse);
+    target.ring.rotation.z += dt * (target.rewardType === 'barrier' ? -1.8 : 2.6);
+    target.ringMaterial.opacity = state.elapsed < target.hitUntil ? 1 : 0.72 + Math.sin(target.wobble) * 0.18;
+    if (target.z >= WORLD.baseZ + 0.2) expireBonusTarget(target, true);
+  }
+}
+
 function selectLane(lane) {
   state.focusLane = clamp(Number(lane) || 0, 0, 2);
   els.laneButtons.forEach((button) => button.classList.toggle('active', Number(button.dataset.lane) === state.focusLane));
+}
+
+function moveLane(direction) {
+  selectLane(state.focusLane + direction);
 }
 
 function livingEnemies() {
@@ -1018,8 +1351,12 @@ function updateEnemies(dt) {
 }
 
 function findTargets(lane, count = 1) {
+  const rewards = bonusTargets
+    .filter((target) => target.active && target.lane === lane)
+    .sort((a, b) => b.z - a.z);
+  if (rewards.length) return [rewards[0]];
   return enemies
-    .filter((enemy) => enemy.active && (enemy.lane === lane || enemy.type === 'boss'))
+    .filter((enemy) => enemy.active && enemy.lane === lane)
     .sort((a, b) => b.z - a.z)
     .slice(0, count);
 }
@@ -1028,56 +1365,66 @@ function acquireProjectile() {
   return projectilePool.find((projectile) => !projectile.active) || null;
 }
 
-function fireProjectile(lane, target, damage) {
+function fireProjectile(turret, target, damage) {
   const projectile = acquireProjectile();
   if (!projectile || !target) return;
   projectile.active = true;
   projectile.mesh.visible = true;
-  projectile.x = WORLD.lanes[lane] + randomBetween(-0.14, 0.14);
+  projectile.x = turret.group.position.x + randomBetween(-0.14, 0.14);
   projectile.y = 1.02;
   projectile.z = 9.1;
   projectile.target = target;
   projectile.damage = damage;
-  projectile.lane = lane;
+  projectile.lane = state.focusLane;
   projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
-  turretGroups[lane].recoil = 1;
+  turret.recoil = 1;
 }
 
 function updateTurrets(dt) {
   const overdrive = state.elapsed < state.overdriveUntil;
-  const baseInterval = 0.36 / (1 + (state.levels.rate - 1) * 0.22);
-  const baseDamage = 12 * Math.pow(1.5, state.levels.damage - 1) * (overdrive ? 2.45 : 1);
+  const cannonCount = Math.min(3, state.levels.cannon);
+  const laneX = WORLD.lanes[state.focusLane];
+  focusLaneGlow.position.x = lerp(focusLaneGlow.position.x, laneX, Math.min(1, dt * 10));
+  focusRail.position.x = lerp(focusRail.position.x, laneX, Math.min(1, dt * 12));
+  const baseInterval = 0.24 / (1 + (state.levels.rate - 1) * 0.22) / state.bonuses.rate;
+  const baseDamage = 22 * Math.pow(1.5, state.levels.damage - 1) * state.bonuses.damage * (overdrive ? 2.45 : 1);
+  const targetCount = 1 + Math.min(3, state.levels.multi);
+  const targets = findTargets(state.focusLane, targetCount);
+  const offsets = cannonCount === 1 ? [0] : cannonCount === 2 ? [-0.72, 0.72] : [-1.05, 0, 1.05];
 
-  for (let lane = 0; lane < 3; lane += 1) {
-    const focusMultiplier = lane === state.focusLane ? 0.62 : 1;
-    const interval = baseInterval * focusMultiplier * (overdrive ? 0.33 : 1);
-    state.fireAcc[lane] += dt;
-    const targetCount = 1 + Math.min(3, state.levels.multi);
-    const targets = findTargets(lane, targetCount);
-    if (targets[0]) {
-      const dx = targets[0].x - WORLD.lanes[lane];
-      const dz = targets[0].z - 10.2;
-      turretGroups[lane].targetRotation = -Math.atan2(dx, -dz);
+  turretGroups.forEach((turret, index) => {
+    const active = index < cannonCount;
+    turret.group.visible = active;
+    if (!active) {
+      turret.recoil = 0;
+      turret.pivot.position.z = 0;
+      return;
     }
-
+    const targetX = laneX + offsets[index];
+    turret.group.position.x = lerp(turret.group.position.x, targetX, Math.min(1, dt * 11));
+    if (targets[0]) {
+      const dx = targets[0].x - turret.group.position.x;
+      const dz = targets[0].z - 10.2;
+      turret.targetRotation = -Math.atan2(dx, -dz);
+    }
+    turret.pivot.rotation.y = lerp(turret.pivot.rotation.y, turret.targetRotation, Math.min(1, dt * 9));
+    turret.recoil = Math.max(0, turret.recoil - dt * 11);
+    turret.pivot.position.z = turret.recoil * 0.16;
+    const scale = 1.14 + (state.focusLane === 1 ? 0.02 : 0);
+    turret.group.scale.lerp(new THREE.Vector3(scale, scale, scale), Math.min(1, dt * 8));
+    state.fireAcc[index] += dt;
+    const aligned = Math.abs(turret.group.position.x - targetX) < 0.28;
     let safety = 0;
-    while (state.fireAcc[lane] >= interval && targets.length && safety < 6) {
-      state.fireAcc[lane] -= interval;
-      targets.forEach((target, index) => fireProjectile(lane, target, baseDamage * (index ? 0.78 : 1)));
+    while (aligned && state.fireAcc[index] >= baseInterval && targets.length && safety < 7) {
+      state.fireAcc[index] -= baseInterval;
+      targets.forEach((target, targetIndex) => fireProjectile(turret, target, baseDamage * (targetIndex ? 0.78 : 1)));
       safety += 1;
       if (performance.now() - state.lastShotSoundAt > 48) {
         state.lastShotSoundAt = performance.now();
         sfx.shoot();
       }
     }
-
-    const turret = turretGroups[lane];
-    turret.pivot.rotation.y = lerp(turret.pivot.rotation.y, turret.targetRotation, Math.min(1, dt * 9));
-    turret.recoil = Math.max(0, turret.recoil - dt * 9);
-    turret.pivot.position.z = turret.recoil * 0.16;
-    const scale = lane === state.focusLane ? 1.12 : 1;
-    turret.group.scale.lerp(new THREE.Vector3(scale, scale, scale), Math.min(1, dt * 8));
-  }
+  });
 }
 
 function retireProjectile(projectile) {
@@ -1094,7 +1441,7 @@ function updateProjectiles(dt) {
       retireProjectile(projectile);
       continue;
     }
-    const targetY = 0.68 * target.scale;
+    const targetY = target.kind === 'bonus' ? 1.05 * target.scale : 0.68 * target.scale;
     const dx = target.x - projectile.x;
     const dy = targetY - projectile.y;
     const dz = target.z - projectile.z;
@@ -1117,10 +1464,34 @@ function updateProjectiles(dt) {
 
 function applyDamage(enemy, amount, options = {}) {
   if (!enemy?.active) return;
+  if (enemy.kind === 'bonus') {
+    let bonusDamage = amount;
+    const bonusCriticalChance = 0.06 + state.levels.crit * 0.085 + state.bonuses.crit;
+    const bonusCritical = options.primary && state.random() < bonusCriticalChance;
+    if (bonusCritical) bonusDamage *= 1.8 + state.levels.crit * 0.18;
+    enemy.hp -= bonusDamage;
+    enemy.hitUntil = Math.max(enemy.hitUntil, state.elapsed + (bonusCritical ? 0.16 : 0.09));
+    const ratio = clamp(enemy.hp / enemy.maxHp, 0, 1);
+    addFxText(
+      enemy.x,
+      1.35 * enemy.scale,
+      enemy.z,
+      enemy.hp > 0 ? `${bonusCritical ? '暴击 ' : ''}${Math.ceil(ratio * 100)}%` : 'BREAK!',
+      bonusCritical ? '#ffd84f' : cssHex(BONUS_CONFIG[enemy.rewardType].color),
+      0.75,
+      bonusCritical ? 16 : 12,
+    );
+    state.shake = Math.max(state.shake, bonusCritical ? 0.18 : 0.06);
+    if (enemy.hp <= 0) {
+      grantBonus(enemy);
+      expireBonusTarget(enemy);
+    }
+    return;
+  }
   let damage = amount;
   let critical = false;
   if (options.primary) {
-    const criticalChance = 0.06 + state.levels.crit * 0.085;
+    const criticalChance = 0.06 + state.levels.crit * 0.085 + state.bonuses.crit;
     if (state.random() < criticalChance) {
       critical = true;
       damage *= 1.8 + state.levels.crit * 0.18;
@@ -1149,7 +1520,7 @@ function applyDamage(enemy, amount, options = {}) {
 
   if (options.primary && state.levels.chain > 0 && state.random() < 0.16 + state.levels.chain * 0.1) {
     const candidates = enemies
-      .filter((other) => other.active && other !== enemy && Math.hypot(other.x - enemy.x, other.z - enemy.z) < 5.4)
+      .filter((other) => other.active && other !== enemy && other.lane === enemy.lane && Math.hypot(other.x - enemy.x, other.z - enemy.z) < 5.4)
       .sort((a, b) => Math.hypot(a.x - enemy.x, a.z - enemy.z) - Math.hypot(b.x - enemy.x, b.z - enemy.z))
       .slice(0, state.levels.chain + 1);
     let source = enemy;
@@ -1406,7 +1777,9 @@ function updateGame(dt) {
   if (state.elapsed > state.comboUntil) state.combo = 1;
 
   updateSpawning(dt);
+  updateBonusSpawning();
   updateEnemies(dt);
+  updateBonusTargets(dt);
   if (state.mode !== 'playing') return;
   updateTurrets(dt);
   updateProjectiles(dt);
@@ -1499,6 +1872,11 @@ function updateHud(force = false) {
   els.blastLevel.textContent = `Lv.${state.levels.blast}`;
   els.chainLevel.textContent = `Lv.${state.levels.chain}`;
   els.frostLevel.textContent = `Lv.${state.levels.frost}`;
+  els.bonusDamageValue.textContent = `×${state.bonuses.damage.toFixed(2)}`;
+  els.bonusRateValue.textContent = `×${state.bonuses.rate.toFixed(2)}`;
+  els.cannonCountValue.textContent = `${state.levels.cannon} / 3`;
+  els.cannonShardValue.textContent = state.levels.cannon >= 3 ? 'MAX' : `${state.bonuses.shards} / 2`;
+  els.bonusCountValue.textContent = `BONUS ×${state.bonuses.count}`;
   els.frenzyBtn.disabled = state.mode !== 'playing';
   els.overdriveBtn.disabled = state.mode !== 'playing';
   els.bossBtn.disabled = state.mode !== 'playing' || state.bossSpawned;
@@ -1647,9 +2025,9 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (state.mode !== 'playing') return;
-  if (event.code === 'KeyA' || event.code === 'ArrowLeft') selectLane(0);
+  if (event.code === 'KeyA' || event.code === 'ArrowLeft') moveLane(-1);
   else if (event.code === 'KeyS' || event.code === 'ArrowDown') selectLane(1);
-  else if (event.code === 'KeyD' || event.code === 'ArrowRight') selectLane(2);
+  else if (event.code === 'KeyD' || event.code === 'ArrowRight') moveLane(1);
   else if (event.code === 'Space') {
     event.preventDefault();
     triggerOverdrive(false);
