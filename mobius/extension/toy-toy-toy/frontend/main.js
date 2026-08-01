@@ -11,7 +11,8 @@ const WORLD = Object.freeze({
   maxProjectiles: 260,
 });
 const MAX_CANNONS = 8;
-const BOSS_HP_GROWTH = 1.72;
+// 修复基础科技与多炮台分摊后，正确的 L10 构筑约有 L1 的 60 倍输出；1.48 曲线让终局 Boss 约为 L1 的 57 倍，而非旧版 221 倍数学绝境。
+const BOSS_HP_GROWTH = 1.48;
 
 const THEMES = Object.freeze({
   zombie: {
@@ -134,9 +135,9 @@ const THEMES = Object.freeze({
     bossAt: 50,
     firstUpgradeAt: 9,
     upgradeInterval: 11,
-    spawnMultiplier: 1.18,
+    spawnMultiplier: 1.08,
     hpMultiplier: 0.82,
-    speedMultiplier: 1.1,
+    speedMultiplier: 1.04,
     bossHpMultiplier: 0.92,
     bossSpeed: 0.47,
     palette: {
@@ -219,27 +220,27 @@ const ENEMY_ROLES = Object.freeze({
 const CAMPAIGNS = Object.freeze({
   zombie: [
     { title: '封锁线外缘', description: '基础尸群，熟悉三路火力和随队推进的算术门。', duration: 64, bossAt: 45, spawn: 0.82, hp: 0.72, speed: 0.9, bossHp: 1, roles: ['shambler', 'crawler', 'sprinter'], boss: '门卫尸长 · 大门牙', bossTint: 0xff6f65, bossScale: 3.05 },
-    { title: '废弃便利店', description: '腐肉胖尸开始顶在队伍前面，错误选择会明显漏怪。', duration: 68, bossAt: 48, spawn: 0.9, hp: 0.82, speed: 0.93, bossHp: 1.05, roles: ['shambler', 'crawler', 'sprinter', 'bloater'], boss: '冰柜屠夫 · FROZEN', bossTint: 0x9ddfff, bossScale: 3.15 },
-    { title: '地铁末班车', description: '狂奔者和喷吐者混编，要求更快切换攻击路线。', duration: 72, bossAt: 51, spawn: 0.98, hp: 0.92, speed: 0.97, bossHp: 1.1, roles: ['shambler', 'sprinter', 'spitter', 'bloater'], boss: '站台尖啸者 · LINE 13', bossTint: 0xff78dc, bossScale: 3.25 },
-    { title: '医院夜班', description: '装甲尸出现，算术选择开始决定能否穿透前排。', duration: 76, bossAt: 54, spawn: 1.05, hp: 1.02, speed: 1, bossHp: 1.16, roles: ['crawler', 'spitter', 'bloater', 'armored'], boss: '缝合护士长 · NIGHT SHIFT', bossTint: 0xd8c2ff, bossScale: 3.35 },
-    { title: '高速收费站', description: '变异精英加入冲线，炮台数量和单发火力需要取舍。', duration: 80, bossAt: 57, spawn: 1.12, hp: 1.12, speed: 1.03, bossHp: 1.22, roles: ['shambler', 'sprinter', 'armored', 'mutant'], boss: '收费站暴君 · NO EXIT', bossTint: 0xff685f, bossScale: 3.45 },
-    { title: '地下实验室', description: '尖啸者和变异体成群出现，错误构筑会被精英压垮。', duration: 84, bossAt: 60, spawn: 1.2, hp: 1.24, speed: 1.06, bossHp: 1.3, roles: ['spitter', 'armored', 'mutant', 'screamer'], boss: '失控实验体 · SUBJECT 06', bossTint: 0xd35bff, bossScale: 3.55 },
-    { title: '工业尸巢', description: '尸巢守卫进入战场，需要成型的爆炸、连锁或分裂构筑。', duration: 88, bossAt: 63, spawn: 1.28, hp: 1.36, speed: 1.08, bossHp: 1.38, roles: ['bloater', 'mutant', 'screamer', 'nestGuard'], boss: '孵化母体 · HIVE MOTHER', bossTint: 0xff55c8, bossScale: 3.65 },
-    { title: '军事封锁区', description: '装甲精英密集推进，Boss 生命正式进入指数区间。', duration: 92, bossAt: 66, spawn: 1.36, hp: 1.48, speed: 1.1, bossHp: 1.46, roles: ['armored', 'mutant', 'nestGuard', 'alpha'], boss: '装甲尸将 · WARLORD', bossTint: 0xff514f, bossScale: 3.78 },
-    { title: '核心尸城', description: '高阶角色全量混编，必须围绕前几次选择规划终局。', duration: 97, bossAt: 70, spawn: 1.46, hp: 1.62, speed: 1.12, bossHp: 1.56, roles: ['spitter', 'armored', 'screamer', 'nestGuard', 'alpha'], boss: '双头尸皇 · TWIN CROWN', bossTint: 0xff3d72, bossScale: 3.92 },
-    { title: '终焉防线', description: '最终试炼：只有连续做对算术选择，才有机会击穿尸王。', duration: 104, bossAt: 76, spawn: 1.58, hp: 1.78, speed: 1.15, bossHp: 1.68, roles: ['mutant', 'screamer', 'nestGuard', 'alpha'], boss: '巨型尸王 · OMEGA', bossTint: 0xff2e4f, bossScale: 4.15 },
+    { title: '废弃便利店', description: '腐肉胖尸开始顶在队伍前面，错误选择会明显漏怪。', duration: 68, bossAt: 48, spawn: 0.86, hp: 0.78, speed: 0.93, bossHp: 1.05, roles: ['shambler', 'crawler', 'sprinter', 'bloater'], boss: '冰柜屠夫 · FROZEN', bossTint: 0x9ddfff, bossScale: 3.15 },
+    { title: '地铁末班车', description: '狂奔者和喷吐者混编，要求更快切换攻击路线。', duration: 72, bossAt: 51, spawn: 0.91, hp: 0.84, speed: 0.97, bossHp: 1.1, roles: ['shambler', 'sprinter', 'spitter', 'bloater'], boss: '站台尖啸者 · LINE 13', bossTint: 0xff78dc, bossScale: 3.25 },
+    { title: '医院夜班', description: '装甲尸出现，算术选择开始决定能否穿透前排。', duration: 76, bossAt: 54, spawn: 0.97, hp: 0.9, speed: 1, bossHp: 1.16, roles: ['crawler', 'spitter', 'bloater', 'armored'], boss: '缝合护士长 · NIGHT SHIFT', bossTint: 0xd8c2ff, bossScale: 3.35 },
+    { title: '高速收费站', description: '变异精英加入冲线，炮台数量和单发火力需要取舍。', duration: 80, bossAt: 57, spawn: 1.03, hp: 0.96, speed: 1.03, bossHp: 1.22, roles: ['shambler', 'sprinter', 'armored', 'mutant'], boss: '收费站暴君 · NO EXIT', bossTint: 0xff685f, bossScale: 3.45 },
+    { title: '地下实验室', description: '尖啸者和变异体混进杂兵潮，错误构筑会被精英压垮。', duration: 84, bossAt: 60, spawn: 1.09, hp: 1.02, speed: 1.06, bossHp: 1.3, roles: ['shambler', 'sprinter', 'spitter', 'armored', 'mutant', 'screamer'], boss: '失控实验体 · SUBJECT 06', bossTint: 0xd35bff, bossScale: 3.55 },
+    { title: '工业尸巢', description: '尸巢守卫混在大量杂兵中，需要成型的爆炸、连锁或分裂构筑。', duration: 88, bossAt: 63, spawn: 1.15, hp: 1.08, speed: 1.08, bossHp: 1.38, roles: ['shambler', 'crawler', 'bloater', 'mutant', 'screamer', 'nestGuard'], boss: '孵化母体 · HIVE MOTHER', bossTint: 0xff55c8, bossScale: 3.65 },
+    { title: '军事封锁区', description: '杂兵掩护装甲精英推进，Boss 生命正式进入指数区间。', duration: 92, bossAt: 66, spawn: 1.21, hp: 1.14, speed: 1.1, bossHp: 1.46, roles: ['shambler', 'sprinter', 'armored', 'mutant', 'nestGuard', 'alpha'], boss: '装甲尸将 · WARLORD', bossTint: 0xff514f, bossScale: 3.78 },
+    { title: '核心尸城', description: '小怪与高阶角色全量混编，必须围绕前几次选择规划终局。', duration: 97, bossAt: 70, spawn: 1.27, hp: 1.21, speed: 1.12, bossHp: 1.56, roles: ['crawler', 'spitter', 'armored', 'screamer', 'nestGuard', 'alpha'], boss: '双头尸皇 · TWIN CROWN', bossTint: 0xff3d72, bossScale: 3.92 },
+    { title: '终焉防线', description: '最终试炼：清理杂兵、击穿精英并连续做对算术选择，才有机会击杀尸王。', duration: 104, bossAt: 76, spawn: 1.34, hp: 1.28, speed: 1.15, bossHp: 1.68, roles: ['shambler', 'sprinter', 'mutant', 'screamer', 'nestGuard', 'alpha'], boss: '巨型尸王 · OMEGA', bossTint: 0xff2e4f, bossScale: 4.15 },
   ],
   deadline: [
     { title: '本地开发', description: '普通 Bug 与直推实习生，先熟悉工单算术门。', duration: 62, bossAt: 44, spawn: 0.86, hp: 0.68, speed: 0.93, bossHp: 0.96, roles: ['bug', 'intern', 'qa'], boss: '合并冲突 · FIRST BLOOD', bossTint: 0xff7182, bossScale: 3.05 },
-    { title: '测试环境', description: '测试同事不断补单，产品经理开始作为肉盾推进。', duration: 66, bossAt: 47, spawn: 0.94, hp: 0.78, speed: 0.97, bossHp: 1.02, roles: ['bug', 'intern', 'qa', 'product'], boss: '回归测试清单 · 999+', bossTint: 0x8b9cff, bossScale: 3.14 },
-    { title: '三方联调', description: '报警运维加入战场，反馈流速明显加快。', duration: 70, bossAt: 50, spawn: 1.02, hp: 0.88, speed: 1, bossHp: 1.08, roles: ['bug', 'qa', 'product', 'ops'], boss: '接口字段改名 · V2 FINAL', bossTint: 0xffa25f, bossScale: 3.24 },
-    { title: '需求评审', description: '产品与架构师组成厚血前排，需要重新评估团队编制。', duration: 74, bossAt: 53, spawn: 1.1, hp: 0.98, speed: 1.03, bossHp: 1.14, roles: ['intern', 'product', 'ops', 'architect'], boss: '五彩斑斓 PRD · 88 页', bossTint: 0xac8cff, bossScale: 3.34 },
-    { title: '灰度发布', description: '安全审计首次出现，单纯堆射速已经不够。', duration: 78, bossAt: 56, spawn: 1.18, hp: 1.08, speed: 1.06, bossHp: 1.2, roles: ['qa', 'ops', 'architect', 'security'], boss: '灰度异常 · 1% 用户全炸', bossTint: 0xd474ff, bossScale: 3.44 },
-    { title: '大促前夜', description: 'Leader 和报警一起到场，选择错误会拖垮生产稳定度。', duration: 82, bossAt: 59, spawn: 1.26, hp: 1.2, speed: 1.08, bossHp: 1.28, roles: ['product', 'ops', 'security', 'leader'], boss: '零点大促 · TRAFFIC ×100', bossTint: 0xff6da8, bossScale: 3.54 },
-    { title: '生产事故', description: '驻场甲方加入精英波次，工单构筑必须开始成型。', duration: 86, bossAt: 62, spawn: 1.34, hp: 1.32, speed: 1.1, bossHp: 1.36, roles: ['architect', 'security', 'leader', 'clientRep'], boss: '生产全红 · SEV-0', bossTint: 0xff4f68, bossScale: 3.64 },
-    { title: '安全审计', description: '高血量审计与甲方代表混编，Boss 生命进入指数区。', duration: 90, bossAt: 65, spawn: 1.42, hp: 1.44, speed: 1.12, bossHp: 1.44, roles: ['ops', 'security', 'leader', 'clientRep'], boss: '合规整改 · DEADLINE TODAY', bossTint: 0xe154ff, bossScale: 3.76 },
-    { title: '董事会 Demo', description: '业务总监加入战线，每一次算术选择都在决定演示生死。', duration: 96, bossAt: 69, spawn: 1.52, hp: 1.58, speed: 1.14, bossHp: 1.54, roles: ['security', 'leader', 'clientRep', 'executive'], boss: '董事会临时演示 · LIVE', bossTint: 0xff3f88, bossScale: 3.9 },
-    { title: '全球上线', description: '最终试炼：必须形成指数级工单输出，才能拒绝最终需求。', duration: 102, bossAt: 75, spawn: 1.64, hp: 1.74, speed: 1.17, bossHp: 1.66, roles: ['architect', 'leader', 'clientRep', 'executive'], boss: '全球上线前临时改需求 · FINAL', bossTint: 0xff285f, bossScale: 4.12 },
+    { title: '测试环境', description: '测试同事不断补单，产品经理开始作为肉盾推进。', duration: 66, bossAt: 47, spawn: 0.89, hp: 0.75, speed: 0.97, bossHp: 1.02, roles: ['bug', 'intern', 'qa', 'product'], boss: '回归测试清单 · 999+', bossTint: 0x8b9cff, bossScale: 3.14 },
+    { title: '三方联调', description: '报警运维加入战场，反馈流速明显加快。', duration: 70, bossAt: 50, spawn: 0.94, hp: 0.82, speed: 1, bossHp: 1.08, roles: ['bug', 'qa', 'product', 'ops'], boss: '接口字段改名 · V2 FINAL', bossTint: 0xffa25f, bossScale: 3.24 },
+    { title: '需求评审', description: '产品与架构师组成厚血前排，需要重新评估团队编制。', duration: 74, bossAt: 53, spawn: 1, hp: 0.89, speed: 1.03, bossHp: 1.14, roles: ['intern', 'product', 'ops', 'architect'], boss: '五彩斑斓 PRD · 88 页', bossTint: 0xac8cff, bossScale: 3.34 },
+    { title: '灰度发布', description: '安全审计首次出现，单纯堆射速已经不够。', duration: 78, bossAt: 56, spawn: 1.06, hp: 0.96, speed: 1.06, bossHp: 1.2, roles: ['qa', 'ops', 'architect', 'security'], boss: '灰度异常 · 1% 用户全炸', bossTint: 0xd474ff, bossScale: 3.44 },
+    { title: '大促前夜', description: '普通 Bug 掩护 Leader 和报警一起到场，选择错误会拖垮生产稳定度。', duration: 82, bossAt: 59, spawn: 1.12, hp: 1.03, speed: 1.08, bossHp: 1.28, roles: ['bug', 'intern', 'product', 'ops', 'security', 'leader'], boss: '零点大促 · TRAFFIC ×100', bossTint: 0xff6da8, bossScale: 3.54 },
+    { title: '生产事故', description: '普通工单与驻场甲方组成精英波次，工单构筑必须开始成型。', duration: 86, bossAt: 62, spawn: 1.18, hp: 1.1, speed: 1.1, bossHp: 1.36, roles: ['bug', 'qa', 'architect', 'security', 'leader', 'clientRep'], boss: '生产全红 · SEV-0', bossTint: 0xff4f68, bossScale: 3.64 },
+    { title: '安全审计', description: '普通 Bug 混入高血量审计与甲方代表，Boss 生命进入指数区。', duration: 90, bossAt: 65, spawn: 1.24, hp: 1.17, speed: 1.12, bossHp: 1.44, roles: ['bug', 'intern', 'ops', 'security', 'leader', 'clientRep'], boss: '合规整改 · DEADLINE TODAY', bossTint: 0xe154ff, bossScale: 3.76 },
+    { title: '董事会 Demo', description: '杂项反馈掩护业务总监加入战线，每一次算术选择都在决定演示生死。', duration: 96, bossAt: 69, spawn: 1.3, hp: 1.24, speed: 1.14, bossHp: 1.54, roles: ['bug', 'qa', 'security', 'leader', 'clientRep', 'executive'], boss: '董事会临时演示 · LIVE', bossTint: 0xff3f88, bossScale: 3.9 },
+    { title: '全球上线', description: '最终试炼：清理普通工单、压住精英需求并形成指数级输出，才能拒绝最终需求。', duration: 102, bossAt: 75, spawn: 1.38, hp: 1.32, speed: 1.17, bossHp: 1.66, roles: ['bug', 'intern', 'architect', 'leader', 'clientRep', 'executive'], boss: '全球上线前临时改需求 · FINAL', bossTint: 0xff285f, bossScale: 4.12 },
   ],
 });
 
@@ -691,7 +692,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.8.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.8.2`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -824,7 +825,7 @@ const state = {
   nextBonusAt: 5.5,
   nextBarrierAt: 14,
   nextMysteryAt: 23,
-  nextGateAt: 8.5,
+  nextGateAt: 6.5,
   gatePhase: 'none',
   gatePrepUntil: 0,
   gateChoiceUntil: 0,
@@ -1161,7 +1162,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.8.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.8.2');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1346,7 +1347,7 @@ function resetGame() {
   state.nextBonusAt = Number.POSITIVE_INFINITY;
   state.nextBarrierAt = Number.POSITIVE_INFINITY;
   state.nextMysteryAt = Number.POSITIVE_INFINITY;
-  state.nextGateAt = 7.5 + randomBetween(0, 1.5);
+  state.nextGateAt = 6.2 + randomBetween(0, 1.1);
   state.gatePhase = 'none';
   state.gatePrepUntil = 0;
   state.gateChoiceUntil = 0;
@@ -1367,7 +1368,10 @@ function resetGame() {
   state.shake = 0;
   state.flash = 0;
   state.telemetry = { spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0, upgrades: 0, gatesOffered: 0, gatesChosen: 0 };
-  state.bonuses = { damage: 1, rate: 1, crit: 0, count: 0, shards: 0, barriers: 0 };
+  // 关卡敌人会增长，基础装备也必须有温和科技成长；否则高关开局的来袭 HP/s 已超过裸装 DPS，第一扇门前就数学无解。
+  const campaignDamage = Math.pow(1.05, Math.max(0, state.level - 1));
+  const campaignRate = Math.pow(1.04, Math.max(0, state.level - 1));
+  state.bonuses = { damage: campaignDamage, rate: campaignRate, crit: 0, count: 0, shards: 0, barriers: 0 };
   state.levels = { damage: 1, rate: 1, blast: 0, chain: 0, frost: 0, multi: 0, crit: 0, cannon: 1 };
   wallMaterial.color.setHex(theme.palette.wall);
   wallMaterial.emissive.setHex(theme.palette.wallEmissive);
@@ -1458,7 +1462,7 @@ function spawnEnemy(forceRole = null, options = {}) {
   const role = isBoss ? null : pickEnemyRole(forceRole);
   const type = isBoss ? 'boss' : role.visual;
   const lane = isBoss ? 1 : clamp(Number.isFinite(options.lane) ? options.lane : Math.floor(state.random() * 3), 0, 2);
-  const regularBaseHp = (18 + state.level * 3.6 + progress * 34) * theme.hpMultiplier * level.hp;
+  const regularBaseHp = (18 + state.level * 1.5 + progress * 31) * theme.hpMultiplier * level.hp;
   const hp = isBoss
     ? 9200 * bossHpFactor() * theme.bossHpMultiplier
     : regularBaseHp * role.hp;
@@ -1479,7 +1483,7 @@ function spawnEnemy(forceRole = null, options = {}) {
       : (1.18 + progress * 0.78) * theme.speedMultiplier * level.speed * role.speed,
     scale: isBoss ? level.bossScale : role.scale,
     score: isBoss ? Math.round(5000 * Math.pow(1.45, state.level - 1)) : Math.round(role.score * (1 + state.level * 0.12)),
-    baseDamage: isBoss ? 100 : role.damage,
+    baseDamage: isBoss ? 100 : Math.max(1, Math.round(role.damage * (0.34 + (state.level - 1) * 0.007))),
     tint: isBoss ? level.bossTint : role.tint,
     slowUntil: 0,
     hitUntil: 0,
@@ -1512,6 +1516,14 @@ function summonBoss(manual = false) {
     return;
   }
   if (manual) state.telemetry.bossUses += 1;
+  let cleared = 0;
+  for (const enemy of enemies) {
+    if (!enemy.active || enemy === boss || enemy.type === 'boss') continue;
+    enemy.active = false;
+    cleared += 1;
+    state.score += Math.round(enemy.score * 0.2);
+  }
+  if (cleared) addFxText(0, 1.7, -2.8, `Boss 压场清算 ${cleared}`, theme.palette.secondary, 1.35, 15);
   state.shake = Math.max(state.shake, 0.85);
   showToast(manual ? theme.director.manualBossToast : theme.director.bossToast, 2600);
   showOverdriveBanner(theme.director.bossBanner);
@@ -1942,11 +1954,18 @@ function spawnChoiceGates() {
   }
   selected.forEach((effect, lane) => {
     const scaleByTeam = Math.max(0, state.levels.cannon - 1) * 0.8;
-    const requiredHits = Math.round(effect.hits + state.gateRound * 0.65 + state.level * 0.9 + scaleByTeam + randomBetween(-1, 3));
+    const requiredHits = Math.round(effect.hits + state.gateRound * 0.55 + state.level * 0.35 + scaleByTeam + randomBetween(-1, 2));
     createChoiceGate(effect, lane, requiredHits);
   });
-  for (let index = 0; index < 12 + state.level; index += 1) {
-    spawnEnemy(null, { lane: index % 3, z: -10.8 + randomBetween(0, 5.6) });
+  for (let index = 0; index < 5 + Math.ceil(state.level / 3); index += 1) {
+    const escort = spawnEnemy(null, { lane: index % 3, z: -10.8 + randomBetween(0, 5.6) });
+    if (escort) {
+      // 挡板已经强制玩家锁定一路，随车怪只承担视觉与清怪压力，不能再叠加一整波精英的致命撞线伤害。
+      escort.isGateEscort = true;
+      escort.hp *= 0.58;
+      escort.maxHp = escort.hp;
+      escort.baseDamage = Math.max(1, Math.round(escort.baseDamage * 0.55));
+    }
   }
   state.gatePhase = 'active';
   state.gateChoiceUntil = state.elapsed + 13.5;
@@ -1960,7 +1979,7 @@ function spawnChoiceGates() {
 function finishGateWindow(delay = 1.25) {
   state.gatePhase = 'resume';
   state.gateResumeAt = state.elapsed + delay;
-  state.nextGateAt = state.elapsed + 6.5 + randomBetween(0, 2.4);
+  state.nextGateAt = state.elapsed + 4.8 + randomBetween(0, 1.6);
 }
 
 function resolveChoiceGate(gate) {
@@ -1970,9 +1989,17 @@ function resolveChoiceGate(gate) {
   state.lastGateEffect = gate.effect.id;
   state.telemetry.gatesChosen += 1;
   state.bonuses.count += 1;
+  state.baseHp = Math.min(100, state.baseHp + 6);
   state.score += 1300 + state.gateRound * 260;
+  let convoyCleared = 0;
+  for (const enemy of enemies) {
+    if (!enemy.active || !enemy.isGateEscort) continue;
+    killEnemy(enemy);
+    convoyCleared += 1;
+  }
   const color = cssHex(gate.effect.color);
   addShockwave(gate.x, gate.z, color, 3.8);
+  if (convoyCleared) addFxText(gate.x, 2.2, gate.z + 0.8, `选择冲击波 ×${convoyCleared}`, color, 1.2, 16);
   for (let index = 0; index < 26; index += 1) addFxParticle(gate.x, 1.3, gate.z, color, 1.2);
   for (const other of [...choiceGates]) {
     if (other === gate) expireChoiceGate(other, 'CHOICE LOCKED');
@@ -2051,17 +2078,17 @@ function livingEnemies() {
 function updateSpawning(dt) {
   const theme = currentTheme();
   const level = currentLevel();
+  if (state.bossAlive) return;
   const progress = clamp(state.elapsed / level.duration, 0, 1);
   const living = livingEnemies();
   const nearestZ = living.reduce((max, enemy) => Math.max(max, enemy.z), WORLD.spawnZ);
-  let spawnRate = (1.55 + progress * 5.1) * theme.spawnMultiplier * level.spawn;
+  let spawnRate = (1.35 + progress * 2.7) * theme.spawnMultiplier * level.spawn;
   if (state.gatePhase === 'prep') spawnRate *= 0.72;
-  if (state.gatePhase === 'active') spawnRate *= 0.56;
+  if (state.gatePhase === 'active') spawnRate *= 0.44;
   if (state.gatePhase === 'resume') spawnRate *= 0.8;
   if (state.elapsed < state.frenzyUntil) spawnRate *= 10;
-  if (living.length < 18 && nearestZ < 4) spawnRate *= 1.55;
+  if (living.length < 18 && nearestZ < 4) spawnRate *= 1.3;
   if (living.length > 360) spawnRate *= 0.42;
-  if (state.bossAlive) spawnRate *= 0.62;
   state.spawnAcc += spawnRate * dt;
 
   while (state.spawnAcc >= 1) {
@@ -2097,12 +2124,12 @@ function updateEnemies(dt) {
     }
   }
 
-  if (state.baseHp <= 0) endGame(false);
   if (state.baseHp < 30 && !state.bailoutUsed && state.mode === 'playing') {
     state.bailoutUsed = true;
     state.baseHp = Math.max(state.baseHp, 22);
     triggerOverdrive(true);
   }
+  if (state.baseHp <= 0) endGame(false);
 }
 
 function findTargets(lane, count = 1) {
@@ -2176,7 +2203,8 @@ function updateTurrets(dt) {
   const combat = currentCombatStats();
   const baseInterval = combat.fireInterval;
   const baseDamage = combat.damage;
-  const targetCount = 1 + Math.min(3, state.levels.multi);
+  const targetsPerCannon = 1 + Math.min(3, state.levels.multi);
+  const targetCount = cannonCount * targetsPerCannon;
   const targets = findTargets(state.focusLane, targetCount);
 
   turretGroups.forEach((turret, index) => {
@@ -2193,9 +2221,13 @@ function updateTurrets(dt) {
     const targetZ = 10.2 + slot.z;
     turret.group.position.x = lerp(turret.group.position.x, targetX, Math.min(1, dt * 11));
     turret.group.position.z = lerp(turret.group.position.z, targetZ, Math.min(1, dt * 11));
-    if (targets[0]) {
-      const dx = targets[0].x - turret.group.position.x;
-      const dz = targets[0].z - turret.group.position.z;
+    const turretTargets = targets.length <= 1
+      ? targets
+      : Array.from({ length: targetsPerCannon }, (_, targetIndex) => targets[(index + targetIndex * cannonCount) % targets.length])
+        .filter((target, targetIndex, list) => list.indexOf(target) === targetIndex);
+    if (turretTargets[0]) {
+      const dx = turretTargets[0].x - turret.group.position.x;
+      const dz = turretTargets[0].z - turret.group.position.z;
       turret.targetRotation = -Math.atan2(dx, -dz);
     }
     turret.pivot.rotation.y = lerp(turret.pivot.rotation.y, turret.targetRotation, Math.min(1, dt * 9));
@@ -2213,9 +2245,9 @@ function updateTurrets(dt) {
     state.fireAcc[index] += dt;
     const aligned = Math.abs(turret.group.position.x - targetX) < 0.28;
     let safety = 0;
-    while (aligned && state.fireAcc[index] >= baseInterval && targets.length && safety < 7) {
+    while (aligned && state.fireAcc[index] >= baseInterval && turretTargets.length && safety < 7) {
       state.fireAcc[index] -= baseInterval;
-      targets.forEach((target, targetIndex) => fireProjectile(turret, target, baseDamage * (targetIndex ? 0.78 : 1)));
+      turretTargets.forEach((target, targetIndex) => fireProjectile(turret, target, baseDamage * (targetIndex ? 0.78 : 1)));
       safety += 1;
       if (performance.now() - state.lastShotSoundAt > 48) {
         state.lastShotSoundAt = performance.now();
@@ -2271,6 +2303,12 @@ function applyDamage(enemy, amount, options = {}) {
     if (!options.primary) return;
     enemy.hitsRemaining = Math.max(0, enemy.hitsRemaining - 1);
     enemy.hitUntil = state.elapsed + 0.12;
+    // 选择门混在敌群里时，专注打门不应等于完全放弃防守；主弹会穿透门，对同路最近护送怪造成部分伤害。
+    const piercedTargets = enemies
+      .filter((target) => target.active && target.type !== 'boss' && target.lane === enemy.lane)
+      .sort((a, b) => Math.abs(a.z - enemy.z) - Math.abs(b.z - enemy.z))
+      .slice(0, 1 + Math.min(2, state.levels.multi));
+    piercedTargets.forEach((target) => applyDamage(target, amount * 0.52, { gatePierce: true }));
     enemy.board.redraw(enemy.hitsRemaining);
     enemy.board.texture.needsUpdate = true;
     addFxText(
@@ -2917,8 +2955,9 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.8.0',
+      version: '0.8.2',
       mode: state.mode,
+      lastVictory: state.lastVictory,
       theme: state.themeId,
       level: state.level,
       levelTitle: currentLevel().title,
@@ -2928,8 +2967,18 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
       roleCatalog: currentLevel().roles.map((id) => currentRoleMap()[id]?.name).filter(Boolean),
       elapsed: state.elapsed,
       speed: state.speed,
+      baseHp: state.baseHp,
       focusLane: state.focusLane,
       livingEnemies: livingEnemies().length,
+      laneThreat: [0, 1, 2].map((lane) => {
+        const laneEnemies = enemies.filter((enemy) => enemy.active && enemy.lane === lane);
+        return {
+          lane,
+          count: laneEnemies.length,
+          nearestZ: laneEnemies.reduce((nearest, enemy) => Math.max(nearest, enemy.z), WORLD.spawnZ),
+          totalHp: laneEnemies.reduce((sum, enemy) => sum + enemy.hp, 0),
+        };
+      }),
       activeBonusTargets: bonusTargets.filter((target) => target.active).map((target) => target.rewardType),
       gate: {
         phase: state.gatePhase,
@@ -2958,7 +3007,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         fireInterval: combat.fireInterval,
         cannonCount: state.levels.cannon,
         projectileStyle: state.themeId === 'deadline' ? 'ticket-feedback' : 'energy-shell',
-        targetCount: 1 + Math.min(3, state.levels.multi),
+        targetCount: Math.min(MAX_CANNONS, state.levels.cannon) * (1 + Math.min(3, state.levels.multi)),
       },
       visuals: {
         visibleCannons: turretGroups.filter((turret) => turret.group.visible && turret.cannonModel.visible).length,
