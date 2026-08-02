@@ -9,7 +9,7 @@ const fs = require("fs");
 let Database;
 try { Database = require("better-sqlite3"); } catch (e) { Database = null; }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const DB_FILE = "data.db";
 const now = () => new Date().toISOString();
 const SINGLE = "default"; // 单用户：account_profile / style_profile 用固定 id
@@ -96,9 +96,46 @@ function migrate(db) {
       id TEXT PRIMARY KEY, article_id TEXT, media_id TEXT, pushed_at TEXT,
       edit_minutes REAL, retention_rate REAL, published INTEGER DEFAULT 0, note TEXT
     );
+    CREATE TABLE IF NOT EXISTS hot_search (
+      id TEXT PRIMARY KEY, query TEXT, window_hours INTEGER DEFAULT 72,
+      region TEXT DEFAULT 'all', categories TEXT, status TEXT,
+      coverage TEXT, result_count INTEGER DEFAULT 0, error TEXT,
+      created_at TEXT, updated_at TEXT, completed_at TEXT, expires_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_hotsearch_updated ON hot_search(updated_at);
+    CREATE TABLE IF NOT EXISTS hot_search_result (
+      search_id TEXT, cluster_id TEXT, rank INTEGER DEFAULT 0,
+      PRIMARY KEY (search_id, cluster_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hotresult_search ON hot_search_result(search_id, rank);
   `);
+  addColumn(db, "source", "region", "TEXT DEFAULT 'all'");
+  addColumn(db, "source", "category", "TEXT DEFAULT 'general'");
+  addColumn(db, "source", "updated_at", "TEXT");
+  addColumn(db, "hot_item", "language", "TEXT DEFAULT 'unknown'");
+  addColumn(db, "hot_item", "official", "INTEGER DEFAULT 0");
+  addColumn(db, "hot_item", "date_confidence", "TEXT DEFAULT 'reported'");
+  addColumn(db, "hot_item", "metadata", "TEXT");
+  addColumn(db, "hot_cluster", "search_id", "TEXT");
+  addColumn(db, "hot_cluster", "summary", "TEXT");
+  addColumn(db, "hot_cluster", "category", "TEXT");
+  addColumn(db, "hot_cluster", "first_seen", "TEXT");
+  addColumn(db, "hot_cluster", "latest_at", "TEXT");
+  addColumn(db, "hot_cluster", "official_count", "INTEGER DEFAULT 0");
+  addColumn(db, "hot_cluster", "score_breakdown", "TEXT");
+  addColumn(db, "hot_cluster", "status_tags", "TEXT");
+  addColumn(db, "hot_cluster", "angles", "TEXT");
+  addColumn(db, "hot_cluster", "title_candidates", "TEXT");
+  addColumn(db, "hot_cluster", "sources_json", "TEXT");
+  addColumn(db, "hot_cluster", "questions", "TEXT");
+  addColumn(db, "hot_cluster", "updated_at", "TEXT");
   const cur = db.pragma("user_version", { simple: true }) || 0;
   if (cur < SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
+}
+
+function addColumn(db, table, column, declaration) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
 }
 
 // ---------- 单用户档案 ----------
