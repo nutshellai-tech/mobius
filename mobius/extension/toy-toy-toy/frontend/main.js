@@ -585,6 +585,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
 
   // 僵尸题材：重型电磁歼灭炮。底盘、能量核心、供弹环和功能挂件都会随升级真实变化。
   const cannonModel = new THREE.Group();
+  cannonModel.position.y = 1.28;
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x173447, metalness: 0.82, roughness: 0.25 });
   const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x6b8fa0, metalness: 0.9, roughness: 0.14 });
   const pedestal = new THREE.Mesh(
@@ -875,7 +876,7 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   badge.scale.set(1.42, 0.5, 1);
   badge.renderOrder = 18;
   workbenchModel.add(badge);
-  workbenchModel.scale.setScalar(1.38);
+  workbenchModel.scale.setScalar(1.5);
   workbenchModel.position.y = 0.38;
   workbenchModel.visible = false;
   turret.add(workbenchModel);
@@ -1010,6 +1011,11 @@ ticketCtx.fillRect(18, 165, 245, 10);
 const ticketTexture = new THREE.CanvasTexture(ticketCanvas);
 ticketTexture.colorSpace = THREE.SRGBColorSpace;
 const ticketMaterial = new THREE.MeshBasicMaterial({ map: ticketTexture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+const ticketStampMaterial = new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.92, side: THREE.DoubleSide, toneMapped: false });
+const ticketEchoMaterials = [
+  new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+  new THREE.MeshBasicMaterial({ color: 0x62a8ff, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+];
 const projectilePool = [];
 for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
   const mesh = new THREE.Group();
@@ -1028,13 +1034,13 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
   const ticket = new THREE.Group();
   const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.52), ticketMaterial);
   ticket.add(paper);
-  const ticketStamp = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.15, 14), new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.92, side: THREE.DoubleSide, toneMapped: false }));
+  const ticketStamp = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.15, 14), ticketStampMaterial);
   ticketStamp.position.set(0.22, 0.08, 0.012);
   ticket.add(ticketStamp);
   const ticketEchoes = [0.18, 0.34].map((offset, echoIndex) => {
     const echo = new THREE.Mesh(
       new THREE.PlaneGeometry(0.64 - echoIndex * 0.08, 0.4 - echoIndex * 0.05),
-      new THREE.MeshBasicMaterial({ color: echoIndex ? 0x62a8ff : 0xff526a, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      ticketEchoMaterials[echoIndex],
     );
     echo.position.z = offset;
     ticket.add(echo);
@@ -2582,7 +2588,7 @@ function updateTurretUpgradeVisuals(turret, dt) {
   turret.upgradePulse = Math.max(0, turret.upgradePulse - dt * 1.8);
   const modelScale = 1 + turret.upgradePulse * 0.16;
   turret.cannonModel.scale.setScalar(modelScale);
-  turret.workbenchModel.scale.setScalar(1.38 * modelScale);
+  turret.workbenchModel.scale.setScalar(1.5 * modelScale);
 }
 
 function triggerTurretUpgradeEffect(effectId, label) {
@@ -2902,7 +2908,7 @@ function addUpgradeBeam(x, z, color) {
     toneMapped: false,
   });
   const mesh = new THREE.Mesh(upgradeBeamGeometry, material);
-  mesh.position.set(x, 1.12, z);
+  mesh.position.set(x, 2.05, z);
   worldGroup.add(mesh);
   upgradeBeams.push({ mesh, life: 0.82, maxLife: 0.82 });
 }
@@ -2915,7 +2921,11 @@ function addProjectileImpact(projectile, target) {
   if (state.levels.blast > 0) {
     addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.72 + state.levels.blast * 0.16, style);
   } else {
-    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, baseColor, power, style);
+    addShockwave(target.x, target.z, baseColor, 0.42 + power * 0.34);
+    for (let index = 0; index < 3; index += 1) {
+      addFxParticle(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, index ? baseColor : '#ffffff', 0.42 + power * 0.2, theme.id === 'deadline' ? 'ticket' : 'shard');
+    }
+    if (projectile.visualPower >= 2.2) addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * (target.scale || 1), target.z, baseColor, power * 0.72, style);
   }
   if (state.levels.frost > 0) {
     for (let index = 0; index < 3 + state.levels.frost; index += 1) addFxParticle(target.x, 0.9, target.z, '#9beaff', 0.7, 'shard');
@@ -2933,7 +2943,9 @@ function addDefeatEffect(enemy, critical = false) {
 
   if (theme.id === 'deadline') {
     const label = isBoss ? 'FINAL REJECTED' : isElite ? 'P0 RESOLVED' : 'BUG CLOSED';
-    addFxText(enemy.x, Math.max(1.15, enemy.scale * 1.25), enemy.z, critical ? `✓ ${label} · 一次通过` : `✓ ${label}`, critical ? '#ffd84f' : '#8fff65', isBoss ? 1.8 : 0.85, isBoss ? 24 : 12);
+    if (isBoss || isElite || critical || state.random() < 0.18) {
+      addFxText(enemy.x, Math.max(1.15, enemy.scale * 1.25), enemy.z, critical ? `✓ ${label} · 一次通过` : `✓ ${label}`, critical ? '#ffd84f' : '#8fff65', isBoss ? 1.8 : 0.85, isBoss ? 24 : 12);
+    }
     for (let index = 0; index < (isBoss ? 34 : 7); index += 1) addFxParticle(enemy.x, 0.8 * enemy.scale, enemy.z, index % 3 ? '#f5fbff' : '#ff526a', isBoss ? 1.4 : 0.65, 'ticket');
   } else {
     const chunkColor = isBoss ? '#ff526a' : critical ? '#ffd84f' : '#8fff65';
