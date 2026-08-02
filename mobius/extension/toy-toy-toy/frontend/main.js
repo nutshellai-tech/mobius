@@ -582,25 +582,67 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const turret = new THREE.Group();
   turret.position.set(0, 0, 10.2);
   turret.visible = index === 0;
+
+  // 僵尸题材：重型电磁歼灭炮。底盘、能量核心、供弹环和功能挂件都会随升级真实变化。
   const cannonModel = new THREE.Group();
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x173447, metalness: 0.82, roughness: 0.25 });
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x6b8fa0, metalness: 0.9, roughness: 0.14 });
   const pedestal = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.72, 0.92, 0.75, 10),
-    new THREE.MeshStandardMaterial({ color: 0x28475b, metalness: 0.72, roughness: 0.28 }),
+    new THREE.CylinderGeometry(0.66, 0.96, 0.66, 10),
+    baseMaterial,
   );
-  pedestal.position.y = 0.36;
+  pedestal.position.y = 0.34;
   cannonModel.add(pedestal);
+  const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.06, 0.16, 12), trimMaterial);
+  basePlate.position.y = 0.08;
+  cannonModel.add(basePlate);
+  const rateRings = [0, 1].map((ringIndex) => {
+    const material = new THREE.MeshBasicMaterial({ color: ringIndex ? 0xffd84f : 0x4fffd2, transparent: true, opacity: 0.56, toneMapped: false });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.74 + ringIndex * 0.13, 0.035, 6, 28), material);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.7 + ringIndex * 0.08;
+    cannonModel.add(ring);
+    return ring;
+  });
+  for (let legIndex = 0; legIndex < 4; legIndex += 1) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.18, 0.68), baseMaterial);
+    leg.position.set(Math.sin(legIndex * Math.PI / 2) * 0.64, 0.14, Math.cos(legIndex * Math.PI / 2) * 0.64);
+    leg.rotation.y = legIndex * Math.PI / 2;
+    cannonModel.add(leg);
+  }
 
   const pivot = new THREE.Group();
-  pivot.position.y = 0.9;
+  pivot.position.y = 1.02;
   const housingMaterial = new THREE.MeshStandardMaterial({
     color: 0x4fffd2,
-    metalness: 0.48,
-    roughness: 0.25,
+    metalness: 0.62,
+    roughness: 0.2,
     emissive: 0x164f4a,
-    emissiveIntensity: 0.7,
+    emissiveIntensity: 0.82,
   });
-  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.58, 0.9), housingMaterial);
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.66, 0.98), housingMaterial);
+  housing.position.z = -0.08;
   pivot.add(housing);
+  const rearArmor = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.42, 0.22), baseMaterial);
+  rearArmor.position.set(0, 0.02, 0.52);
+  pivot.add(rearArmor);
+  const armorWings = [-1, 1].map((side) => {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.54, 0.72), trimMaterial);
+    wing.position.set(side * 0.63, -0.02, -0.08);
+    wing.rotation.z = side * -0.16;
+    pivot.add(wing);
+    return wing;
+  });
+  const coreMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0x4fffd2,
+    emissiveIntensity: 2.2,
+    metalness: 0.08,
+    roughness: 0.12,
+  });
+  const energyCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.25, 1), coreMaterial);
+  energyCore.position.set(0, 0.03, 0.56);
+  pivot.add(energyCore);
   const barrelMaterial = new THREE.MeshStandardMaterial({
     color: 0xd7f8f2,
     metalness: 0.84,
@@ -608,31 +650,137 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     emissive: 0x4fffd2,
     emissiveIntensity: 0.35,
   });
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.85), barrelMaterial);
-  barrel.position.z = -1.18;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 2.2, 10), barrelMaterial);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = -1.38;
   pivot.add(barrel);
+  const barrelJacket = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.29, 0.72, 10, 1, true), baseMaterial);
+  barrelJacket.rotation.x = Math.PI / 2;
+  barrelJacket.position.z = -0.72;
+  pivot.add(barrelJacket);
+  const muzzleRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.05, 8, 18), trimMaterial);
+  muzzleRing.position.z = -2.49;
+  pivot.add(muzzleRing);
+  const sideBarrels = [-1, 1].map((side) => {
+    const sideBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.085, 1.72, 8), barrelMaterial);
+    sideBarrel.rotation.x = Math.PI / 2;
+    sideBarrel.position.set(side * 0.27, -0.09, -1.25);
+    sideBarrel.visible = false;
+    pivot.add(sideBarrel);
+    return sideBarrel;
+  });
+  const ammoDrums = [-1, 1].map((side) => {
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12), baseMaterial);
+    drum.rotation.z = Math.PI / 2;
+    drum.position.set(side * 0.69, -0.08, 0.2);
+    pivot.add(drum);
+    return drum;
+  });
+  const blastPods = [-1, 1].map((side) => {
+    const podMaterial = new THREE.MeshStandardMaterial({ color: 0xff9f43, emissive: 0x9b3510, emissiveIntensity: 1.1, metalness: 0.5, roughness: 0.24 });
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.52, 8), podMaterial);
+    pod.position.set(side * 0.72, 0.3, -0.16);
+    pod.rotation.z = side * 0.18;
+    pod.visible = false;
+    pivot.add(pod);
+    return pod;
+  });
+  const chainCoils = [-1, 1].map((side) => {
+    const coil = new THREE.Mesh(
+      new THREE.TorusGeometry(0.19, 0.035, 6, 18),
+      new THREE.MeshBasicMaterial({ color: 0xb37cff, transparent: true, opacity: 0.9, toneMapped: false }),
+    );
+    coil.rotation.y = Math.PI / 2;
+    coil.position.set(side * 0.62, 0.14, 0.34);
+    coil.visible = false;
+    pivot.add(coil);
+    return coil;
+  });
+  const frostFins = [-1, 1].map((side) => {
+    const fin = new THREE.Mesh(
+      new THREE.ConeGeometry(0.12, 0.52, 5),
+      new THREE.MeshStandardMaterial({ color: 0xc9f6ff, emissive: 0x43cfff, emissiveIntensity: 1.4, roughness: 0.18 }),
+    );
+    fin.position.set(side * 0.43, 0.54, 0.2);
+    fin.rotation.z = side * -0.38;
+    fin.visible = false;
+    pivot.add(fin);
+    return fin;
+  });
+  const critSight = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.025, 6, 20),
+    new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.92, toneMapped: false }),
+  );
+  critSight.position.set(0, 0.48, -0.72);
+  critSight.visible = false;
+  pivot.add(critSight);
+  const zombieMuzzle = new THREE.Group();
+  zombieMuzzle.position.set(0, 0, -2.58);
+  const muzzleCoreMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const muzzleGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  zombieMuzzle.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), muzzleCoreMaterial));
+  for (let rayIndex = 0; rayIndex < 4; rayIndex += 1) {
+    const ray = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.72, 5), muzzleGlowMaterial);
+    ray.rotation.x = Math.PI / 2;
+    ray.rotation.z = rayIndex * Math.PI / 2;
+    ray.position.z = -0.26;
+    zombieMuzzle.add(ray);
+  }
+  zombieMuzzle.visible = false;
+  pivot.add(zombieMuzzle);
   cannonModel.add(pivot);
   turret.add(cannonModel);
 
-  // 程序员题材不再使用炮台：每个“炮台”变成一个会敲键盘、甩工单的移动救火工位。
+  // 程序员题材：会移动的 P0 救火车，显示器、咖啡、打印机和功能附件都受升级驱动。
   const workbenchModel = new THREE.Group();
+  const chassisMaterial = new THREE.MeshStandardMaterial({ color: 0x172f5d, metalness: 0.68, roughness: 0.28, emissive: 0x071a42, emissiveIntensity: 0.48 });
+  const deskMaterial = new THREE.MeshStandardMaterial({ color: 0x2b68a3, metalness: 0.44, roughness: 0.3, emissive: 0x0b356c, emissiveIntensity: 0.62 });
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.18, 1.05), chassisMaterial);
+  chassis.position.y = 0.32;
+  workbenchModel.add(chassis);
+  [-1, 1].forEach((side) => [-0.32, 0.36].forEach((z) => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.13, 12), new THREE.MeshStandardMaterial({ color: 0x09101c, metalness: 0.5, roughness: 0.5 }));
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(side * 0.68, 0.22, z);
+    workbenchModel.add(wheel);
+  }));
   const desk = new THREE.Mesh(
-    new THREE.BoxGeometry(1.34, 0.16, 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x254d83, metalness: 0.42, roughness: 0.36, emissive: 0x0b2d62, emissiveIntensity: 0.55 }),
+    new THREE.BoxGeometry(1.38, 0.16, 0.88),
+    deskMaterial,
   );
-  desk.position.y = 0.92;
+  desk.position.y = 0.94;
   workbenchModel.add(desk);
   const screenPivot = new THREE.Group();
-  screenPivot.position.set(0, 1.04, -0.12);
+  screenPivot.position.set(0, 1.15, -0.16);
+  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x79d8ff, emissive: 0x2388d4, emissiveIntensity: 1.4, metalness: 0.18, roughness: 0.18 });
   const screen = new THREE.Mesh(
-    new THREE.BoxGeometry(0.72, 0.5, 0.08),
-    new THREE.MeshStandardMaterial({ color: 0x79d8ff, emissive: 0x2388d4, emissiveIntensity: 1.2, metalness: 0.18, roughness: 0.2 }),
+    new THREE.BoxGeometry(0.78, 0.52, 0.09),
+    screenMaterial,
   );
   screenPivot.add(screen);
+  const errorBar = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.012), new THREE.MeshBasicMaterial({ color: 0xff526a, toneMapped: false }));
+  errorBar.position.set(0, 0.12, -0.052);
+  screenPivot.add(errorBar);
+  const codeBars = [0.02, -0.1].map((y, barIndex) => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(barIndex ? 0.36 : 0.52, 0.045, 0.012), new THREE.MeshBasicMaterial({ color: 0x45f0d0, toneMapped: false }));
+    bar.position.set(barIndex ? -0.1 : 0, y, -0.052);
+    screenPivot.add(bar);
+    return bar;
+  });
   const screenStand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.25, 0.1), new THREE.MeshStandardMaterial({ color: 0x9cb5c7, metalness: 0.62, roughness: 0.26 }));
   screenStand.position.y = -0.36;
   screenPivot.add(screenStand);
   workbenchModel.add(screenPivot);
+  const sideScreens = [-1, 1].map((side) => {
+    const sidePivot = new THREE.Group();
+    sidePivot.position.set(side * 0.58, 1.22, -0.1);
+    sidePivot.rotation.y = side * -0.32;
+    const sideScreen = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.35, 0.07), screenMaterial.clone());
+    sidePivot.add(sideScreen);
+    sidePivot.visible = false;
+    workbenchModel.add(sidePivot);
+    return sidePivot;
+  });
   const keyboard = new THREE.Mesh(
     new THREE.BoxGeometry(0.58, 0.055, 0.22),
     new THREE.MeshStandardMaterial({ color: 0xe9f4ff, emissive: 0x4ca9ff, emissiveIntensity: 0.28, metalness: 0.2, roughness: 0.34 }),
@@ -648,13 +796,77 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.24), new THREE.MeshStandardMaterial({ color: 0x45f0d0, emissive: 0x116e71, emissiveIntensity: 0.4, roughness: 0.56 }));
   torso.position.set(0, 1.12, 0.34);
   workbenchModel.add(torso);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.12), new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 }));
-  arm.position.set(-0.23, 1.04, 0.2);
-  arm.rotation.z = -0.65;
-  workbenchModel.add(arm);
+  const armMaterial = new THREE.MeshStandardMaterial({ color: 0xffc59e, roughness: 0.66 });
+  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.12), armMaterial);
+  leftArm.position.set(-0.23, 1.04, 0.2);
+  leftArm.rotation.z = -0.65;
+  workbenchModel.add(leftArm);
+  const rightArm = leftArm.clone();
+  rightArm.position.x = 0.23;
+  rightArm.rotation.z = 0.65;
+  workbenchModel.add(rightArm);
   const coffee = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.18, 10), new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0x7e4c14, emissiveIntensity: 0.45 }));
   coffee.position.set(0.47, 1.12, 0.2);
   workbenchModel.add(coffee);
+  const coffeeTank = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.18, 0.52, 10),
+    new THREE.MeshStandardMaterial({ color: 0xffca5c, emissive: 0xff8a2b, emissiveIntensity: 1.1, metalness: 0.35, roughness: 0.3 }),
+  );
+  coffeeTank.position.set(0.61, 0.72, 0.15);
+  coffeeTank.visible = false;
+  workbenchModel.add(coffeeTank);
+  const printer = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.32, 0.46), new THREE.MeshStandardMaterial({ color: 0xf1f6ff, emissive: 0x4679a8, emissiveIntensity: 0.32, metalness: 0.24, roughness: 0.28 }));
+  printer.position.set(0, 0.72, -0.58);
+  workbenchModel.add(printer);
+  const printerSlot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.055, 0.08), new THREE.MeshBasicMaterial({ color: 0xff526a, toneMapped: false }));
+  printerSlot.position.set(0, 0.8, -0.83);
+  workbenchModel.add(printerSlot);
+  const deadlineMuzzle = new THREE.Group();
+  deadlineMuzzle.position.set(0, 0.8, -0.9);
+  const paperFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.36), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.96, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+  paperFlash.rotation.x = -0.48;
+  deadlineMuzzle.add(paperFlash);
+  const stampFlash = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.92, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
+  stampFlash.position.z = -0.08;
+  deadlineMuzzle.add(stampFlash);
+  deadlineMuzzle.visible = false;
+  workbenchModel.add(deadlineMuzzle);
+  const sirenMaterial = new THREE.MeshStandardMaterial({ color: 0xff526a, emissive: 0xff1744, emissiveIntensity: 1.8, transparent: true, opacity: 0.9 });
+  const siren = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), sirenMaterial);
+  siren.position.set(-0.52, 1.2, 0.2);
+  workbenchModel.add(siren);
+  const networkAntenna = new THREE.Group();
+  const antennaPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.58, 7), new THREE.MeshStandardMaterial({ color: 0xb37cff, emissive: 0x6e3bd1, emissiveIntensity: 1.1 }));
+  antennaPole.position.y = 0.26;
+  networkAntenna.add(antennaPole);
+  [0.12, 0.22].forEach((radius, ringIndex) => {
+    const antennaRing = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.018, 5, 16), new THREE.MeshBasicMaterial({ color: 0xb37cff, toneMapped: false }));
+    antennaRing.position.y = 0.54 + ringIndex * 0.08;
+    networkAntenna.add(antennaRing);
+  });
+  networkAntenna.position.set(0.55, 1.02, -0.12);
+  networkAntenna.visible = false;
+  workbenchModel.add(networkAntenna);
+  const frostFan = new THREE.Group();
+  const fanRing = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 6, 20), new THREE.MeshBasicMaterial({ color: 0x69d8ff, toneMapped: false }));
+  frostFan.add(fanRing);
+  for (let bladeIndex = 0; bladeIndex < 4; bladeIndex += 1) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.025), new THREE.MeshBasicMaterial({ color: 0xc9f6ff, toneMapped: false }));
+    blade.position.y = 0.08;
+    blade.rotation.z = bladeIndex * Math.PI / 2;
+    frostFan.add(blade);
+  }
+  frostFan.position.set(-0.61, 0.72, -0.18);
+  frostFan.rotation.y = Math.PI / 2;
+  frostFan.visible = false;
+  workbenchModel.add(frostFan);
+  const approvalLamp = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.13, 0),
+    new THREE.MeshStandardMaterial({ color: 0x8fff65, emissive: 0x39d85d, emissiveIntensity: 1.7, roughness: 0.18 }),
+  );
+  approvalLamp.position.set(0.5, 1.45, 0.1);
+  approvalLamp.visible = false;
+  workbenchModel.add(approvalLamp);
   const wheelBar = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.07, 0.1), new THREE.MeshStandardMaterial({ color: 0x7e9db9, metalness: 0.62, roughness: 0.3 }));
   wheelBar.position.y = 0.12;
   workbenchModel.add(wheelBar);
@@ -663,8 +875,8 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   badge.scale.set(1.42, 0.5, 1);
   badge.renderOrder = 18;
   workbenchModel.add(badge);
-  workbenchModel.scale.setScalar(1.58);
-  workbenchModel.position.y = 0.62;
+  workbenchModel.scale.setScalar(1.38);
+  workbenchModel.position.y = 0.38;
   workbenchModel.visible = false;
   turret.add(workbenchModel);
   turretGroups.push({
@@ -675,11 +887,36 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     screenPivot,
     keyboard,
     coffee,
+    leftArm,
+    rightArm,
+    printer,
+    siren,
+    sirenMaterial,
     badge,
     housingMaterial,
     barrelMaterial,
+    coreMaterial,
+    energyCore,
+    rateRings,
+    armorWings,
+    sideBarrels,
+    ammoDrums,
+    blastPods,
+    chainCoils,
+    frostFins,
+    critSight,
+    zombieMuzzle,
+    deadlineMuzzle,
+    sideScreens,
+    coffeeTank,
+    networkAntenna,
+    frostFan,
+    approvalLamp,
+    screenMaterial,
     targetRotation: 0,
     recoil: 0,
+    muzzleLife: 0,
+    upgradePulse: 0,
     phase: index * 0.7,
   });
   baseGroup.add(turret);

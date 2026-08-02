@@ -3,7 +3,9 @@
 // 按 SHA-256 缓存微信上传。生图：env IMAGE_GEN_BASE/API 配置后启用；否则生成文字占位封面。
 
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
-const { safeFetch } = require("./safe-fetch");
+const { execFileSync } = require("child_process");
+const { safeFetch, stripHtml } = require("./safe-fetch");
+const { articleRoot, safeSegment } = require("./assets");
 
 const MAGIC = {
   jpg: [0xff, 0xd8, 0xff], png: [0x89, 0x50, 0x4e, 0x47],
@@ -80,4 +82,131 @@ async function generateRemoteCover({ prompt }) {
   } finally { clearTimeout(timer); }
 }
 
-module.exports = { ingestImage, generatePlaceholderCover, generateRemoteCover, detectType, sha256 };
+const COMMONS_HOSTS = new Set(["commons.wikimedia.org", "upload.wikimedia.org"]);
+const OPEN_LICENSE = /^(CC|Creative Commons|Public domain|PD|GFDL)/i;
+
+async function fetchCommons(rawUrl, { maxBytes = 5_000_000, timeoutMs = 18_000 } = {}) {
+  const parsed = new URL(rawUrl);
+  if (parsed.protocol !== "https:" || !COMMONS_HOSTS.has(parsed.hostname)) throw new Error("图片源域名不受信任");
+  try {
+    const result = await safeFetch(parsed.toString(), { httpsOnly: true, maxBytes, timeoutMs, maxRedirects: 3 });
+    if (!result.ok) throw new Error("HTTP " + result.status);
+    return result.buffer;
+  } catch (directError) {
+    // 当前部署环境的国际网络通常需要 proxychains；URL 仅允许固定 Commons 域名，避免 SSRF。
+    try {
+      return execFileSync("proxychains4", ["-q", "curl", "--location", "--fail", "--silent", "--show-error",
+        "--max-time", String(Math.ceil(timeoutMs / 1000)), "--max-filesize", String(maxBytes), parsed.toString()],
+      { timeout: timeoutMs + 3_000, maxBuffer: maxBytes + 64_000 });
+    } catch (proxyError) {
+      throw new Error("Commons 请求失败: " + String(directError?.message || proxyError?.message || "网络不可用").slice(0, 120));
+    }
+  }
+}
+
+function metaText(meta, key, max = 240) {
+  return stripHtml(meta && meta[key] && meta[key].value || "", max).replace(/\s+/g, " ").trim();
+}
+
+function cleanCaption(value, fallback) {
+  return String(value || fallback || "配图").replace(/[\[\]()]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "配图";
+}
+
+function buildSearchPlan(title, bodyMd, count) {
+  const headings = String(bodyMd || "").split(/\r?\n/)
+    .map((line, index) => ({ line: index, text: line.replace(/^##\s+/, "").trim() }))
+    .filter((item) => /^##\s+/.test(String(bodyMd || "").split(/\r?\n/)[item.line]) && item.text);
+  const wanted = Math.max(1, Math.min(Number(count) || 3, 6));
+  const selected = headings.slice(0, wanted);
+  while (selected.length < wanted) selected.push({ line: selected.length ? selected[selected.length - 1].line : 0, text: title });
+  return selected.map((item, index) => ({
+    position: index + 1,
+    afterLine: item.line,
+    heading: item.text || title,
+    query: [title, item.text].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" ").slice(0, 180),
+  }));
+}
+
+async function searchCommons(query, limit = 8) {
+  const url = new URL("https://commons.wikimedia.org/w/api.php");
+  const params = {
+    action: "query", generator: "search", gsrsearch: query, gsrnamespace: "6", gsrlimit: String(Math.min(limit, 12)),
+    prop: "imageinfo", iiprop: "url|mime|size|extmetadata", iiurlwidth: "1000", format: "json", origin: "*",
+  };
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+  const data = JSON.parse((await fetchCommons(url.toString(), { maxBytes: 1_500_000, timeoutMs: 20_000 })).toString("utf8"));
+  return Object.values(data?.query?.pages || {}).map((page) => {
+    const info = page.imageinfo && page.imageinfo[0] || {};
+    const meta = info.extmetadata || {};
+    const license = metaText(meta, "LicenseShortName", 100);
+    return {
+      pageTitle: page.title || "", mime: info.mime || "", url: info.thumburl || info.url || "",
+      sourceUrl: info.url || "", pageUrl: info.descriptionurl || "", width: info.thumbwidth || info.width || 0,
+      height: info.thumbheight || info.height || 0, author: metaText(meta, "Artist", 180) || "Wikimedia Commons contributor",
+      license, licenseUrl: metaText(meta, "LicenseUrl", 500),
+      caption: cleanCaption(metaText(meta, "ObjectName", 100) || metaText(meta, "ImageDescription", 160), String(page.title || "").replace(/^File:/, "")),
+    };
+  }).filter((item) => /^image\/(jpeg|png)$/i.test(item.mime) && item.url && OPEN_LICENSE.test(item.license));
+}
+
+function stripGeneratedImages(bodyMd) {
+  return String(bodyMd || "").replace(/\n?<!-- mobius-image:start -->[\s\S]*?<!-- mobius-image:end -->\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function insertImageBlocks(bodyMd, images) {
+  const lines = stripGeneratedImages(bodyMd).split(/\r?\n/);
+  const headings = lines.map((line, index) => ({ line, index })).filter((item) => /^##\s+/.test(item.line));
+  const placements = [];
+  for (const image of images) {
+    const target = headings[Math.min(image.position - 1, Math.max(0, headings.length - 1))];
+    const after = target ? target.index : Math.min(0, lines.length - 1);
+    const sourceLink = image.source_page_url || image.source_url;
+    const licenseText = image.license_url ? `[${image.license}](${image.license_url})` : image.license;
+    const attribution = `*图${image.position}：${image.caption}；来源：[Wikimedia Commons](${sourceLink})；作者：${image.author}；许可：${licenseText}*`;
+    placements.push({ after, block: ["<!-- mobius-image:start -->", `![图${image.position}：${image.alt_text}](images/${image.filename})`, attribution, "<!-- mobius-image:end -->"] });
+  }
+  placements.sort((a, b) => b.after - a.after);
+  for (const item of placements) lines.splice(item.after + 1, 0, "", ...item.block, "");
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function collectArticleImages({ extDataDir, username, articleId, title, bodyMd, count = 3, logger }) {
+  const imagesDir = path.join(articleRoot(extDataDir, username, articleId), "images");
+  fs.rmSync(imagesDir, { recursive: true, force: true });
+  fs.mkdirSync(imagesDir, { recursive: true });
+  const plan = buildSearchPlan(title, bodyMd, count);
+  const images = [];
+  const used = new Set();
+  const warnings = [];
+  for (const item of plan) {
+    let candidates = [];
+    try { candidates = await searchCommons(item.query, 10); }
+    catch (error) { warnings.push(`「${item.heading}」检索失败：${error.message || error}`); continue; }
+    const candidate = candidates.find((entry) => !used.has(entry.sourceUrl || entry.url));
+    if (!candidate) { warnings.push(`「${item.heading}」未找到开放许可的 JPG/PNG 图片`); continue; }
+    try {
+      const buffer = await fetchCommons(candidate.url, { maxBytes: 5_000_000, timeoutMs: 25_000 });
+      const type = detectType(buffer);
+      if (!type || !["jpg", "png"].includes(type)) throw new Error("图片格式不是 JPG/PNG");
+      const position = images.length + 1;
+      const caption = cleanCaption(candidate.caption, item.heading);
+      const filename = `${String(position).padStart(2, "0")}-${safeSegment(caption, "配图", 54)}.${type}`;
+      const filePath = path.join(imagesDir, filename);
+      fs.writeFileSync(filePath, buffer);
+      used.add(candidate.sourceUrl || candidate.url);
+      images.push({
+        id: `img_${crypto.randomBytes(8).toString("hex")}`, kind: "inline", position, prompt: item.query,
+        file_path: filePath, filename, content_hash: sha256(buffer), caption, alt_text: item.heading || caption,
+        source_url: candidate.sourceUrl || candidate.url, source_page_url: candidate.pageUrl,
+        author: candidate.author, license: candidate.license, license_url: candidate.licenseUrl,
+        search_query: item.query, width: candidate.width, height: candidate.height, bytes: buffer.length,
+        metadata: JSON.stringify({ commons_title: candidate.pageTitle }), created_at: new Date().toISOString(),
+      });
+    } catch (error) { warnings.push(`「${item.heading}」图片下载失败：${error.message || error}`); }
+  }
+  if (logger && warnings.length) warnings.forEach((warning) => logger.warn(warning));
+  return { images, bodyMd: images.length ? insertImageBlocks(bodyMd, images) : stripGeneratedImages(bodyMd), warnings };
+}
+
+module.exports = { ingestImage, generatePlaceholderCover, generateRemoteCover, detectType, sha256,
+  fetchCommons, searchCommons, stripGeneratedImages, insertImageBlocks, collectArticleImages, buildSearchPlan };

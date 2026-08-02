@@ -13,10 +13,10 @@ function defaultConfig() {
     wx: { appid: "", secret: "", note: "" },
     account_profile: { positioning: "", audience: "", forbidden: "", goals: "", tone: "" },
     style: { tone: "", structure: "", syntax: "", opinion_strength: "", banned_phrases: "" },
-    budgets: { per_article_search: 6, per_article_tokens: 20000, per_article_images: 1, per_article_amount: 2.0, daily_amount: 20.0 },
+    budgets: { per_article_search: 6, per_article_tokens: 20000, per_article_images: 3, per_article_amount: 2.0, daily_amount: 20.0 },
     ai_declaration: "本文由作者借助 AI 辅助整理资料与初稿，最终观点与文字经人工核实与修改。",
     model_key: "",
-    inline_images: false,
+    inline_images: true,
   };
 }
 

@@ -9,7 +9,7 @@ const fs = require("fs");
 let Database;
 try { Database = require("better-sqlite3"); } catch (e) { Database = null; }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const DB_FILE = "data.db";
 const now = () => new Date().toISOString();
 const SINGLE = "default"; // 单用户：account_profile / style_profile 用固定 id
@@ -129,6 +129,19 @@ function migrate(db) {
   addColumn(db, "hot_cluster", "sources_json", "TEXT");
   addColumn(db, "hot_cluster", "questions", "TEXT");
   addColumn(db, "hot_cluster", "updated_at", "TEXT");
+  addColumn(db, "article_image", "filename", "TEXT");
+  addColumn(db, "article_image", "caption", "TEXT");
+  addColumn(db, "article_image", "alt_text", "TEXT");
+  addColumn(db, "article_image", "source_url", "TEXT");
+  addColumn(db, "article_image", "source_page_url", "TEXT");
+  addColumn(db, "article_image", "author", "TEXT");
+  addColumn(db, "article_image", "license", "TEXT");
+  addColumn(db, "article_image", "license_url", "TEXT");
+  addColumn(db, "article_image", "search_query", "TEXT");
+  addColumn(db, "article_image", "width", "INTEGER");
+  addColumn(db, "article_image", "height", "INTEGER");
+  addColumn(db, "article_image", "bytes", "INTEGER");
+  addColumn(db, "article_image", "metadata", "TEXT");
   const cur = db.pragma("user_version", { simple: true }) || 0;
   if (cur < SCHEMA_VERSION) db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
@@ -190,6 +203,36 @@ function listArticles(db, limit = 50) {
   return db.prepare("SELECT id,title,state,framework,digest,cover_url,created_at,updated_at FROM article ORDER BY updated_at DESC LIMIT ?").all(limit);
 }
 
+function listArticleImages(db, articleId) {
+  return db.prepare("SELECT * FROM article_image WHERE article_id=? ORDER BY position ASC, created_at ASC").all(articleId);
+}
+
+function replaceArticleImages(db, articleId, images) {
+  const del = db.prepare("DELETE FROM article_image WHERE article_id=?");
+  const ins = db.prepare(`INSERT INTO article_image
+    (id,article_id,kind,position,prompt,file_path,content_hash,wx_media_id,wx_url,created_at,
+     filename,caption,alt_text,source_url,source_page_url,author,license,license_url,search_query,width,height,bytes,metadata)
+    VALUES (@id,@article_id,@kind,@position,@prompt,@file_path,@content_hash,@wx_media_id,@wx_url,@created_at,
+     @filename,@caption,@alt_text,@source_url,@source_page_url,@author,@license,@license_url,@search_query,@width,@height,@bytes,@metadata)`);
+  const run = db.transaction((rows) => {
+    del.run(articleId);
+    for (const image of rows || []) {
+      ins.run({
+        id: image.id, article_id: articleId, kind: image.kind || "inline", position: image.position || 0,
+        prompt: image.prompt || "", file_path: image.file_path || "", content_hash: image.content_hash || "",
+        wx_media_id: image.wx_media_id || "", wx_url: image.wx_url || "", created_at: image.created_at || now(),
+        filename: image.filename || "", caption: image.caption || "", alt_text: image.alt_text || "",
+        source_url: image.source_url || "", source_page_url: image.source_page_url || "",
+        author: image.author || "", license: image.license || "", license_url: image.license_url || "",
+        search_query: image.search_query || "", width: Number(image.width) || 0, height: Number(image.height) || 0,
+        bytes: Number(image.bytes) || 0, metadata: image.metadata || "",
+      });
+    }
+  });
+  run(images || []);
+  return listArticleImages(db, articleId);
+}
+
 module.exports = { open, close, migrate, SINGLE, now,
   getProfile, setProfile, getStyle, setStyle,
-  upsertArticle, getArticle, listArticles };
+  upsertArticle, getArticle, listArticles, listArticleImages, replaceArticleImages };
