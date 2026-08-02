@@ -985,8 +985,10 @@ enemyShadowMesh.frustumCulled = false;
 enemyShadowMesh.count = 0;
 worldGroup.add(enemyShadowMesh);
 
-const projectileGeometry = new THREE.SphereGeometry(0.13, 8, 6);
+const projectileGeometry = new THREE.IcosahedronGeometry(0.14, 1);
 const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffe36d, toneMapped: false });
+const projectileAuraMaterial = new THREE.MeshBasicMaterial({ color: 0x4fffd2, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+const projectileTrailMaterial = new THREE.MeshBasicMaterial({ color: 0xff9f43, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 const ticketCanvas = document.createElement('canvas');
 ticketCanvas.width = 320;
 ticketCanvas.height = 200;
@@ -1012,21 +1014,63 @@ const projectilePool = [];
 for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
   const mesh = new THREE.Group();
   const energy = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), projectileAuraMaterial);
+  const trail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.9, 6), projectileTrailMaterial);
+  trail.rotation.x = Math.PI / 2;
+  trail.position.z = 0.42;
+  const shellFins = new THREE.Group();
+  for (let finIndex = 0; finIndex < 4; finIndex += 1) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.18, 0.25), projectileAuraMaterial);
+    fin.rotation.z = finIndex * Math.PI / 2;
+    shellFins.add(fin);
+  }
+  shellFins.visible = false;
   const ticket = new THREE.Group();
   const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.52), ticketMaterial);
   ticket.add(paper);
+  const ticketStamp = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.15, 14), new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.92, side: THREE.DoubleSide, toneMapped: false }));
+  ticketStamp.position.set(0.22, 0.08, 0.012);
+  ticket.add(ticketStamp);
+  const ticketEchoes = [0.18, 0.34].map((offset, echoIndex) => {
+    const echo = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.64 - echoIndex * 0.08, 0.4 - echoIndex * 0.05),
+      new THREE.MeshBasicMaterial({ color: echoIndex ? 0x62a8ff : 0xff526a, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+    );
+    echo.position.z = offset;
+    ticket.add(echo);
+    return echo;
+  });
   ticket.rotation.x = -0.72;
   ticket.scale.setScalar(1.38);
   ticket.visible = false;
-  mesh.add(energy, ticket);
+  mesh.add(trail, aura, energy, shellFins, ticket);
   mesh.visible = false;
   worldGroup.add(mesh);
-  projectilePool.push({ active: false, mesh, energy, ticket, x: 0, y: 0, z: 0, target: null, damage: 0, lane: 0, spin: i * 0.17 });
+  projectilePool.push({
+    active: false,
+    mesh,
+    energy,
+    aura,
+    trail,
+    shellFins,
+    ticket,
+    ticketStamp,
+    ticketEchoes,
+    x: 0,
+    y: 0,
+    z: 0,
+    target: null,
+    damage: 0,
+    lane: 0,
+    spin: i * 0.17,
+    visualPower: 1,
+  });
 }
 
 const matrixDummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
 const enemyTint = new THREE.Color();
+const muzzleWorldPosition = new THREE.Vector3();
 const enemies = [];
 const bonusTargets = [];
 const choiceGates = [];
@@ -1038,6 +1082,10 @@ const BONUS_CONFIG = Object.freeze({
   barrier: { color: 0xff7a55, hp: 260, speed: 0.82, score: 1400, scale: 1.35 },
 });
 const shockwaves = [];
+const explosionGeometry = new THREE.IcosahedronGeometry(0.48, 1);
+const upgradeBeamGeometry = new THREE.CylinderGeometry(0.2, 0.5, 4.2, 12, 1, true);
+const explosionMeshes = [];
+const upgradeBeams = [];
 const fxItems = [];
 const lightningItems = [];
 const speechBubbles = [];
@@ -1076,6 +1124,8 @@ const state = {
   speed: 1,
   frenzyUntil: 0,
   overdriveUntil: 0,
+  turretUpgradeUntil: 0,
+  lastTurretUpgrade: '',
   bailoutUsed: false,
   bossSpawned: false,
   bossAlive: false,
@@ -1483,15 +1533,19 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   core.visible = theme.id === 'zombie';
   baseLight.color.setHex(theme.palette.core);
   projectileMaterial.color.setHex(theme.palette.projectile);
+  projectileAuraMaterial.color.setHex(theme.palette.core);
+  projectileTrailMaterial.color.setHex(theme.id === 'deadline' ? 0xff526a : 0xff9f43);
   focusLaneMaterial.color.setHex(theme.palette.core);
   focusRailMaterial.color.setHex(theme.palette.core);
   for (const visual of Object.values(enemyVisuals)) {
     visual.mesh.material = visual.materials[theme.id];
   }
-  turretGroups.forEach(({ housingMaterial, barrelMaterial, cannonModel, workbenchModel }) => {
+  turretGroups.forEach(({ housingMaterial, barrelMaterial, coreMaterial, screenMaterial, cannonModel, workbenchModel }) => {
     housingMaterial.color.setHex(theme.palette.core);
     housingMaterial.emissive.setHex(theme.palette.core);
     barrelMaterial.emissive.setHex(theme.palette.core);
+    coreMaterial.emissive.setHex(theme.palette.core);
+    screenMaterial.emissive.setHex(theme.id === 'deadline' ? 0x2388d4 : theme.palette.core);
     cannonModel.visible = theme.id === 'zombie';
     workbenchModel.visible = theme.id === 'deadline';
   });
@@ -1561,6 +1615,14 @@ function clearWorldState() {
     worldGroup.remove(wave.mesh);
     wave.mesh.material.dispose();
   });
+  explosionMeshes.splice(0).forEach((burst) => {
+    worldGroup.remove(burst.mesh);
+    burst.mesh.material.dispose();
+  });
+  upgradeBeams.splice(0).forEach((beam) => {
+    worldGroup.remove(beam.mesh);
+    beam.mesh.material.dispose();
+  });
   fxItems.length = 0;
   lightningItems.length = 0;
 }
@@ -1597,6 +1659,8 @@ function resetGame() {
   state.currentUpgrades = [];
   state.frenzyUntil = 0;
   state.overdriveUntil = 0;
+  state.turretUpgradeUntil = 0;
+  state.lastTurretUpgrade = '';
   state.bailoutUsed = false;
   state.bossSpawned = false;
   state.bossAlive = false;
@@ -2223,6 +2287,7 @@ function resolveChoiceGate(gate) {
   if (!gate?.active || state.gatePhase !== 'active') return;
   const copy = gate.effect.copy[currentTheme().id] || gate.effect.copy.zombie;
   const detail = gate.effect.apply();
+  triggerTurretUpgradeEffect(gate.effect.id, copy[0]);
   state.lastGateEffect = gate.effect.id;
   state.telemetry.gatesChosen += 1;
   state.bonuses.count += 1;
@@ -2393,15 +2458,28 @@ function fireProjectile(turret, target, damage) {
   if (!projectile || !target) return;
   projectile.active = true;
   projectile.mesh.visible = true;
-  projectile.x = turret.group.position.x + randomBetween(-0.14, 0.14);
-  projectile.y = 1.02;
-  projectile.z = turret.group.position.z - 1.1;
+  const muzzle = currentTheme().id === 'deadline' ? turret.deadlineMuzzle : turret.zombieMuzzle;
+  muzzle.getWorldPosition(muzzleWorldPosition);
+  projectile.x = muzzleWorldPosition.x + randomBetween(-0.05, 0.05);
+  projectile.y = muzzleWorldPosition.y;
+  projectile.z = muzzleWorldPosition.z;
   projectile.target = target;
   projectile.damage = damage;
   projectile.lane = state.focusLane;
+  projectile.visualPower = clamp(Math.sqrt(Math.max(1, damage) / 22), 0.9, 3.2);
   projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
+  projectile.energy.scale.setScalar(0.86 + projectile.visualPower * 0.16);
+  projectile.aura.scale.setScalar(0.82 + projectile.visualPower * 0.22);
+  projectile.trail.scale.set(0.85 + projectile.visualPower * 0.08, 0.85 + projectile.visualPower * 0.08, 1 + projectile.visualPower * 0.2);
+  projectile.shellFins.visible = currentTheme().id === 'zombie' && (state.levels.blast > 0 || state.levels.multi > 0);
+  projectile.ticket.scale.setScalar(1.22 + Math.min(0.42, projectile.visualPower * 0.1));
+  projectile.ticketStamp.scale.setScalar(1 + state.levels.crit * 0.12 + state.bonuses.crit * 0.7);
+  projectile.ticketEchoes.forEach((echo, echoIndex) => {
+    echo.visible = state.levels.multi > echoIndex || state.levels.chain > echoIndex;
+  });
   projectile.ticket.rotation.z = randomBetween(-0.22, 0.22);
   turret.recoil = 1;
+  turret.muzzleLife = 0.13;
   state.telemetry.shots += 1;
 }
 
@@ -2432,6 +2510,104 @@ function formationSlot(index, count) {
   };
 }
 
+function updateTurretUpgradeVisuals(turret, dt) {
+  const theme = currentTheme();
+  const overdrive = state.elapsed < state.overdriveUntil;
+  const upgradePulse = state.elapsed < state.turretUpgradeUntil ? 1 : 0;
+  const damageTier = clamp(Math.max(state.levels.damage - 1, Math.floor(Math.log(Math.max(1, state.bonuses.damage)) / Math.log(1.55))), 0, 4);
+  const rateTier = clamp(Math.max(state.levels.rate - 1, Math.floor(Math.log(Math.max(1, state.bonuses.rate)) / Math.log(1.42))), 0, 4);
+  const time = state.elapsed + turret.phase;
+
+  turret.sideBarrels.forEach((mesh, barrelIndex) => {
+    mesh.visible = state.levels.multi > barrelIndex || damageTier >= barrelIndex + 2;
+    mesh.scale.z = 1 + damageTier * 0.08;
+  });
+  turret.blastPods.forEach((mesh, podIndex) => {
+    mesh.visible = state.levels.blast > podIndex || state.levels.blast >= 3;
+    mesh.rotation.y += dt * (1.2 + state.levels.blast * 0.35);
+  });
+  turret.chainCoils.forEach((mesh, coilIndex) => {
+    mesh.visible = state.levels.chain > coilIndex || state.levels.chain >= 3;
+    mesh.rotation.z += dt * (2.4 + state.levels.chain * 0.7) * (coilIndex ? -1 : 1);
+    mesh.material.opacity = 0.56 + Math.sin(time * 7 + coilIndex) * 0.22;
+  });
+  turret.frostFins.forEach((mesh, finIndex) => {
+    mesh.visible = state.levels.frost > finIndex || state.levels.frost >= 3;
+    mesh.position.y = 0.54 + Math.sin(time * 3.4 + finIndex) * 0.04;
+  });
+  turret.critSight.visible = state.levels.crit > 0 || state.bonuses.crit >= 0.05;
+  turret.critSight.rotation.z += dt * (1.4 + state.levels.crit * 0.5);
+  turret.critSight.scale.setScalar(1 + Math.sin(time * 5) * 0.08);
+  turret.rateRings.forEach((ring, ringIndex) => {
+    ring.rotation.z += dt * (1.8 + rateTier * 1.1) * (ringIndex ? -1 : 1);
+    ring.material.opacity = 0.3 + rateTier * 0.1 + (overdrive ? 0.28 : 0) + Math.sin(time * 5 + ringIndex) * 0.08;
+  });
+  turret.ammoDrums.forEach((drum, drumIndex) => {
+    drum.rotation.x += dt * (2.4 + rateTier * 1.6) * (drumIndex ? -1 : 1);
+  });
+  const coreScale = 1 + damageTier * 0.055 + Math.sin(time * (overdrive ? 13 : 5)) * (overdrive ? 0.16 : 0.06) + upgradePulse * 0.18;
+  turret.energyCore.scale.setScalar(coreScale);
+  turret.coreMaterial.emissiveIntensity = 1.8 + damageTier * 0.55 + (overdrive ? 3.4 : 0) + upgradePulse * 2.2;
+  turret.housingMaterial.emissiveIntensity = 0.72 + damageTier * 0.2 + (overdrive ? 1.5 : 0) + upgradePulse;
+  turret.barrelMaterial.emissiveIntensity = 0.28 + rateTier * 0.16 + (overdrive ? 1.1 : 0);
+
+  turret.sideScreens.forEach((screen, screenIndex) => {
+    screen.visible = state.levels.multi > screenIndex || damageTier >= screenIndex + 2;
+    screen.rotation.z = Math.sin(time * 2.8 + screenIndex) * 0.025;
+  });
+  turret.coffeeTank.visible = rateTier > 0 || overdrive;
+  turret.coffeeTank.scale.y = 1 + rateTier * 0.12 + (overdrive ? 0.24 : 0);
+  turret.networkAntenna.visible = state.levels.chain > 0;
+  turret.networkAntenna.rotation.y += dt * (1.1 + state.levels.chain * 0.45);
+  turret.frostFan.visible = state.levels.frost > 0;
+  turret.frostFan.rotation.z += dt * (4 + state.levels.frost * 2.2);
+  turret.approvalLamp.visible = state.levels.crit > 0 || state.bonuses.crit >= 0.05;
+  turret.approvalLamp.rotation.y += dt * 2.6;
+  turret.approvalLamp.scale.setScalar(1 + Math.sin(time * 7) * 0.12);
+  turret.screenMaterial.emissiveIntensity = 1.15 + damageTier * 0.3 + (overdrive ? 2.2 : 0) + upgradePulse * 1.2;
+  turret.sirenMaterial.emissiveIntensity = 1.2 + (overdrive ? 4 : 0) + upgradePulse * 2.4;
+  turret.sirenMaterial.opacity = 0.68 + Math.sin(time * (overdrive ? 16 : 5)) * 0.22;
+  turret.siren.scale.setScalar(1 + Math.sin(time * 9) * (overdrive ? 0.22 : 0.08));
+
+  turret.muzzleLife = Math.max(0, turret.muzzleLife - dt);
+  const muzzleProgress = clamp(turret.muzzleLife / 0.13, 0, 1);
+  turret.zombieMuzzle.visible = theme.id === 'zombie' && muzzleProgress > 0;
+  turret.deadlineMuzzle.visible = theme.id === 'deadline' && muzzleProgress > 0;
+  const muzzleScale = 0.42 + muzzleProgress * (1.15 + damageTier * 0.12);
+  turret.zombieMuzzle.scale.setScalar(muzzleScale);
+  turret.zombieMuzzle.rotation.z += dt * 16;
+  turret.deadlineMuzzle.scale.setScalar(0.62 + muzzleProgress * (0.72 + rateTier * 0.08));
+  turret.deadlineMuzzle.rotation.z = Math.sin(time * 23) * 0.1;
+  turret.upgradePulse = Math.max(0, turret.upgradePulse - dt * 1.8);
+  const modelScale = 1 + turret.upgradePulse * 0.16;
+  turret.cannonModel.scale.setScalar(modelScale);
+  turret.workbenchModel.scale.setScalar(1.38 * modelScale);
+}
+
+function triggerTurretUpgradeEffect(effectId, label) {
+  state.turretUpgradeUntil = Math.max(state.turretUpgradeUntil, state.elapsed + 1.45);
+  state.lastTurretUpgrade = effectId;
+  const theme = currentTheme();
+  const color = effectId.includes('frost') ? '#69d8ff'
+    : effectId.includes('chain') ? '#b37cff'
+      : effectId.includes('blast') ? '#ff9f43'
+        : effectId.includes('crit') ? '#ffd84f'
+          : theme.palette.accent;
+  const cannonCount = Math.min(MAX_CANNONS, state.levels.cannon);
+  turretGroups.slice(0, cannonCount).forEach((turret, turretIndex) => {
+    turret.upgradePulse = 1;
+    const slot = formationSlot(turretIndex, cannonCount);
+    const x = WORLD.lanes[state.focusLane] + slot.x;
+    const z = 10.2 + slot.z;
+    addUpgradeBeam(x, z, color);
+    addShockwave(x, z, color, 2.1);
+    for (let particleIndex = 0; particleIndex < 12; particleIndex += 1) {
+      addFxParticle(x, 0.7, z, color, 0.8, particleIndex % 3 === 0 ? 'shard' : 'particle');
+    }
+  });
+  addFxText(WORLD.lanes[state.focusLane], 3.1, 9.2, theme.id === 'deadline' ? `热修部署 · ${label}` : `炮台进化 · ${label}`, color, 1.45, 18);
+}
+
 function updateTurrets(dt) {
   const cannonCount = Math.min(MAX_CANNONS, state.levels.cannon);
   const laneX = WORLD.lanes[state.focusLane];
@@ -2451,8 +2627,11 @@ function updateTurrets(dt) {
       turret.recoil = 0;
       turret.pivot.position.z = 0;
       turret.keyboard.rotation.x = 0;
+      turret.zombieMuzzle.visible = false;
+      turret.deadlineMuzzle.visible = false;
       return;
     }
+    updateTurretUpgradeVisuals(turret, dt);
     const slot = formationSlot(index, cannonCount);
     const targetX = laneX + slot.x;
     const targetZ = 10.2 + slot.z;
@@ -2473,8 +2652,11 @@ function updateTurrets(dt) {
     turret.pivot.position.z = turret.recoil * 0.16;
     turret.keyboard.rotation.x = -turret.recoil * 0.72;
     turret.keyboard.position.y = 1.04 - turret.recoil * 0.07;
+    const typingSpeed = 7 + Math.max(0, state.levels.rate - 1) * 2.2 + (state.elapsed < state.overdriveUntil ? 8 : 0);
+    turret.leftArm.rotation.x = Math.sin(state.elapsed * typingSpeed + turret.phase) * 0.42 - turret.recoil * 0.34;
+    turret.rightArm.rotation.x = Math.sin(state.elapsed * typingSpeed + turret.phase + Math.PI) * 0.42 - turret.recoil * 0.34;
     turret.coffee.rotation.z = Math.sin(state.elapsed * 7 + turret.phase) * 0.06 + turret.recoil * 0.22;
-    turret.workbenchModel.position.y = 0.62 + Math.abs(Math.sin(state.elapsed * 5.8 + turret.phase)) * 0.08;
+    turret.workbenchModel.position.y = 0.38 + Math.abs(Math.sin(state.elapsed * 5.8 + turret.phase)) * 0.055;
     const badgePulse = 1 + Math.sin(state.elapsed * 4.2 + turret.phase) * 0.045 + turret.recoil * 0.08;
     turret.badge.scale.set(1.42 * badgePulse, 0.5 * badgePulse, 1);
     const scale = slot.scale + (state.focusLane === 1 ? 0.02 : 0);
@@ -2518,6 +2700,7 @@ function updateProjectiles(dt) {
       projectile.x = target.x;
       projectile.y = targetY;
       projectile.z = target.z;
+      addProjectileImpact(projectile, target);
       applyDamage(target, projectile.damage, { primary: true });
       retireProjectile(projectile);
       continue;
@@ -2526,10 +2709,20 @@ function updateProjectiles(dt) {
     projectile.y += (dy / distance) * step;
     projectile.z += (dz / distance) * step;
     projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
+    projectile.mesh.lookAt(target.x, targetY, target.z);
     projectile.spin += dt * 8;
+    projectile.energy.rotation.x += dt * 9;
+    projectile.energy.rotation.z += dt * 12;
+    projectile.aura.scale.setScalar((0.82 + projectile.visualPower * 0.22) * (1 + Math.sin(projectile.spin * 1.8) * 0.12));
+    projectile.shellFins.rotation.z += dt * 11;
     if (state.themeId === 'deadline') {
       projectile.ticket.rotation.z = Math.sin(projectile.spin) * 0.34;
       projectile.ticket.rotation.y += dt * 7.5;
+      projectile.ticketStamp.rotation.z -= dt * 9;
+      projectile.ticketEchoes.forEach((echo, echoIndex) => {
+        echo.position.x = Math.sin(projectile.spin * 1.4 + echoIndex) * 0.08;
+        echo.position.y = Math.cos(projectile.spin * 1.2 + echoIndex) * 0.06;
+      });
     }
   }
 }
@@ -2648,22 +2841,7 @@ function killEnemy(enemy, critical = false) {
   const comboBonus = 1 + Math.min(2.5, state.combo / 80);
   state.score += Math.round(enemy.score * comboBonus * (critical ? 1.18 : 1));
   state.shake = Math.max(state.shake, enemy.type === 'boss' ? 1.45 : 0.08 * enemy.scale);
-  addShockwave(
-    enemy.x,
-    enemy.z,
-    enemy.type === 'boss' ? cssHex(theme.palette.enemies.boss) : theme.palette.secondary,
-    enemy.type === 'boss' ? 5.5 : 0.7 + enemy.scale * 0.4,
-  );
-  const particles = enemy.type === 'boss' ? 55 : Math.min(14, 4 + Math.round(enemy.scale * 4));
-  for (let i = 0; i < particles; i += 1) {
-    addFxParticle(
-      enemy.x,
-      enemy.scale * 0.7,
-      enemy.z,
-      enemy.type === 'boss' ? cssHex(theme.palette.enemies.boss) : theme.palette.secondary,
-      enemy.type === 'boss' ? 1.6 : 0.75,
-    );
-  }
+  addDefeatEffect(enemy, critical);
 
   if (enemy.type === 'boss') {
     state.bossAlive = false;
@@ -2676,6 +2854,102 @@ function killEnemy(enemy, critical = false) {
   } else if (performance.now() - state.lastKillSoundAt > 105) {
     state.lastKillSoundAt = performance.now();
     sfx.hit();
+  }
+}
+
+function addExplosionBurst(x, y, z, color, power = 1, style = 'energy') {
+  if (explosionMeshes.length < 42) {
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+      wireframe: style === 'digital',
+    });
+    const mesh = new THREE.Mesh(explosionGeometry, material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(randomBetween(0, Math.PI), randomBetween(0, Math.PI), randomBetween(0, Math.PI));
+    worldGroup.add(mesh);
+    explosionMeshes.push({ mesh, life: 0.46 + power * 0.08, maxLife: 0.46 + power * 0.08, power, style });
+  }
+  addShockwave(x, z, color, 0.9 + power * 0.9);
+  if (power >= 1.15) addShockwave(x, z, '#ffffff', 0.45 + power * 0.45);
+  const count = Math.min(28, 6 + Math.round(power * 8));
+  for (let index = 0; index < count; index += 1) {
+    const shape = style === 'digital'
+      ? (index % 2 ? 'ticket' : 'shard')
+      : index % 3 === 0 ? 'shard' : 'particle';
+    addFxParticle(x, y, z, index % 4 === 0 ? '#ffffff' : color, 0.55 + power * 0.36, shape);
+  }
+}
+
+function addUpgradeBeam(x, z, color) {
+  if (upgradeBeams.length >= MAX_CANNONS * 2) return;
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.38,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(upgradeBeamGeometry, material);
+  mesh.position.set(x, 2.05, z);
+  worldGroup.add(mesh);
+  upgradeBeams.push({ mesh, life: 0.82, maxLife: 0.82 });
+}
+
+function addProjectileImpact(projectile, target) {
+  const theme = currentTheme();
+  const style = theme.id === 'deadline' ? 'digital' : 'energy';
+  const baseColor = theme.id === 'deadline' ? '#62a8ff' : theme.palette.accent;
+  const power = clamp(0.36 + projectile.visualPower * 0.16, 0.45, 0.92);
+  if (state.levels.blast > 0) {
+    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.72 + state.levels.blast * 0.16, style);
+  } else {
+    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, baseColor, power, style);
+  }
+  if (state.levels.frost > 0) {
+    for (let index = 0; index < 3 + state.levels.frost; index += 1) addFxParticle(target.x, 0.9, target.z, '#9beaff', 0.7, 'shard');
+  }
+}
+
+function addDefeatEffect(enemy, critical = false) {
+  const theme = currentTheme();
+  const isBoss = enemy.type === 'boss';
+  const isElite = ['elite', 'tank'].includes(enemy.type);
+  const color = isBoss ? cssHex(theme.palette.enemies.boss) : theme.id === 'deadline' ? '#45f0d0' : theme.palette.secondary;
+  const style = theme.id === 'deadline' ? 'digital' : 'energy';
+  const power = isBoss ? 3.2 : isElite ? 1.35 + enemy.scale * 0.18 : 0.72 + enemy.scale * 0.15;
+  addExplosionBurst(enemy.x, Math.max(0.65, enemy.scale * 0.68), enemy.z, color, power, style);
+
+  if (theme.id === 'deadline') {
+    const label = isBoss ? 'FINAL REJECTED' : isElite ? 'P0 RESOLVED' : 'BUG CLOSED';
+    addFxText(enemy.x, Math.max(1.15, enemy.scale * 1.25), enemy.z, critical ? `✓ ${label} · 一次通过` : `✓ ${label}`, critical ? '#ffd84f' : '#8fff65', isBoss ? 1.8 : 0.85, isBoss ? 24 : 12);
+    for (let index = 0; index < (isBoss ? 34 : 7); index += 1) addFxParticle(enemy.x, 0.8 * enemy.scale, enemy.z, index % 3 ? '#f5fbff' : '#ff526a', isBoss ? 1.4 : 0.65, 'ticket');
+  } else {
+    const chunkColor = isBoss ? '#ff526a' : critical ? '#ffd84f' : '#8fff65';
+    for (let index = 0; index < (isBoss ? 38 : 6 + Math.round(enemy.scale * 3)); index += 1) {
+      addFxParticle(enemy.x, 0.75 * enemy.scale, enemy.z, index % 4 === 0 ? '#ff6b57' : chunkColor, isBoss ? 1.45 : 0.62 + enemy.scale * 0.12, 'shard');
+    }
+    if (isElite || critical) addFxText(enemy.x, 1.2 * enemy.scale, enemy.z, isBoss ? '尸王核心崩解' : critical ? '核心粉碎' : '精英击破', chunkColor, isBoss ? 1.7 : 0.72, isBoss ? 24 : 12);
+  }
+
+  if (isBoss) {
+    for (let burstIndex = 0; burstIndex < 6; burstIndex += 1) {
+      const angle = burstIndex / 6 * Math.PI * 2;
+      addExplosionBurst(
+        enemy.x + Math.cos(angle) * enemy.scale * 0.72,
+        0.8 + (burstIndex % 3) * enemy.scale * 0.42,
+        enemy.z + Math.sin(angle) * enemy.scale * 0.46,
+        burstIndex % 2 ? color : '#ffd84f',
+        1.5 + burstIndex * 0.12,
+        style,
+      );
+    }
   }
 }
 
@@ -2705,6 +2979,34 @@ function updateShockwaves(dt) {
       shockwaves.splice(index, 1);
     }
   }
+  for (let index = explosionMeshes.length - 1; index >= 0; index -= 1) {
+    const burst = explosionMeshes[index];
+    burst.life -= dt;
+    const progress = 1 - burst.life / burst.maxLife;
+    const scale = (0.28 + Math.sin(Math.min(1, progress) * Math.PI) * (1.15 + burst.power * 0.55));
+    burst.mesh.scale.setScalar(scale);
+    burst.mesh.rotation.x += dt * 4.5;
+    burst.mesh.rotation.y += dt * 6.2;
+    burst.mesh.material.opacity = Math.max(0, (1 - progress) * (burst.style === 'digital' ? 0.7 : 0.92));
+    if (burst.life <= 0) {
+      worldGroup.remove(burst.mesh);
+      burst.mesh.material.dispose();
+      explosionMeshes.splice(index, 1);
+    }
+  }
+  for (let index = upgradeBeams.length - 1; index >= 0; index -= 1) {
+    const beam = upgradeBeams[index];
+    beam.life -= dt;
+    const progress = 1 - beam.life / beam.maxLife;
+    beam.mesh.scale.set(1 + progress * 1.8, 1, 1 + progress * 1.8);
+    beam.mesh.rotation.y += dt * 5;
+    beam.mesh.material.opacity = Math.max(0, Math.sin(progress * Math.PI) * 0.52);
+    if (beam.life <= 0) {
+      worldGroup.remove(beam.mesh);
+      beam.mesh.material.dispose();
+      upgradeBeams.splice(index, 1);
+    }
+  }
 }
 
 function addFxText(x, y, z, text, color = '#ffffff', life = 0.8, size = 12) {
@@ -2712,16 +3014,18 @@ function addFxText(x, y, z, text, color = '#ffffff', life = 0.8, size = 12) {
   fxItems.push({ kind: 'text', x, y, z, text, color, life, maxLife: life, size, vy: 1.25 });
 }
 
-function addFxParticle(x, y, z, color, power = 1) {
+function addFxParticle(x, y, z, color, power = 1, kind = 'particle') {
   if (fxItems.length > 190) return;
   fxItems.push({
-    kind: 'particle', x, y, z, color,
+    kind, x, y, z, color,
     vx: randomBetween(-2.4, 2.4) * power,
     vy: randomBetween(1.2, 4.2) * power,
     vz: randomBetween(-2.1, 2.1) * power,
     life: randomBetween(0.32, 0.72),
     maxLife: 0.72,
     size: randomBetween(2, 5) * power,
+    angle: randomBetween(0, Math.PI * 2),
+    spin: randomBetween(-8, 8),
   });
 }
 
@@ -2739,6 +3043,7 @@ function updateFx(dt) {
       item.vy -= 7.2 * dt;
       item.vx *= Math.pow(0.18, dt);
       item.vz *= Math.pow(0.18, dt);
+      item.angle += item.spin * dt;
     }
     if (item.life <= 0) fxItems.splice(index, 1);
   }
@@ -2865,6 +3170,28 @@ function renderFx() {
       fxCtx.shadowColor = item.color;
       fxCtx.shadowBlur = 8;
       fxCtx.fillText(item.text, point.x, point.y);
+    } else if (item.kind === 'ticket') {
+      fxCtx.translate(point.x, point.y);
+      fxCtx.rotate(item.angle);
+      fxCtx.fillStyle = '#f5fbff';
+      fxCtx.strokeStyle = item.color;
+      fxCtx.lineWidth = Math.max(1, item.size * 0.18);
+      fxCtx.shadowColor = item.color;
+      fxCtx.shadowBlur = 7;
+      fxCtx.fillRect(-item.size * 1.4, -item.size * 0.8, item.size * 2.8, item.size * 1.6);
+      fxCtx.strokeRect(-item.size * 1.4, -item.size * 0.8, item.size * 2.8, item.size * 1.6);
+    } else if (item.kind === 'shard') {
+      fxCtx.translate(point.x, point.y);
+      fxCtx.rotate(item.angle);
+      fxCtx.fillStyle = item.color;
+      fxCtx.shadowColor = item.color;
+      fxCtx.shadowBlur = 9;
+      fxCtx.beginPath();
+      fxCtx.moveTo(item.size * 1.8, 0);
+      fxCtx.lineTo(-item.size * 0.75, item.size * 0.48);
+      fxCtx.lineTo(-item.size * 0.35, -item.size * 0.48);
+      fxCtx.closePath();
+      fxCtx.fill();
     } else {
       fxCtx.fillStyle = item.color;
       fxCtx.shadowColor = item.color;
@@ -2921,6 +3248,7 @@ function selectUpgrade(index) {
   if (!upgrade) return;
   const presentation = upgradePresentation(upgrade);
   upgrade.apply();
+  triggerTurretUpgradeEffect(upgrade.id, presentation.title);
   state.telemetry.upgrades += 1;
   state.mode = 'playing';
   state.lastTs = performance.now();

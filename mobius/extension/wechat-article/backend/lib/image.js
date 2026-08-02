@@ -88,17 +88,17 @@ const OPEN_LICENSE = /^(CC|Creative Commons|Public domain|PD|GFDL)/i;
 async function fetchCommons(rawUrl, { maxBytes = 5_000_000, timeoutMs = 18_000 } = {}) {
   const parsed = new URL(rawUrl);
   if (parsed.protocol !== "https:" || !COMMONS_HOSTS.has(parsed.hostname)) throw new Error("图片源域名不受信任");
+  // 生产环境通常通过 proxychains 访问国际站点；未安装/不可用时立即回退到安全直连。
   try {
-    const result = await safeFetch(parsed.toString(), { httpsOnly: true, maxBytes, timeoutMs, maxRedirects: 3 });
-    if (!result.ok) throw new Error("HTTP " + result.status);
-    return result.buffer;
-  } catch (directError) {
-    // 当前部署环境的国际网络通常需要 proxychains；URL 仅允许固定 Commons 域名，避免 SSRF。
+    return execFileSync("proxychains4", ["-q", "curl", "--location", "--fail", "--silent", "--show-error",
+      "--max-time", String(Math.ceil(timeoutMs / 1000)), "--max-filesize", String(maxBytes), parsed.toString()],
+    { timeout: timeoutMs + 3_000, maxBuffer: maxBytes + 64_000 });
+  } catch (proxyError) {
     try {
-      return execFileSync("proxychains4", ["-q", "curl", "--location", "--fail", "--silent", "--show-error",
-        "--max-time", String(Math.ceil(timeoutMs / 1000)), "--max-filesize", String(maxBytes), parsed.toString()],
-      { timeout: timeoutMs + 3_000, maxBuffer: maxBytes + 64_000 });
-    } catch (proxyError) {
+      const result = await safeFetch(parsed.toString(), { httpsOnly: true, maxBytes, timeoutMs, maxRedirects: 3 });
+      if (!result.ok) throw new Error("HTTP " + result.status);
+      return result.buffer;
+    } catch (directError) {
       throw new Error("Commons 请求失败: " + String(directError?.message || proxyError?.message || "网络不可用").slice(0, 120));
     }
   }
@@ -170,17 +170,23 @@ function insertImageBlocks(bodyMd, images) {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-async function collectArticleImages({ extDataDir, username, articleId, title, bodyMd, count = 3, logger }) {
+async function collectArticleImages({ extDataDir, username, articleId, title, bodyMd, count = 3, plan, logger }) {
   const imagesDir = path.join(articleRoot(extDataDir, username, articleId), "images");
   fs.rmSync(imagesDir, { recursive: true, force: true });
   fs.mkdirSync(imagesDir, { recursive: true });
-  const plan = buildSearchPlan(title, bodyMd, count);
+  const searchPlan = Array.isArray(plan) && plan.length ? plan.slice(0, Math.max(1, Math.min(Number(count) || 3, 6))) : buildSearchPlan(title, bodyMd, count);
   const images = [];
   const used = new Set();
   const warnings = [];
-  for (const item of plan) {
+  for (const item of searchPlan) {
     let candidates = [];
-    try { candidates = await searchCommons(item.query, 10); }
+    try {
+      const queries = [...new Set([item.query, item.heading, title].filter(Boolean))];
+      for (const query of queries) {
+        candidates = await searchCommons(query, 10);
+        if (candidates.some((entry) => !used.has(entry.sourceUrl || entry.url))) { item.query = query; break; }
+      }
+    }
     catch (error) { warnings.push(`「${item.heading}」检索失败：${error.message || error}`); continue; }
     const candidate = candidates.find((entry) => !used.has(entry.sourceUrl || entry.url));
     if (!candidate) { warnings.push(`「${item.heading}」未找到开放许可的 JPG/PNG 图片`); continue; }
@@ -189,7 +195,7 @@ async function collectArticleImages({ extDataDir, username, articleId, title, bo
       const type = detectType(buffer);
       if (!type || !["jpg", "png"].includes(type)) throw new Error("图片格式不是 JPG/PNG");
       const position = images.length + 1;
-      const caption = cleanCaption(candidate.caption, item.heading);
+      const caption = cleanCaption(item.caption || item.heading, candidate.caption);
       const filename = `${String(position).padStart(2, "0")}-${safeSegment(caption, "配图", 54)}.${type}`;
       const filePath = path.join(imagesDir, filename);
       fs.writeFileSync(filePath, buffer);
@@ -200,7 +206,7 @@ async function collectArticleImages({ extDataDir, username, articleId, title, bo
         source_url: candidate.sourceUrl || candidate.url, source_page_url: candidate.pageUrl,
         author: candidate.author, license: candidate.license, license_url: candidate.licenseUrl,
         search_query: item.query, width: candidate.width, height: candidate.height, bytes: buffer.length,
-        metadata: JSON.stringify({ commons_title: candidate.pageTitle }), created_at: new Date().toISOString(),
+        metadata: JSON.stringify({ commons_title: candidate.pageTitle, commons_caption: candidate.caption }), created_at: new Date().toISOString(),
       });
     } catch (error) { warnings.push(`「${item.heading}」图片下载失败：${error.message || error}`); }
   }

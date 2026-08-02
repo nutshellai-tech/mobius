@@ -19,6 +19,7 @@ function render(md) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    if (/^<!--\s*mobius-image:(start|end)\s*-->$/.test(line.trim())) { i++; continue; }
     if (/^```/.test(line)) {
       const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) { buf.push(lines[i]); i++; }
       i++;

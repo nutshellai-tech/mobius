@@ -13,7 +13,7 @@ const state = {
   articles: [], current: null, tab: "write", pollStop: null, pollJobId: "",
   activeJob: null, completedJob: null,
   writeMode: localStorage.getItem("wechat-article-write-mode") || "hotspot",
-  formDraft: { title: "", angle: "", framework: "interpretation", audience: "", refs: "", questions: "", model: "" },
+  formDraft: { title: "", angle: "", framework: "interpretation", audience: "", refs: "", questions: "", model: "", autoImages: true, imageCount: 3 },
   selectedTopic: null,
   hotspot: {
     query: "", windowHours: 72, region: "all", categories: [], sort: "recommended",
@@ -23,7 +23,7 @@ const state = {
 };
 
 const ACTIVE_JOB_STATES = new Set(["queued", "running", "researching", "outlining", "writing", "reviewing", "rendering", "uploading",
-  "collecting", "filtering", "clustering", "verifying", "ranking"]);
+  "illustrating", "exporting", "collecting", "filtering", "clustering", "verifying", "ranking"]);
 const TERMINAL_JOB_STATES = new Set(["done", "waiting_user", "failed", "cancelled", "unknown_external_result"]);
 const ACTIVE_JOB_STORAGE_KEY = "wechat-article-active-job";
 const HOTSPOT_JOB_STORAGE_KEY = "wechat-article-hotspot-job";
@@ -46,13 +46,26 @@ const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</
 const safeUrl = (s) => /^https?:\/\//i.test(String(s || "")) ? String(s) : "#";
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
+function privateAssetUrl(rel) {
+  if (!rel) return "";
+  const token = localStorage.getItem("cc-token") || "";
+  const encoded = String(rel).split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  return `/api/extensions/wechat-article/user-asset/${encoded}?token=${encodeURIComponent(token)}`;
+}
+
+function articleImageUrl(articleId, source) {
+  const filename = String(source || "").replace(/^\.\//, "").replace(/^images\//, "");
+  const item = (state.current?.images || []).find((image) => image.filename === filename);
+  return item?.asset_rel ? privateAssetUrl(item.asset_rel) : source;
+}
+
 // 前端轻量 Markdown → HTML（实时预览用；推送前以后端 render_preview 为准）
-function mdToHtml(md) {
+function mdToHtml(md, articleId = "") {
   const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
   const out = [];
   let i = 0;
   const inline = (s) => esc(s)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, a, u) => `<img src="${u}" alt="${a}" style="max-width:100%"/>`)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, a, u) => `<img src="${esc(articleImageUrl(articleId, u))}" alt="${a}" style="max-width:100%"/>`)
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => `<a href="${u}">${t}</a>`)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -60,6 +73,7 @@ function mdToHtml(md) {
     .replace(/\s*\[事实\d+\]/g, "");
   while (i < lines.length) {
     const l = lines[i];
+    if (/^<!--\s*mobius-image:(start|end)\s*-->$/.test(l.trim())) { i++; continue; }
     if (/^```/.test(l)) { const b = []; i++; while (i < lines.length && !/^```/.test(lines[i])) b.push(lines[i++]); i++; out.push(`<pre>${esc(b.join("\n"))}</pre>`); continue; }
     if (/^#\s+/.test(l)) { out.push(`<h1>${inline(l.replace(/^#\s+/, ""))}</h1>`); i++; continue; }
     if (/^##\s+/.test(l)) { out.push(`<h2>${inline(l.replace(/^##\s+/, ""))}</h2>`); i++; continue; }
@@ -78,10 +92,12 @@ async function bootstrap() {
   try {
     const r = await api("get_config");
     state.config = r.config; state.channels = r.channels || []; state.default_model = r.default_model || "";
+    state.formDraft.autoImages = r.config?.inline_images !== false;
+    state.formDraft.imageCount = Math.max(1, Math.min(Number(r.config?.budgets?.per_article_images) || 3, 6));
     const la = await api("list_articles");
     state.articles = la.articles || [];
     const lj = await api("list_jobs", { limit: 20 });
-    const active = (lj.jobs || []).find((j) => j.kind === "article" && ACTIVE_JOB_STATES.has(j.state));
+    const active = (lj.jobs || []).find((j) => ["article", "images"].includes(j.kind) && ACTIVE_JOB_STATES.has(j.state));
     const activeHotspot = (lj.jobs || []).find((j) => j.kind === "hotspot" && ACTIVE_JOB_STATES.has(j.state));
     const savedJobId = localStorage.getItem(ACTIVE_JOB_STORAGE_KEY) || "";
     if (active) state.activeJob = active;
@@ -230,7 +246,9 @@ function renderHotspotDiscovery() {
 function captureFormDraft() {
   if (!$("#f-title")) return;
   state.formDraft = { title: $("#f-title").value, angle: $("#f-angle").value, framework: $("#f-framework").value,
-    audience: $("#f-audience").value, refs: $("#f-refs").value, questions: $("#f-questions").value, model: $("#f-model").value };
+    audience: $("#f-audience").value, refs: $("#f-refs").value, questions: $("#f-questions").value, model: $("#f-model").value,
+    autoImages: $("#f-auto-images") ? $("#f-auto-images").checked : true,
+    imageCount: $("#f-image-count") ? Number($("#f-image-count").value) || 3 : 3 };
 }
 function openEvidenceModal(h) {
   $("#hotspot-evidence-modal")?.remove();
@@ -256,8 +274,10 @@ function renderWriteForm() {
         <label><span>目标读者</span><input id="f-audience" type="text" value="${esc(d.audience)}" placeholder="AI 从业者 / 产品经理 / 普通读者"/></label></div></div>
       <label><span>参考链接（可信源，每行一条；优先一手源）</span><textarea id="f-refs" placeholder="https://openai.com/blog/...">${esc(d.refs)}</textarea></label>
       <label><span>需核实的问题（可选）</span><textarea id="f-questions" placeholder="哪些数字/日期/能力描述必须查证">${esc(d.questions)}</textarea></label>
+      <div class="illustration-options"><label class="check-row"><input id="f-auto-images" type="checkbox" ${d.autoImages !== false ? "checked" : ""}/><span><b>自动检索正文配图</b><small>使用 Wikimedia Commons 开放许可图片，自动插入图注、作者、许可和来源</small></span></label>
+        <label class="image-count"><span>配图数量</span><select id="f-image-count">${[1,2,3,4,5,6].map((n) => `<option value="${n}" ${Number(d.imageCount || 3) === n ? "selected" : ""}>${n} 张</option>`).join("")}</select></label></div>
       <div class="row"><label style="margin:0; min-width:240px"><span>生成模型</span><select id="f-model"><option value="">默认</option>${chOpts}</select></label>
-        <button id="btn-start" class="primary" ${hasActiveJob ? "disabled" : ""}>${hasActiveJob ? "后台生成中…" : "开始生成初稿"}</button><span class="muted">约 1–3 分钟（资料→大纲→正文→去AI味→渲染）</span></div><div id="progress"></div>
+        <button id="btn-start" class="primary" ${hasActiveJob ? "disabled" : ""}>${hasActiveJob ? "后台生成中…" : "开始生成图文初稿"}</button><span class="muted">约 2–5 分钟（资料→大纲→正文→去AI味→配图→打包）</span></div><div id="progress"></div>
     </div>`;
   $("#f-framework").value = d.framework || "interpretation";
   $("#btn-clarify").onclick = onClarify; $("#btn-start").onclick = onStart;
@@ -332,7 +352,8 @@ async function onSelectHotspot() {
   const p = r.prefill || {};
   state.selectedTopic = { topic_id: r.topic_id, cluster_id: r.cluster_id, hotspot: r.hotspot || h };
   state.formDraft = { title: p.title || title, angle: p.angle || angle.text || "", framework: p.framework || angle.framework || "interpretation",
-    audience: p.audience || "", refs: (p.referenceUrls || []).join("\n"), questions: p.questions || "", model: state.formDraft.model || "" };
+    audience: p.audience || "", refs: (p.referenceUrls || []).join("\n"), questions: p.questions || "", model: state.formDraft.model || "",
+    autoImages: state.formDraft.autoImages !== false, imageCount: state.formDraft.imageCount || 3 };
   state.writeMode = "hotspot"; localStorage.setItem("wechat-article-write-mode", "hotspot"); render();
   toast("已带入热点、写作角度和可信来源，可继续调整");
 }
@@ -367,6 +388,8 @@ async function onStart() {
     referenceUrls: $("#f-refs").value.split("\n").map((s) => s.trim()).filter(Boolean),
     questions: $("#f-questions").value.trim(),
     model_key: $("#f-model").value,
+    auto_images: $("#f-auto-images").checked,
+    image_count: Number($("#f-image-count").value) || 3,
   };
   captureFormDraft();
   try {
@@ -410,7 +433,7 @@ function runJobPoll(jobId, { resumed = false } = {}) {
       localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
       if (st.articleId) {
         await refreshArticles();
-        if (state.tab === "write" && !state.current) await loadArticle(st.articleId);
+        if (state.tab === "write" && (!state.current || state.current.article?.id === st.articleId)) await loadArticle(st.articleId);
         else toast("✅ 初稿已在后台生成，点击顶部状态可打开");
       } else if (st.state === "failed") {
         toast("生成失败：" + (st.error || st.message || "未知错误"));
@@ -421,7 +444,8 @@ function runJobPoll(jobId, { resumed = false } = {}) {
   }, 2500);
 }
 
-const phases = { init: "排队", research: "检索资料", outline: "拟定大纲", write: "撰写正文", review: "去 AI 味 + 主张账本", render: "渲染", upload: "推送到草稿箱", error: "生成失败" };
+const phases = { init: "排队", research: "检索资料", outline: "拟定大纲", write: "撰写正文", review: "去 AI 味 + 主张账本",
+  images: "检索配图与标注", export: "整理图文压缩包", render: "渲染", upload: "推送到草稿箱", done: "已完成", error: "生成失败" };
 
 function paintJobStatus() {
   const current = state.activeJob || state.completedJob;
@@ -462,7 +486,7 @@ async function refreshArticles() {
 async function loadArticle(id) {
   const r = await api("get_article", { article_id: id });
   if (!r.ok) return toast(r.error || "加载失败");
-  state.current = { article: r.article, evidence: r.evidence || [], claims: r.claims || [] };
+  state.current = { article: r.article, evidence: r.evidence || [], claims: r.claims || [], images: r.images || [] };
   if (state.completedJob?.articleId === id) state.completedJob = null;
   render();
   renderEditor();
@@ -471,6 +495,11 @@ async function loadArticle(id) {
 function renderEditor() {
   const a = state.current.article;
   const lint = a.quality && a.quality.lint;
+  const imageHtml = (state.current.images || []).map((image) => `<div class="article-image-card">
+    <img src="${esc(privateAssetUrl(image.asset_rel))}" alt="${esc(image.alt_text || image.caption)}"/>
+    <div><b>图${image.position} · ${esc(image.caption || image.filename)}</b><small>${esc(image.filename)} · ${Math.round((image.bytes || 0) / 1024)} KB</small>
+      <span>${esc(image.author || "未知作者")} · ${esc(image.license || "许可未知")}</span>
+      <a href="${esc(safeUrl(image.source_page_url || image.source_url))}" target="_blank" rel="noreferrer">查看图片来源与许可</a></div></div>`).join("") || '<div class="muted" style="padding:10px">当前没有正文配图，可点击“自动检索配图”。</div>';
   const evHtml = state.current.evidence.map((e) => `<div class="item"><div class="src"><span class="tag ${e.tier}">${e.tier}</span> ${esc(e.source_name)}</div><div class="ex">${esc((e.excerpt || "").slice(0, 140))}</div></div>`).join("") || '<div class="muted" style="padding:10px">无证据</div>';
   const claimsHtml = state.current.claims.map((c) => `<div class="claim"><div class="row"><span class="tag ${c.risk}">${c.risk}</span><span class="tag">${c.relation}</span>${c.resolved ? '<span class="tag">已处理</span>' : ""}</div><div class="tx">${esc(c.claim_text)}</div>${c.resolved ? "" : `<button data-cid="${c.id}">标记已核实</button>`}</div>`).join("") || '<div class="muted" style="padding:10px">无主张</div>';
   $("#view").innerHTML = `
@@ -482,12 +511,14 @@ function renderEditor() {
       <div class="editor-body">
         <div class="pane"><div class="head">Markdown 正文</div><textarea id="e-md">${esc(a.body_md)}</textarea></div>
         <div class="pane"><div class="head">375px 微信预览</div><div class="phone"><div class="preview-content" id="e-prev"></div></div></div>
-        <div class="pane aside evidence"><div class="head">证据 / 主张账本</div>${evHtml}${claimsHtml}</div>
+        <div class="pane aside evidence"><div class="head">正文配图 / 证据 / 主张账本</div><div class="article-images">${imageHtml}</div>${evHtml}${claimsHtml}</div>
       </div>
       <div class="editor-actions">
         <button id="btn-save" class="primary">保存</button>
         <button id="btn-versions" class="btn">历史版本</button>
         <button id="btn-regen-cover" class="btn">生成封面</button>
+        <button id="btn-images" class="btn">${state.current.images?.length ? "重新检索配图" : "自动检索配图"}</button>
+        <button id="btn-download" class="primary">下载图文包 ZIP</button>
         <button id="btn-push" class="btn">推送到草稿箱</button>
         <span id="lint-sum" class="lint-summary"></span>
         <div class="spacer" style="flex:1"></div>
@@ -496,7 +527,7 @@ function renderEditor() {
       <div id="versions" style="margin-top:12px"></div>
     </section>`;
   const md = $("#e-md"), prev = $("#e-prev");
-  const refresh = () => { prev.innerHTML = mdToHtml(md.value); updateLint(); };
+  const refresh = () => { prev.innerHTML = mdToHtml(md.value, a.id); updateLint(); };
   md.oninput = debounce(refresh, 250);
   refresh();
   updateLint();
@@ -504,6 +535,8 @@ function renderEditor() {
   $("#btn-back").onclick = () => { state.current = null; render(); };
   $("#btn-versions").onclick = onVersions;
   $("#btn-regen-cover").onclick = onCover;
+  $("#btn-images").onclick = onImages;
+  $("#btn-download").onclick = onDownloadPackage;
   $("#btn-push").onclick = onPush;
   $$("[data-cid]").forEach((b) => b.onclick = async () => {
     const r = await api("resolve_claim", { claim_id: b.dataset.cid });
@@ -520,7 +553,8 @@ function updateLint() {
 async function onSave() {
   const a = state.current.article;
   const r = await api("save_article", { article_id: a.id, title: $("#e-title").value, digest: $("#e-digest").value, body_md: $("#e-md").value });
-  if (r.ok) { state.current.article = r.article; toast("已保存（含历史版本）"); }
+  if (r.ok) { state.current.article = r.article; toast("已保存（含历史版本）"); return true; }
+  return false;
 }
 async function onVersions() {
   const r = await api("list_versions", { article_id: state.current.article.id });
@@ -536,6 +570,34 @@ async function onCover() {
   const r = await api("generate_cover", { title: $("#e-title").value, subtitle: $("#e-digest").value });
   if (r.ok) { toast(r.need_rasterize ? "生成 SVG 占位封面（无 sharp，需手动栅格化）" : "封面已生成"); }
   else toast(r.error || "失败");
+}
+async function onImages() {
+  if (!await onSave()) return;
+  const btn = $("#btn-images"); btn.disabled = true; btn.textContent = "正在启动配图检索…";
+  const imageCount = Math.max(1, Math.min(Number(state.config?.budgets?.per_article_images) || state.current.images?.length || 3, 6));
+  try {
+    const r = await api("start_images", { article_id: state.current.article.id, image_count: imageCount });
+    if (!r.ok) { btn.disabled = false; btn.textContent = "重新检索配图"; return toast(r.error || "启动失败"); }
+    state.completedJob = null;
+    state.activeJob = { jobId: r.job_id, state: "queued", phase: "images", progress: 0, message: "配图检索已转入后台" };
+    localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, r.job_id);
+    paintJobStatus();
+    toast("正在后台检索并标注配图，可安全离开页面");
+    runJobPoll(r.job_id);
+  } catch (_) { btn.disabled = false; btn.textContent = "重新检索配图"; }
+}
+async function onDownloadPackage() {
+  if (!await onSave()) return;
+  const btn = $("#btn-download"); btn.disabled = true; btn.textContent = "正在整理图文包…";
+  try {
+    const r = await api("prepare_export", { article_id: state.current.article.id });
+    if (!r.ok || !r.package?.download_path) return toast(r.error || "图文包生成失败");
+    const link = document.createElement("a");
+    link.href = privateAssetUrl(r.package.download_path);
+    link.download = r.package.filename || "公众号图文包.zip";
+    document.body.appendChild(link); link.click(); link.remove();
+    toast(`已打包文档和 ${r.package.image_count || 0} 张图片`);
+  } finally { btn.disabled = false; btn.textContent = "下载图文包 ZIP"; }
 }
 async function onPush() {
   if (!(state.config && state.config.wx_configured)) return toast("请先在设置页配置微信 AppID/AppSecret");
@@ -599,10 +661,12 @@ function renderSettings() {
         <label><span>默认模型</span><select id="cfg-model"><option value="">默认</option>${chOpts}</select></label>
         <label><span>AI 辅助声明（文末）</span><input id="cfg-decl" type="text" value="${esc(c.ai_declaration)}"/></label>
         <label><span>每篇搜索次数</span><input id="b-search" type="text" value="${b.per_article_search ?? 6}"/></label>
+        <label><span>每篇正文配图数（1–6）</span><input id="b-images" type="text" value="${b.per_article_images ?? 3}"/></label>
         <label><span>每篇 Token 上限</span><input id="b-tok" type="text" value="${b.per_article_tokens ?? 20000}"/></label>
         <label><span>每篇金额上限（元）</span><input id="b-amt" type="text" value="${b.per_article_amount ?? 2}"/></label>
         <label><span>每日金额上限（元）</span><input id="b-day" type="text" value="${b.daily_amount ?? 20}"/></label>
       </div>
+      <label class="check-row settings-check"><input id="cfg-inline-images" type="checkbox" ${c.inline_images !== false ? "checked" : ""}/><span><b>新文章默认自动检索配图</b><small>图片会自动编号、写入图注并随文档一起打包下载</small></span></label>
       <div class="row">
         <button id="btn-save-cfg" class="primary">保存配置</button>
         <button id="btn-test" class="btn">测试模型连通</button>
@@ -626,9 +690,12 @@ function renderSettings() {
   };
   $("#btn-save-cfg").onclick = async () => {
     const r = await api("save_config", { config: { model_key: $("#cfg-model").value, ai_declaration: $("#cfg-decl").value,
+      inline_images: $("#cfg-inline-images").checked,
       budgets: { per_article_search: Number($("#b-search").value) || 6, per_article_tokens: Number($("#b-tok").value) || 20000,
+        per_article_images: Math.max(1, Math.min(Number($("#b-images").value) || 3, 6)),
         per_article_amount: Number($("#b-amt").value) || 2, daily_amount: Number($("#b-day").value) || 20 } } });
-    if (r.ok) { state.config = r.config; toast("配置已保存"); }
+    if (r.ok) { state.config = r.config; state.formDraft.autoImages = r.config.inline_images !== false;
+      state.formDraft.imageCount = r.config.budgets?.per_article_images || 3; toast("配置已保存"); }
   };
   $("#btn-test").onclick = async () => {
     const btn = $("#btn-test"); btn.disabled = true; btn.textContent = "测试中…";

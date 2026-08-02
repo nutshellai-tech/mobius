@@ -15,8 +15,10 @@ const { render, validateWechatFields } = require("./lib/render");
 const wechat = require("./lib/wechat");
 const image = require("./lib/image");
 const hotspotStore = require("./lib/hotspot-store");
+const { buildArticlePackage } = require("./lib/export");
+const { relativeToUser } = require("./lib/assets");
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const WORKER = path.join(__dirname, "article-worker.js");
 const HOTSPOT_WORKER = path.join(__dirname, "hotspot-worker.js");
 const NODE_MODULES = path.resolve(__dirname, "../../../node_modules"); // mobius/node_modules
@@ -109,7 +111,7 @@ async function handleGenerateCover(p, extDataDir) {
     return ok({ path: c.path, type: c.type, need_rasterize: !!c.need_rasterize, data_url: dataUrl });
   } catch (e) { return fail(e); }
 }
-function handleStartArticle(p, extDataDir) {
+function handleStartArticle(p, extDataDir, username) {
   const title = txt(p.title, 200);
   if (!title) return fail("需要 title");
   const framework = FRAMEWORKS.has(p.framework) ? p.framework : "interpretation";
@@ -119,12 +121,28 @@ function handleStartArticle(p, extDataDir) {
     title, angle: txt(p.angle, 600), framework, referenceUrls, questions: txt(p.questions, 1000), audience: txt(p.audience, 300) };
   const modelKey = txt(p.model_key, 160);
   const mode = p.mode === "auto_push" ? "auto_push" : "manual";
+  const autoImages = p.auto_images !== false;
+  const imageCount = Math.max(1, Math.min(Number(p.image_count) || 3, 6));
   const jobs = job.listJobs(extDataDir, 20);
-  if (jobs.some((j) => ARTICLE_ACTIVE.has(j.state) && j.kind === "article"))
+  if (jobs.some((j) => ARTICLE_ACTIVE.has(j.state) && ["article", "images"].includes(j.kind)))
     return fail("已有文章任务在运行，请等待完成或取消");
-  const jobId = job.createJob(extDataDir, { kind: "article", spec: { topic, mode, modelKey } });
+  const jobId = job.createJob(extDataDir, { kind: "article", spec: { topic, mode, modelKey, username, autoImages, imageCount } });
   const r = spawnWorker(extDataDir, jobId);
   if (!r.ok) return r;
+  return ok({ job_id: jobId, state: "queued" });
+}
+
+function handleStartImages(p, extDataDir, username) {
+  const articleId = txt(p.article_id || p.articleId, 120);
+  if (!articleId) return fail("需要 article_id");
+  if (anyActive(job.listJobs(extDataDir, 30))) return fail("已有后台任务在运行");
+  let article;
+  try { const db = store.open(extDataDir); article = store.getArticle(db, articleId); db.close(); } catch (_) {}
+  if (!article) return fail("文章不存在");
+  const imageCount = Math.max(1, Math.min(Number(p.image_count) || 3, 6));
+  const jobId = job.createJob(extDataDir, { kind: "images", spec: { mode: "images_only", articleId, username, imageCount } });
+  const result = spawnWorker(extDataDir, jobId);
+  if (!result.ok) return result;
   return ok({ job_id: jobId, state: "queued" });
 }
 
@@ -213,7 +231,7 @@ function handleListArticles(p, extDataDir) {
   try { const db = store.open(extDataDir); const r = store.listArticles(db, Math.min(Number(p.limit) || 50, 500)); db.close(); return ok({ articles: r }); }
   catch (e) { return fail(e); }
 }
-function handleGetArticle(p, extDataDir) {
+function handleGetArticle(p, extDataDir, username) {
   const id = txt(p.article_id || p.id, 120);
   try {
     const db = store.open(extDataDir);
@@ -221,11 +239,13 @@ function handleGetArticle(p, extDataDir) {
     if (!art) { db.close(); return fail("文章不存在"); }
     const evidence = db.prepare("SELECT id,source_url,source_name,author,published_at,excerpt,tier FROM evidence WHERE article_id=?").all(id);
     const claimsR = db.prepare("SELECT id,paragraph_idx,claim_text,risk,evidence_id,relation,resolved FROM claim WHERE article_id=?").all(id);
+    const images = store.listArticleImages(db, id).map(({ file_path, metadata, ...item }) => ({ ...item,
+      asset_rel: relativeToUser(extDataDir, username, file_path || "") }));
     db.close();
     let quality = null, outline = null;
     try { quality = JSON.parse(art.quality || "null"); } catch (_) {}
     try { outline = JSON.parse(art.outline || "null"); } catch (_) {}
-    return ok({ article: Object.assign({}, art, { quality, outline }), evidence, claims: claimsR });
+    return ok({ article: Object.assign({}, art, { quality, outline }), evidence, claims: claimsR, images });
   } catch (e) { return fail(e); }
 }
 function handleSaveArticle(p, extDataDir) {
@@ -237,14 +257,18 @@ function handleSaveArticle(p, extDataDir) {
   try {
     const db = store.open(extDataDir);
     const prev = store.getArticle(db, id);
-    store.upsertArticle(db, { id, title, digest, body_md: bodyMd, state: prev && prev.state === "pushed" ? "pushed" : "edited" });
+    store.upsertArticle(db, { id, title, digest, body_md: bodyMd, body_html: bodyMd != null ? render(bodyMd) : undefined,
+      state: prev && prev.state === "pushed" ? "pushed" : "edited" });
     if (bodyMd != null && (!prev || prev.body_md !== bodyMd)) {
       const vno = db.prepare("SELECT COALESCE(MAX(version_no),0)+1 n FROM article_version WHERE article_id=?").get(id).n;
       db.prepare("INSERT INTO article_version (id,article_id,version_no,title,digest,body_md,note,created_at) VALUES (?,?,?,?,?,?,?,?)")
         .run("v_" + crypto.randomBytes(4).toString("hex"), id, vno, (prev && prev.title) || title || "", (prev && prev.digest) || digest || "", bodyMd, txt(p.note || "自动保存", 200), new Date().toISOString());
     }
     const art = store.getArticle(db, id); db.close();
-    return ok({ article: art });
+    let quality = null, outline = null;
+    try { quality = JSON.parse(art.quality || "null"); } catch (_) {}
+    try { outline = JSON.parse(art.outline || "null"); } catch (_) {}
+    return ok({ article: { ...art, quality, outline } });
   } catch (e) { return fail(e); }
 }
 function handleDeleteArticle(p, extDataDir) {
@@ -255,6 +279,7 @@ function handleDeleteArticle(p, extDataDir) {
     db.prepare("DELETE FROM article_version WHERE article_id=?").run(id);
     db.prepare("DELETE FROM evidence WHERE article_id=?").run(id);
     db.prepare("DELETE FROM claim WHERE article_id=?").run(id);
+    db.prepare("DELETE FROM article_image WHERE article_id=?").run(id);
     db.close(); return ok({});
   } catch (e) { return fail(e); }
 }
@@ -295,6 +320,19 @@ function handleExport(extDataDir) {
     return ok({ db_path: path.join(extDataDir, "data.db"), ext_data_dir: extDataDir, articles: arts }); }
   catch (e) { return fail(e); }
 }
+function handlePrepareExport(p, extDataDir, username) {
+  const articleId = txt(p.article_id || p.articleId, 120);
+  if (!articleId) return fail("需要 article_id");
+  let db;
+  try {
+    db = store.open(extDataDir);
+    const article = store.getArticle(db, articleId);
+    if (!article) { db.close(); return fail("文章不存在"); }
+    const images = store.listArticleImages(db, articleId);
+    db.close(); db = null;
+    return ok({ package: buildArticlePackage({ extDataDir, username, article, images }) });
+  } catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
+}
 function handlePurge(p, extDataDir) {
   if (p.confirm !== "DELETE_ALL") return fail("需要 confirm='DELETE_ALL' 才能清空");
   try {
@@ -323,7 +361,8 @@ module.exports = async function ({ username, display_name, ext_main_payload, ext
       case "clarify_topic": return await handleClarify(p);
       case "render_preview": return handleRenderPreview(p);
       case "generate_cover": return await handleGenerateCover(p, extDataDir);
-      case "start_article": return handleStartArticle(p, extDataDir);
+      case "start_article": return handleStartArticle(p, extDataDir, username);
+      case "start_images": return handleStartImages(p, extDataDir, username);
       case "push_draft": return handlePushDraft(p, extDataDir);
       case "job_status": { const s = job.readStatus(extDataDir, txt(p.job_id, 120)); return s ? ok({ status: s }) : fail("job 不存在"); }
       case "list_jobs": return ok({ jobs: job.listJobs(extDataDir, Math.min(Number(p.limit) || 50, 200)) });
@@ -336,7 +375,7 @@ module.exports = async function ({ username, display_name, ext_main_payload, ext
       case "create_topic_from_hotspot": return handleCreateTopic(p, extDataDir);
       case "list_topics": return handleListTopics(p, extDataDir);
       case "list_articles": return handleListArticles(p, extDataDir);
-      case "get_article": return handleGetArticle(p, extDataDir);
+      case "get_article": return handleGetArticle(p, extDataDir, username);
       case "save_article": return handleSaveArticle(p, extDataDir);
       case "delete_article": return handleDeleteArticle(p, extDataDir);
       case "list_versions": return handleListVersions(p, extDataDir);
@@ -346,6 +385,7 @@ module.exports = async function ({ username, display_name, ext_main_payload, ext
       case "resolve_claim": return handleResolveClaim(p, extDataDir);
       case "reconcile_draft": return await handleReconcile(p, extDataDir);
       case "export_data": return handleExport(extDataDir);
+      case "prepare_export": return handlePrepareExport(p, extDataDir, username);
       case "purge_data": return handlePurge(p, extDataDir);
       default: return fail("未知 action: " + action);
     }

@@ -90,8 +90,21 @@ let toastTimer = 0;
 let audioCtx = null;
 let muted = localStorage.getItem('bullet-heaven-muted') === '1';
 
+const spriteFrames = [];
 const atlas = new Image();
 atlas.decoding = 'async';
+atlas.addEventListener('load', () => {
+  for (let frame = 0; frame < 5; frame += 1) {
+    const raster = document.createElement('canvas');
+    raster.width = 224;
+    raster.height = 288;
+    const rasterCtx = raster.getContext('2d');
+    rasterCtx.imageSmoothingEnabled = true;
+    rasterCtx.imageSmoothingQuality = 'high';
+    rasterCtx.drawImage(atlas, frame * 280, 0, 280, 360, 0, 0, raster.width, raster.height);
+    spriteFrames[frame] = raster;
+  }
+});
 atlas.src = '/extension/toy-toy-toy/assets/characters/zombie-atlas.svg?v=0.8.2';
 
 const input = {
@@ -235,7 +248,7 @@ function setMode(mode) {
 function resize() {
   width = Math.max(320, window.innerWidth);
   height = Math.max(520, window.innerHeight);
-  dpr = Math.min(window.devicePixelRatio || 1, width < 720 ? 1.25 : 1.6);
+  dpr = Math.min(window.devicePixelRatio || 1, width < 720 ? 1 : 1.25);
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   canvas.style.width = `${width}px`;
@@ -1191,17 +1204,16 @@ function drawEnemy(enemy) {
   ctx.translate(enemy.x, enemy.y + bob);
   ctx.globalAlpha = enemy.hitFlash > 0 ? 0.58 : 1;
   ctx.shadowColor = frozen ? '#6edbff' : enemy.color;
-  ctx.shadowBlur = enemy.boss ? 38 : enemy.elite ? 22 : enemy.hitFlash > 0 ? 19 : 7;
+  ctx.shadowBlur = enemy.boss ? 30 : enemy.elite ? 14 : enemy.hitFlash > 0 ? 8 : 0;
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
   ctx.beginPath();
   ctx.ellipse(0, enemy.radius * 0.68, enemy.radius * 0.76, enemy.radius * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (atlas.complete && atlas.naturalWidth > 0) {
-    const sourceWidth = 280;
-    const sourceHeight = 360;
+  if (spriteFrames[enemy.frame]) {
+    const sprite = spriteFrames[enemy.frame];
     const drawHeight = enemy.radius * (enemy.boss ? 3.3 : 3.05);
-    const drawWidth = drawHeight * (sourceWidth / sourceHeight);
-    ctx.drawImage(atlas, enemy.frame * sourceWidth, 0, sourceWidth, sourceHeight, -drawWidth / 2, -drawHeight * 0.68, drawWidth, drawHeight);
+    const drawWidth = drawHeight * (sprite.width / sprite.height);
+    ctx.drawImage(sprite, -drawWidth / 2, -drawHeight * 0.68, drawWidth, drawHeight);
   } else {
     ctx.fillStyle = enemy.color;
     ctx.beginPath(); ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2); ctx.fill();
@@ -1342,8 +1354,7 @@ function render() {
   ctx.save();
   ctx.translate(rand(-shakeAmount, shakeAmount), rand(-shakeAmount, shakeAmount));
   for (const pickup of state.pickups) drawPickup(pickup);
-  const sortedEnemies = [...state.enemies].sort((a, b) => a.y - b.y);
-  for (const enemy of sortedEnemies) drawEnemy(enemy);
+  for (const enemy of state.enemies) drawEnemy(enemy);
   drawDronesAndOrbit();
   drawProjectiles();
   drawPlayer();

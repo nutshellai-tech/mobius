@@ -192,6 +192,23 @@ aside.evidence .item .ex { color: var(--muted); margin-top: 4px; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 768px) { .grid2 { grid-template-columns: 1fr; } }
+.illustration-options { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 14px 0;
+  padding: 12px 14px; border: 1px solid #dbe3f3; border-radius: 10px; background: #f8faff; }
+.check-row { display: flex; align-items: flex-start; gap: 10px; margin: 0; cursor: pointer; }
+.check-row input { margin-top: 4px; accent-color: var(--brand); }
+.check-row > span { display: flex; flex-direction: column; color: var(--text); font-size: 13px; margin: 0; }
+.check-row small { color: var(--muted); font-weight: 400; margin-top: 2px; }
+.image-count { margin: 0; min-width: 92px; }.image-count select { min-width: 86px; }
+.settings-check { margin: 14px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.article-images { border-bottom: 1px solid var(--border); }
+.article-image-card { display: grid; grid-template-columns: 88px 1fr; gap: 9px; padding: 10px; border-bottom: 1px solid #f0f1f3; }
+.article-image-card:last-child { border-bottom: 0; }
+.article-image-card img { width: 88px; height: 64px; object-fit: cover; border-radius: 6px; background: #eef0f4; }
+.article-image-card > div { min-width: 0; display: flex; flex-direction: column; }
+.article-image-card b { font-size: 11px; line-height: 1.35; }
+.article-image-card small, .article-image-card span { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.article-image-card a { color: var(--brand); font-size: 10px; text-decoration: none; }
+@media (max-width: 680px) { .illustration-options { align-items: flex-start; flex-direction: column; } }
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
   background: #1f2329; color: #fff; padding: 10px 18px; border-radius: 8px; opacity: 0; transition: .25s; z-index: 100; font-size: 13px; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

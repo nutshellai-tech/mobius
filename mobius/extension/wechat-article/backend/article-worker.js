@@ -27,6 +27,8 @@ const claims = require("./lib/claims");
 const write = require("./lib/write");
 const humanize = require("./lib/humanize");
 const { render } = require("./lib/render");
+const image = require("./lib/image");
+const { buildArticlePackage } = require("./lib/export");
 
 const logFile = path.join(extDataDir, "jobs", jobId, "worker.log");
 const log = (...a) => { try { fs.appendFileSync(logFile, a.map((x) => String(x)).join(" ") + "\n"); } catch (_) {} };
@@ -98,25 +100,55 @@ async function runArticle() {
   try { boundClaims = await claims.bindToArticle({ provider, bodyMd: hum.bodyMd, evidence }); }
   catch (e) { logger.warn("主张账本绑定失败，降级为空账本继续: " + (e.message || e)); }
   const lintResult = claims.lint({ claims: boundClaims, evidence });
-  job.writeCheckpoint(extDataDir, jobId, { phase: "review", bodyMd: hum.bodyMd, claims: boundClaims, lint: lintResult, humanize: hum.detection });
-
-  // rendering
-  setState("rendering", "render", "渲染微信 HTML");
-  const bodyHtml = render(hum.bodyMd);
+  let finalBodyMd = hum.bodyMd;
+  let articleImages = [];
+  let imageWarnings = [];
   const title = (outlineObj.title || topic.title || "未命名").slice(0, 32);
   const digest = (outlineObj.digest || "").slice(0, 120);
   const articleId = SPEC.articleId || ("art_" + jobId.replace(/^article_/, ""));
+  job.writeCheckpoint(extDataDir, jobId, { phase: "review", bodyMd: finalBodyMd, claims: boundClaims, lint: lintResult, humanize: hum.detection });
+
+  if (SPEC.autoImages !== false) {
+    setState("illustrating", "images", "检索开放许可配图并生成图注");
+    try {
+      const collected = await image.collectArticleImages({ extDataDir, username: SPEC.username, articleId, title,
+        bodyMd: finalBodyMd, count: SPEC.imageCount || 3, logger });
+      articleImages = collected.images;
+      imageWarnings = collected.warnings;
+      finalBodyMd = collected.bodyMd;
+      if (db) store.replaceArticleImages(db, articleId, articleImages);
+      setProgress(0.78, articleImages.length ? `已整理 ${articleImages.length} 张配图` : "未找到合适配图，保留纯文字稿");
+    } catch (e) {
+      logger.warn("配图检索失败，保留纯文字稿继续: " + (e.message || e));
+      imageWarnings = [String(e.message || e)];
+    }
+    throwIfCancelled();
+  }
+
+  // rendering
+  setState("rendering", "render", "渲染微信 HTML");
+  const bodyHtml = render(finalBodyMd);
 
   if (db) {
     try {
-      store.upsertArticle(db, { id: articleId, topic_id: topic.id || null, job_id: jobId, title, digest, body_md: hum.bodyMd, body_html: bodyHtml,
+      store.upsertArticle(db, { id: articleId, topic_id: topic.id || null, job_id: jobId, title, digest, body_md: finalBodyMd, body_html: bodyHtml,
         framework: topic.framework, outline: JSON.stringify(outlineObj), state: "draft",
-        quality: JSON.stringify({ lint: lintResult, humanize: hum.detection, facts: facts.length, evidence: evidence.length }) });
+        quality: JSON.stringify({ lint: lintResult, humanize: hum.detection, facts: facts.length, evidence: evidence.length,
+          images: articleImages.length, image_warnings: imageWarnings }) });
       const insEv = db.prepare("INSERT OR REPLACE INTO evidence (id,article_id,source_url,source_name,author,published_at,fetched_at,excerpt,content_hash,tier,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
       evidence.forEach((e) => insEv.run(e.id, articleId, e.source_url, e.source_name, e.author, e.published_at, e.fetched_at, e.excerpt, e.content_hash, e.tier, new Date().toISOString()));
       const insCl = db.prepare("INSERT OR REPLACE INTO claim (id,article_id,paragraph_idx,claim_text,risk,evidence_id,relation,resolved,note,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)");
       boundClaims.forEach((c) => insCl.run(c.id, articleId, c.paragraph_idx, c.claim_text, c.risk, c.evidence_id, c.relation, c.resolved, "", new Date().toISOString()));
     } catch (e) { logger.warn("落库失败: " + e.message); }
+  }
+
+  let packageInfo = null;
+  if (db) {
+    try {
+      setState("exporting", "export", "整理图文文档与图片压缩包");
+      packageInfo = buildArticlePackage({ extDataDir, username: SPEC.username,
+        article: store.getArticle(db, articleId), images: store.listArticleImages(db, articleId) });
+    } catch (e) { logger.warn("自动生成图文包失败，可在编辑页重试: " + (e.message || e)); }
   }
 
   // 自动推送：仅当 mode=auto_push 且凭据齐全；否则停 waiting_user
@@ -126,9 +158,34 @@ async function runArticle() {
   }
 
   setState(wantPush ? "done" : "waiting_user", wantPush ? "done" : "review", wantPush ? "已推送至草稿箱" : "初稿就绪，等待编辑确认",
-    { progress: 1, articleId, title, digest });
-  job.writeCheckpoint(extDataDir, jobId, { phase: "done", articleId, title, digest, bodyMd: hum.bodyMd, bodyHtml });
+    { progress: 1, articleId, title, digest, imageCount: articleImages.length,
+      downloadPath: packageInfo && packageInfo.download_path, downloadName: packageInfo && packageInfo.filename });
+  job.writeCheckpoint(extDataDir, jobId, { phase: "done", articleId, title, digest, bodyMd: finalBodyMd, bodyHtml,
+    images: articleImages, package: packageInfo });
   if (db) try { db.close(); } catch (_) {}
+}
+
+async function runImagesOnly() {
+  const articleId = SPEC.articleId;
+  if (!articleId) throw new Error("images_only 缺 articleId");
+  const db = openDb();
+  if (!db) throw new Error("数据库不可用");
+  const article = store.getArticle(db, articleId);
+  if (!article) throw new Error("文章不存在: " + articleId);
+  setState("illustrating", "images", "重新检索开放许可配图");
+  const collected = await image.collectArticleImages({ extDataDir, username: SPEC.username, articleId,
+    title: article.title, bodyMd: article.body_md, count: SPEC.imageCount || 3, logger });
+  throwIfCancelled();
+  store.replaceArticleImages(db, articleId, collected.images);
+  const bodyHtml = render(collected.bodyMd);
+  store.upsertArticle(db, { id: articleId, body_md: collected.bodyMd, body_html: bodyHtml, state: "edited" });
+  setState("exporting", "export", "更新图文压缩包");
+  const packageInfo = buildArticlePackage({ extDataDir, username: SPEC.username,
+    article: store.getArticle(db, articleId), images: store.listArticleImages(db, articleId) });
+  setState("done", "done", collected.images.length ? `已更新 ${collected.images.length} 张配图` : "未找到合适配图",
+    { progress: 1, articleId, imageCount: collected.images.length, warnings: collected.warnings,
+      downloadPath: packageInfo.download_path, downloadName: packageInfo.filename });
+  try { db.close(); } catch (_) {}
 }
 
 async function runPushOnly() {
@@ -156,6 +213,18 @@ async function pushToWechat({ db, articleId, title, digest, bodyHtml, config, de
     if (!cover.need_rasterize) thumbMediaId = await wechat.uploadThumb(ctx, cover.path);
     else logger.warn("封面为 SVG（无 sharp 栅格化），跳过上传，请在后台手动设置封面");
   } catch (e) { logger.warn("封面生成/上传失败: " + e.message); }
+  if (db) {
+    const inlineImages = store.listArticleImages(db, articleId);
+    for (const item of inlineImages) {
+      if (!item.file_path || !item.filename) continue;
+      try {
+        const wxUrl = item.wx_url || await wechat.uploadContentImage(ctx, item.file_path);
+        db.prepare("UPDATE article_image SET wx_url=? WHERE id=?").run(wxUrl, item.id);
+        const escaped = String(item.filename).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        bodyHtml = bodyHtml.replace(new RegExp(`src=(["'])images/${escaped}\\1`, "g"), `src="${wxUrl}"`);
+      } catch (e) { logger.warn(`正文图 ${item.filename} 上传失败，草稿中将跳过该图: ${e.message || e}`); }
+    }
+  }
   let r;
   try {
     r = await wechat.addDraft(ctx, { title, author: "", digest, bodyHtml, coverMediaId: thumbMediaId, declaration });
@@ -174,6 +243,7 @@ async function pushToWechat({ db, articleId, title, digest, bodyHtml, config, de
 async function main() {
   startHeartbeat();
   if (mode === "push_only") await runPushOnly();
+  else if (mode === "images_only") await runImagesOnly();
   else await runArticle();
   stopHeartbeat();
   process.exit(0);
