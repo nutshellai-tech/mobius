@@ -684,6 +684,47 @@ router.patch('/users/:id/group', adminAuth, (req: express.Request, res: express.
   }
 });
 
+router.patch('/users/:id', adminAuth, (req: express.Request, res: express.Response) => {
+  try {
+    const me = adminReqUser(req);
+    const id = String(req.params.id || '').trim();
+    const target = Users.findById(id);
+    if (!target) { res.status(404).json({ error: '员工账号不存在或已删除' }); return; }
+    const body = req.body || {};
+    const hasField = (k1: string, k2?: string) =>
+      Object.prototype.hasOwnProperty.call(body, k1) || (k2 !== undefined && Object.prototype.hasOwnProperty.call(body, k2));
+    if (hasField('role')) {
+      const newRole = normalizeEmployeeRole(body.role);
+      if (newRole !== target.role) {
+        if (target.role === 'admin' && newRole !== 'admin' && Users.activeAdminCount() <= 1) {
+          res.status(400).json({ error: '不能降级最后一个管理员账号' }); return;
+        }
+        if (id === me.id && target.role === 'admin' && newRole !== 'admin') {
+          res.status(400).json({ error: '不能降级当前登录的管理员账号, 请改由其他管理员操作' }); return;
+        }
+        Users.updateRole(id, newRole);
+      }
+    }
+    if (hasField('display_name', 'displayName')) {
+      Users.updateDisplayName(id, normalizeDisplayName(body.display_name ?? body.displayName, id));
+    }
+    if (hasField('work_dir', 'workDir')) {
+      const wd = normalizeEmployeeWorkDir(body.work_dir ?? body.workDir);
+      if (wd) Users.updateWorkDir(id, wd);
+    }
+    const pwd = body.password ?? body.newPassword;
+    if (typeof pwd === 'string' && pwd.length > 0) {
+      if (pwd.length < 6) { res.status(400).json({ error: '密码至少 6 位' }); return; }
+      Users.updatePassword(id, bcrypt.hashSync(pwd, 10));
+    }
+    const fresh = Users.findById(id);
+    res.json({ ok: true, user: { id: fresh?.id, display_name: fresh?.display_name, role: fresh?.role, work_dir: fresh?.work_dir } });
+  } catch (e) {
+    const err = e as RepoError;
+    res.status(err.status || 400).json({ error: err.message || String(e) });
+  }
+});
+
 router.delete('/users/:id', adminAuth, (req: express.Request, res: express.Response) => {
   const user = adminReqUser(req);
   const id = String(req.params.id || '').trim();

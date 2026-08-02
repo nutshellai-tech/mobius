@@ -570,6 +570,8 @@ const Users = {
     WHERE id = ? AND ${ACTIVE_USER_SQL}
   `).run(id),
   updatePassword: (id: string, hash: string) => db.prepare(`UPDATE users SET password_hash = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(hash, id),
+  updateRole: (id: string, role: string) => db.prepare(`UPDATE users SET role = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(role, id),
+  updateDisplayName: (id: string, displayName: string) => db.prepare(`UPDATE users SET display_name = ? WHERE id = ? AND ${ACTIVE_USER_SQL}`).run(displayName, id),
   activeAdminCount: (): number => (db.prepare(`SELECT COUNT(*) as c FROM users WHERE role = 'admin' AND ${ACTIVE_USER_SQL}`).get() as { c: number }).c,
   countAll: (): number => (db.prepare(`SELECT COUNT(*) as c FROM users WHERE ${ACTIVE_USER_SQL}`).get() as { c: number }).c,
 };
