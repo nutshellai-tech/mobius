@@ -112,7 +112,9 @@ button.compact { margin-top: 8px; padding: 3px 10px; font-size: 11px; }
 .hotspot-card p { margin: 6px 0; color: #626a76; font-size: 12px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .hotspot-tags,.hotspot-meta,.score-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .hotspot-tags span { padding: 1px 6px; border-radius: 5px; background: #f3f4f6; color: #737b87; font-size: 10px; }
-.hotspot-tags span:first-child { color: var(--ok); background: #eaf6ef; }
+.hotspot-tags span.relevance-high { color: #236845; background: #e3f5ea; }
+.hotspot-tags span.relevance-extended { color: #3f5f9a; background: #e9effb; }
+.hotspot-tags span.relevance-current { color: #7b6234; background: #f8f0df; }
 .hotspot-meta { margin-top: 7px; color: var(--muted); font-size: 10px; }.hotspot-meta span:not(:last-child)::after { content: "·"; margin-left: 6px; }
 .score-row { margin-top: 7px; }.score-row span { color: #7d8490; font-size: 10px; }.score-row b { color: var(--brand-dark); font-size: 11px; }
 .choose-mini { padding: 5px 9px; color: var(--brand-dark); border-color: #bac4d9; font-size: 11px; }

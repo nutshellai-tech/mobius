@@ -20,3 +20,11 @@ test('hotspot workspace has responsive list/detail styling', () => {
   assert.match(css, /\.hotspot-detail/);
   assert.match(css, /@media \(max-width: 980px\)/);
 });
+
+test('hotspot UI explains multiple candidates and relevance levels', () => {
+  assert.match(source, /近时段候选/);
+  assert.match(source, /直接命中/);
+  assert.match(source, /扩展候选/);
+  assert.match(source, /与检索方向相关度/);
+  for (const kind of ['high', 'extended', 'current']) assert.match(css, new RegExp(`\\.hotspot-tags span\\.relevance-${kind}`));
+});

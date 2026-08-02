@@ -60,7 +60,7 @@ async function main() {
     throwIfCancelled();
     hotspotStore.upsertItems(db, collected.items);
     hotspotStore.updateSearch(db, searchId, { status: "filtering", coverage: collected.coverage });
-    setState("filtering", "filter", `近 ${windowHours} 小时命中 ${collected.items.length} 条，正在去重`, { progress: .56, coverage: collected.coverage });
+    setState("filtering", "filter", `近 ${windowHours} 小时取得 ${collected.items.length} 条候选（直接相关 ${collected.coverage.direct_matches || 0} 条），正在去重`, { progress: .56, coverage: collected.coverage });
     job.writeCheckpoint(extDataDir, jobId, { phase: "filter", searchId, coverage: collected.coverage, itemCount: collected.items.length });
     throwIfCancelled();
 

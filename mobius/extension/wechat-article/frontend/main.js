@@ -170,8 +170,12 @@ function hotspotCoverageHtml(search, status) {
   if (!search && !status) return '<div class="coverage-bar muted">尚未检索。可留空查看全部 AI 热点，也可输入关注方向。</div>';
   const finished = c.completed_at || search?.completed_at || search?.updated_at;
   const sourceRows = Array.isArray(c.sources) ? c.sources : [];
+  const hasQuery = Boolean(String(search?.query || state.hotspot.query || "").trim());
+  const candidateSummary = hasQuery
+    ? `近时段候选 ${c.recent_items ?? 0} 篇 · 直接命中 ${c.direct_matches ?? 0} 篇 · 扩展候选 ${c.expanded_candidates ?? 0} 篇`
+    : `近时段候选 ${c.recent_items ?? 0} 篇`;
   return `<div class="coverage-bar">
-    <div><b>检索覆盖</b> ${c.succeeded ?? 0}/${c.attempted ?? 0} 个来源 · 命中 ${c.recent_items ?? 0} 篇 · 归并 ${c.clusters ?? search?.result_count ?? 0} 个事件 · 一手源热点 ${c.official_clusters ?? 0} 个</div>
+    <div><b>检索覆盖</b> ${c.succeeded ?? 0}/${c.attempted ?? 0} 个来源 · ${candidateSummary} · 归并 ${c.clusters ?? search?.result_count ?? 0} 个事件 · 一手源热点 ${c.official_clusters ?? 0} 个</div>
     <div class="coverage-actions"><span>${finished ? `截止 ${esc(new Date(finished).toLocaleString("zh-CN", { hour12: false }))}` : "检索中"}</span>
       ${sourceRows.length ? `<details><summary>查看来源明细</summary><div class="source-popover">${sourceRows.map((s) => `<div><span class="source-dot ${s.ok ? "ok" : "bad"}"></span>${esc(s.name)}<em>${s.ok ? `${s.count || 0} 篇` : esc(s.error || "失败")}</em></div>`).join("")}</div></details>` : ""}
     </div></div>`;
@@ -187,14 +191,19 @@ function hotspotProgressHtml() {
     <div class="stage-list">${stages.map((x, i) => `<span class="${i < index ? "done" : i === index ? "active" : ""}">${i < index ? "✓" : i === index ? "●" : "○"} ${x[1]}</span>`).join("")}</div>
     <button id="btn-stop-hotspot" class="btn compact">取消检索</button></div>`;
 }
+function hotspotTagHtml(tag) {
+  const kind = tag === "高度相关" ? "high" : tag === "扩展相关" ? "extended" : tag === "同期热点" ? "current" : "";
+  return `<span class="${kind ? `relevance-${kind}` : ""}">${esc(tag)}</span>`;
+}
 function hotspotCardHtml(h) {
+  const relevance = h.score_breakdown?.query_relevance;
   return `<article class="hotspot-card ${state.hotspot.detail?.id === h.id ? "selected" : ""}" data-hotspot-id="${esc(h.id)}">
     <div class="hotspot-rank">#${h.rank || "—"}</div><div class="hotspot-card-body">
       <div class="hotspot-title-row"><h3>${esc(h.title)}</h3><span class="category-tag">${esc(h.category)}</span></div>
       <p>${esc(h.summary || "")}</p>
-      <div class="hotspot-tags">${(h.status_tags || []).map((x) => `<span>${esc(x)}</span>`).join("")}</div>
+      <div class="hotspot-tags">${(h.status_tags || []).map(hotspotTagHtml).join("")}</div>
       <div class="hotspot-meta"><span>${fmtTime(h.latest_at)}</span><span>${h.source_count || 0} 个独立来源</span><span>${h.official_count || 0} 个一手来源</span></div>
-      <div class="score-row"><span>热度 <b>${h.heat_score || 0}</b></span><span>匹配 <b>${h.account_match || 0}</b></span><span>证据 <b>${h.evidence_strength || 0}</b></span></div>
+      <div class="score-row"><span>热度 <b>${h.heat_score || 0}</b></span>${Number.isFinite(relevance) ? `<span>相关 <b>${relevance}</b></span>` : ""}<span>匹配 <b>${h.account_match || 0}</b></span><span>证据 <b>${h.evidence_strength || 0}</b></span></div>
     </div><button class="choose-mini" data-choose-id="${esc(h.id)}">选为主题</button>
   </article>`;
 }
@@ -204,7 +213,7 @@ function hotspotDetailHtml(h) {
   return `<aside class="hotspot-detail">
     <div class="detail-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><strong>${h.total_score || 0}<small>综合分</small></strong></div>
     <p class="detail-summary">${esc(h.summary || "")}</p>
-    <section><h4>为什么值得写</h4><div class="why-box">近 ${state.hotspot.windowHours} 小时有 ${h.source_count || 0} 个独立来源，${h.official_count ? `包含 ${h.official_count} 个一手来源` : "尚缺一手来源"}；与当前账号匹配度 ${h.account_match || 0}，证据完整度 ${h.evidence_strength || 0}。</div></section>
+    <section><h4>为什么值得写</h4><div class="why-box">近 ${state.hotspot.windowHours} 小时有 ${h.source_count || 0} 个独立来源，${h.official_count ? `包含 ${h.official_count} 个一手来源` : "尚缺一手来源"}；${Number.isFinite(h.score_breakdown?.query_relevance) ? `与检索方向相关度 ${h.score_breakdown.query_relevance}，` : ""}与当前账号匹配度 ${h.account_match || 0}，证据完整度 ${h.evidence_strength || 0}。</div></section>
     <section><h4>推荐标题</h4><div class="title-options">${titles.map((x, i) => `<button data-title-index="${i}" class="${i === state.hotspot.selectedTitle ? "active" : ""}">${esc(x)}</button>`).join("") || `<button class="active">${esc(h.title)}</button>`}</div></section>
     <section><h4>选择写作角度</h4><div class="angle-options">${angles.map((a, i) => `<button data-angle-index="${i}" class="${i === state.hotspot.selectedAngle ? "active" : ""}"><b>${esc(a.title || `角度 ${i + 1}`)}</b><span>${esc(a.text || a)}</span></button>`).join("")}</div></section>
     <section><h4>来源与证据</h4><div class="evidence-list">${(h.sources || []).map((s) => `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noreferrer"><span class="tag ${esc(s.tier)}">${esc(s.tier)}</span><div><b>${esc(s.name)}</b><small>${s.official ? "一手来源" : "可信来源"} · ${fmtTime(s.published_at)}</small><em>${esc(s.title)}</em></div></a>`).join("") || '<div class="muted">暂无可展示来源</div>'}</div></section>
