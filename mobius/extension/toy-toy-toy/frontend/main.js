@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { extCall } from '/extension/_sdk/ext.js';
+import { createToyVisualSystem } from './visual-system.js?v=0.11.0';
 
 const WORLD = Object.freeze({
   width: 20,
@@ -1109,7 +1110,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.10.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.11.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -1398,6 +1399,18 @@ const state = {
   },
 };
 
+// Threejs-Awesome-Graphics-Agent-Skills 视觉合约：主体几何、身份配件、环境、对象池 VFX 与后处理各有唯一所有者。
+const visualSystem = createToyVisualSystem({
+  renderer,
+  scene,
+  camera,
+  worldGroup,
+  wall,
+  core,
+  grid,
+  turretGroups,
+});
+
 const upgrades = [
   {
     id: 'damage', icon: '▰', title: '口径膨胀', color: '#ffd84f', max: 7,
@@ -1685,7 +1698,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.10.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.11.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1716,6 +1729,8 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   if (!theme) return;
   state.themeId = themeId;
   if (persist) localStorage.setItem('toy-toy-toy-theme', themeId);
+  els.shell.dataset.theme = theme.id;
+  visualSystem.setTheme(theme.id);
 
   document.title = `广告爽游实验室 · ${theme.title}`;
   document.documentElement.style.setProperty('--mint', theme.palette.accent);
@@ -1820,7 +1835,6 @@ function showOverdriveBanner(text = 'FIREPOWER OVERDRIVE') {
 function resize() {
   const width = Math.max(1, els.stage.clientWidth);
   const height = Math.max(1, els.stage.clientHeight);
-  renderer.setSize(width, height, false);
   const viewHeight = 31;
   const aspect = width / height;
   camera.left = -(viewHeight * aspect) / 2;
@@ -1828,6 +1842,7 @@ function resize() {
   camera.top = viewHeight / 2;
   camera.bottom = -viewHeight / 2;
   camera.updateProjectionMatrix();
+  visualSystem.resize(width, height);
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   els.fxCanvas.width = Math.round(width * dpr);
@@ -1862,6 +1877,7 @@ function clearWorldState() {
   });
   fxItems.length = 0;
   lightningItems.length = 0;
+  visualSystem.reset(state.seed);
 }
 
 function resetGame() {
@@ -1869,6 +1885,7 @@ function resetGame() {
   clearWorldState();
   state.seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
   state.random = mulberry32(state.seed);
+  visualSystem.reset(state.seed);
   state.elapsed = 0;
   state.score = 0;
   state.kills = 0;
@@ -2968,6 +2985,7 @@ function triggerTurretUpgradeEffect(effectId, label) {
     const z = 10.2 + slot.z;
     addUpgradeBeam(x, z, color);
     addShockwave(x, z, color, 2.1);
+    visualSystem.spawnUpgrade({ x, z, color });
     for (let particleIndex = 0; particleIndex < 12; particleIndex += 1) {
       addFxParticle(x, 0.7, z, color, 0.8, particleIndex % 3 === 0 ? 'shard' : 'particle');
     }
@@ -3278,6 +3296,7 @@ function killEnemy(enemy, critical = false) {
 }
 
 function addExplosionBurst(x, y, z, color, power = 1, style = 'energy') {
+  visualSystem.spawnImpact({ x, y, z, color, power, style });
   if (explosionMeshes.length < 42) {
     const material = new THREE.MeshBasicMaterial({
       color,
@@ -3353,6 +3372,16 @@ function addDefeatEffect(enemy, critical = false) {
   const isBoss = enemy.type === 'boss';
   const isElite = ['elite', 'tank'].includes(enemy.type);
   const color = isBoss ? cssHex(theme.palette.enemies.boss) : theme.id === 'deadline' ? '#45f0d0' : theme.palette.secondary;
+  visualSystem.spawnDefeat({
+    x: enemy.x,
+    y: 0.72 * enemy.scale,
+    z: enemy.z,
+    color,
+    power: isBoss ? 2.8 : isElite ? 1.35 : 0.86,
+    style: theme.id === 'deadline' ? 'digital' : 'energy',
+    boss: isBoss,
+    elite: isElite,
+  });
   const style = theme.id === 'deadline' ? 'digital' : 'energy';
   const power = isBoss ? 3.2 : isElite ? 1.35 + enemy.scale * 0.18 : 0.72 + enemy.scale * 0.15;
   addExplosionBurst(enemy.x, Math.max(0.65, enemy.scale * 0.68), enemy.z, color, power, style);
@@ -3907,7 +3936,16 @@ function renderScene(dt) {
     cameraHome.y + randomBetween(-shakeAmount * 0.35, shakeAmount * 0.35),
     cameraHome.z + randomBetween(-shakeAmount, shakeAmount),
   );
-  renderer.render(scene, camera);
+  visualSystem.update({
+    dt,
+    elapsed: state.elapsed,
+    enemies,
+    baseHp: state.baseHp,
+    levels: state.levels,
+    overdriveUntil: state.overdriveUntil,
+    seed: state.seed,
+  });
+  visualSystem.render();
   renderFx();
 }
 
@@ -3992,6 +4030,19 @@ async function submitRun(victory) {
 }
 
 window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
+  setVisualMode(mode) {
+    return visualSystem.setMode(mode);
+  },
+  setQualityTier(tier) {
+    visualSystem.setQuality(tier);
+    resize();
+    return visualSystem.snapshot().qualityTier;
+  },
+  setCameraBookmark(name) {
+    const bookmark = visualSystem.setCameraBookmark(name);
+    cameraHome.copy(camera.position);
+    return bookmark;
+  },
   configureBuild(build = {}) {
     const levelKeys = ['damage', 'rate', 'blast', 'chain', 'frost', 'multi', 'crit', 'cannon'];
     levelKeys.forEach((key) => {
@@ -4032,7 +4083,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.10.0',
+      version: '0.11.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,
@@ -4089,6 +4140,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         targetCount: Math.min(MAX_CANNONS, state.levels.cannon) * (1 + Math.min(3, state.levels.multi)),
       },
       visuals: {
+        cinematic: visualSystem.snapshot(),
         visibleCannons: turretGroups.filter((turret) => turret.group.visible && turret.cannonModel.visible).length,
         visibleWorkbenches: turretGroups.filter((turret) => turret.group.visible && turret.workbenchModel.visible).length,
         activeTickets: projectilePool.filter((projectile) => projectile.active && projectile.ticket.visible).length,

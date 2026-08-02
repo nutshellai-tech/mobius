@@ -286,7 +286,7 @@ interface CreateUserParams {
   id: string;
   display_name: string;
   password_hash: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'developer' | 'user';
   work_dir: string;
   group_id?: string;
   [key: string]: any;

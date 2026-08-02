@@ -264,7 +264,7 @@ type AdminUserStats = {
 type AdminUserRow = {
   id: string
   display_name: string
-  role: 'admin' | 'user' | string
+  role: 'admin' | 'developer' | 'user' | string
   work_dir?: string
   group_id?: string | null
   group_name?: string | null
@@ -300,7 +300,7 @@ type EmployeeFormState = {
   id: string
   display_name: string
   password: string
-  role: 'user' | 'admin'
+  role: 'user' | 'admin' | 'developer'
   group_id: string
   work_dir: string
 }
@@ -328,9 +328,9 @@ function parseBulkEmployees(text: string) {
         : line.split(/\s+/).map((p) => p.trim())
       const [id = '', password = '', ...rest] = parts
       const tail = rest.filter(Boolean)
-      let role: 'user' | 'admin' = 'user'
-      if (tail[0] === 'admin' || tail[0] === 'user') role = tail.shift() as 'user' | 'admin'
-      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user') role = tail.pop() as 'user' | 'admin'
+      let role: 'user' | 'admin' | 'developer' = 'user'
+      if (tail[0] === 'admin' || tail[0] === 'user' || tail[0] === 'developer') role = tail.shift() as 'user' | 'admin' | 'developer'
+      else if (tail[tail.length - 1] === 'admin' || tail[tail.length - 1] === 'user' || tail[tail.length - 1] === 'developer') role = tail.pop() as 'user' | 'admin' | 'developer'
       const workDir = tail.length && tail[tail.length - 1].startsWith('/') ? tail.pop() || '' : ''
       let groupName = ''
       const explicitGroupIndex = tail.findIndex((p) => p.startsWith('group=') || p.startsWith('群组='))
@@ -728,7 +728,7 @@ function AdminUsersPanel() {
                 const width = row.sessionCount > 0
                   ? `${Math.min(100, Math.max(2, (row.sessionCount / maxCount) * 100))}%`
                   : '0%'
-                const accent = row.role === 'admin' ? '#f59e0b' : '#38bdf8'
+                const accent = row.role === 'admin' ? '#f59e0b' : row.role === 'developer' ? '#a78bfa' : '#38bdf8'
                 return (
                   <div key={row.id} className="grid grid-cols-[minmax(150px,220px)_1fr_88px] items-center gap-3">
                     <div className="min-w-0">
@@ -736,7 +736,7 @@ function AdminUsersPanel() {
                         {row.name}
                       </div>
                       <div className="truncate text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        {row.id} · {row.groupName} · {row.role === 'admin' ? '管理员' : '成员'}
+                        {row.id} · {row.groupName} · {row.role === 'admin' ? '管理员' : row.role === 'developer' ? '开发者' : '成员'}
                       </div>
                     </div>
                     <div
@@ -972,11 +972,15 @@ function AdminUsersPanel() {
               />
               <select
                 value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value === 'admin' ? 'admin' : 'user' }))}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setForm((f) => ({ ...f, role: v === 'admin' || v === 'developer' ? v : 'user' }))
+                }}
                 className="h-9 rounded-md border px-3 text-[12px] outline-none focus:border-blue-500/50"
                 style={fieldStyle}
               >
                 <option value="user">成员</option>
+                <option value="developer">开发者</option>
                 <option value="admin">管理员</option>
               </select>
               <select
@@ -1071,8 +1075,8 @@ function AdminUsersPanel() {
                       </div>
                     </td>
                     <td className="px-2 py-2">
-                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
-                        {u.role === 'admin' ? '管理员' : '成员'}
+                      <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] ${u.role === 'admin' ? 'border-amber-500/25 bg-amber-500/10 text-amber-400' : u.role === 'developer' ? 'border-violet-500/25 bg-violet-500/10 text-violet-400' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'}`}>
+                        {u.role === 'admin' ? '管理员' : u.role === 'developer' ? '开发者' : '成员'}
                       </span>
                     </td>
                     <td className="px-2 py-2 tabular-nums" style={{ color: 'var(--text-secondary)' }}>

@@ -1870,8 +1870,8 @@ router.post('/', auth, (req: express.Request, res: express.Response) => {
 
   // ── 莫比乌斯拓展项目 ──────────────────────────────────────────────────────
   if (kind === 'extension') {
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: '只有管理员可以创建莫比乌斯拓展项目' });
+    if (user.role !== 'admin' && user.role !== 'developer') {
+      return res.status(403).json({ error: '只有管理员或开发者可以创建莫比乌斯拓展项目' });
     }
     if (hasBoolField(req.body || {}, 'can_post_issue', 'canPostIssue')
       || hasBoolField(req.body || {}, 'can_run_session', 'canRunSession')) {

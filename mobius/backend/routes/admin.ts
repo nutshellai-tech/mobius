@@ -98,8 +98,9 @@ function normalizeEmployeeId(value: unknown): string {
   return id;
 }
 
-function normalizeEmployeeRole(value: unknown): 'admin' | 'user' {
-  return value === 'admin' ? 'admin' : 'user';
+function normalizeEmployeeRole(value: unknown): 'admin' | 'developer' | 'user' {
+  if (value === 'admin' || value === 'developer') return value;
+  return 'user';
 }
 
 function normalizeDisplayName(value: unknown, id: string): string {
