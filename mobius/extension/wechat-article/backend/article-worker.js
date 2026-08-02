@@ -49,6 +49,28 @@ function stopHeartbeat() { if (heartbeatTimer) clearInterval(heartbeatTimer); }
 
 function openDb() { try { return store.open(extDataDir); } catch (e) { logger.warn("db open 失败（降级无库）: " + e.message); return null; } }
 
+async function planArticleImages({ provider, title, bodyMd, count }) {
+  const headings = String(bodyMd || "").split(/\r?\n/).filter((line) => /^##\s+/.test(line)).map((line) => line.replace(/^##\s+/, "").trim());
+  const wanted = Math.max(1, Math.min(Number(count) || 3, 6));
+  try {
+    const result = await llm.callJson({ provider, system: "只输出 JSON。", maxTokens: 900, timeoutMs: 35_000,
+      user: [
+        `为中文公众号文章策划 ${wanted} 张可从 Wikimedia Commons 检索的事实型配图。`,
+        `文章标题：${title}`, `章节：${headings.join("｜") || "无小标题"}`,
+        "每张图必须对应一个章节；query 用 2-5 个具体英文关键词，把最关键的实体放在最前面，优先真实人物、产品、建筑、机器人、芯片、会场或工作场景，避免抽象 AI 艺术和无关图库。",
+        "caption 用中文写成稳妥图注，只描述主题关联，不虚构图片中的具体时间、人物身份或事件。",
+        `输出 {"images":[{"heading":"对应章节原文","query":"English search keywords","caption":"中文图注"}]}，恰好 ${wanted} 项。`,
+      ].join("\n") });
+    const rows = Array.isArray(result.json?.images) ? result.json.images : [];
+    if (rows.length) return rows.slice(0, wanted).map((row, index) => ({ position: index + 1,
+      heading: String(row.heading || headings[index] || title).slice(0, 100),
+      query: String(row.query || "").replace(/[^\x20-\x7E]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
+      caption: String(row.caption || row.heading || headings[index] || title).replace(/\s+/g, " ").trim().slice(0, 80),
+    })).filter((row) => row.query);
+  } catch (e) { logger.warn("配图策划失败，改用章节关键词检索: " + (e.message || e)); }
+  return null;
+}
+
 async function runArticle() {
   const topic = SPEC.topic || { title: SPEC.title || "未命名选题", angle: "", framework: SPEC.framework || "interpretation", referenceUrls: SPEC.referenceUrls || [], questions: SPEC.questions || "" };
   const config = cfg.load(extDataDir);
@@ -111,8 +133,9 @@ async function runArticle() {
   if (SPEC.autoImages !== false) {
     setState("illustrating", "images", "检索开放许可配图并生成图注");
     try {
+      const imagePlan = await planArticleImages({ provider, title, bodyMd: finalBodyMd, count: SPEC.imageCount || 3 });
       const collected = await image.collectArticleImages({ extDataDir, username: SPEC.username, articleId, title,
-        bodyMd: finalBodyMd, count: SPEC.imageCount || 3, logger });
+        bodyMd: finalBodyMd, count: SPEC.imageCount || 3, plan: imagePlan, logger });
       articleImages = collected.images;
       imageWarnings = collected.warnings;
       finalBodyMd = collected.bodyMd;
@@ -172,9 +195,12 @@ async function runImagesOnly() {
   if (!db) throw new Error("数据库不可用");
   const article = store.getArticle(db, articleId);
   if (!article) throw new Error("文章不存在: " + articleId);
+  const config = cfg.load(extDataDir);
+  const provider = llm.findProvider(SPEC.modelKey || config.model_key || null);
   setState("illustrating", "images", "重新检索开放许可配图");
+  const imagePlan = await planArticleImages({ provider, title: article.title, bodyMd: article.body_md, count: SPEC.imageCount || 3 });
   const collected = await image.collectArticleImages({ extDataDir, username: SPEC.username, articleId,
-    title: article.title, bodyMd: article.body_md, count: SPEC.imageCount || 3, logger });
+    title: article.title, bodyMd: article.body_md, count: SPEC.imageCount || 3, plan: imagePlan, logger });
   throwIfCancelled();
   store.replaceArticleImages(db, articleId, collected.images);
   const bodyHtml = render(collected.bodyMd);

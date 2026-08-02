@@ -112,6 +112,20 @@ function cleanCaption(value, fallback) {
   return String(value || fallback || "配图").replace(/[\[\]()]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || "配图";
 }
 
+const SEARCH_TERMS = [
+  [/机器人|人形机器人/g, "humanoid robot robotics"], [/人工智能|AI/g, "artificial intelligence"],
+  [/大模型|语言模型/g, "large language model"], [/智能体|Agent/g, "AI agent software"],
+  [/编程|代码|开发者/g, "software developer coding computer"], [/多模态|视觉识别/g, "computer vision artificial intelligence"],
+  [/芯片|算力|GPU/g, "computer chip GPU data center"], [/自动驾驶/g, "autonomous vehicle"],
+  [/开源/g, "open source software"], [/数据中心|服务器/g, "data center servers"],
+];
+function searchFriendly(value) {
+  let text = String(value || "");
+  for (const [pattern, replacement] of SEARCH_TERMS) text = text.replace(pattern, ` ${replacement} `);
+  const ascii = text.replace(/[^A-Za-z0-9 .+_-]/g, " ").replace(/\s+/g, " ").trim();
+  return ascii || String(value || "").replace(/\s+/g, " ").trim();
+}
+
 function buildSearchPlan(title, bodyMd, count) {
   const headings = String(bodyMd || "").split(/\r?\n/)
     .map((line, index) => ({ line: index, text: line.replace(/^##\s+/, "").trim() }))
@@ -123,7 +137,7 @@ function buildSearchPlan(title, bodyMd, count) {
     position: index + 1,
     afterLine: item.line,
     heading: item.text || title,
-    query: [title, item.text].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" ").slice(0, 180),
+    query: [searchFriendly(title), searchFriendly(item.text)].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" ").slice(0, 180),
   }));
 }
 
@@ -181,10 +195,12 @@ async function collectArticleImages({ extDataDir, username, articleId, title, bo
   for (const item of searchPlan) {
     let candidates = [];
     try {
-      const queries = [...new Set([item.query, item.heading, title].filter(Boolean))];
+      const words = String(item.query || "").split(/\s+/).filter(Boolean);
+      const queries = [...new Set([item.query, words.slice(0, 3).join(" "), words.slice(0, 2).join(" "), item.heading, title].filter(Boolean))];
       for (const query of queries) {
-        candidates = await searchCommons(query, 10);
-        if (candidates.some((entry) => !used.has(entry.sourceUrl || entry.url))) { item.query = query; break; }
+        const found = await searchCommons(query, 10);
+        if (found.length > candidates.length) { candidates = found; item.query = query; }
+        if (found.filter((entry) => !used.has(entry.sourceUrl || entry.url)).length >= 3) break;
       }
     }
     catch (error) { warnings.push(`「${item.heading}」检索失败：${error.message || error}`); continue; }

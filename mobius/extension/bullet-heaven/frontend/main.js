@@ -89,6 +89,7 @@ let autoPickTimer = 0;
 let toastTimer = 0;
 let audioCtx = null;
 let muted = localStorage.getItem('bullet-heaven-muted') === '1';
+let lastRenderTs = 0;
 
 const spriteFrames = [];
 const atlas = new Image();
@@ -248,7 +249,8 @@ function setMode(mode) {
 function resize() {
   width = Math.max(320, window.innerWidth);
   height = Math.max(520, window.innerHeight);
-  dpr = Math.min(window.devicePixelRatio || 1, width < 720 ? 1 : 1.25);
+  // 高密度弹幕的清晰度主要来自亮线叠加，1× 内部分辨率能显著降低低端 GPU / 软件栅格压力。
+  dpr = 1;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   canvas.style.width = `${width}px`;
@@ -1171,7 +1173,7 @@ function drawPickup(pickup) {
   ctx.rotate(pickup.phase * 0.18);
   ctx.globalCompositeOperation = 'lighter';
   ctx.shadowColor = pickup.color;
-  ctx.shadowBlur = pickup.type === 'xp' ? 10 : 22;
+  ctx.shadowBlur = 0;
   ctx.fillStyle = pickup.color;
   if (pickup.type === 'xp') {
     ctx.rotate(Math.PI / 4);
@@ -1204,7 +1206,7 @@ function drawEnemy(enemy) {
   ctx.translate(enemy.x, enemy.y + bob);
   ctx.globalAlpha = enemy.hitFlash > 0 ? 0.58 : 1;
   ctx.shadowColor = frozen ? '#6edbff' : enemy.color;
-  ctx.shadowBlur = enemy.boss ? 30 : enemy.elite ? 14 : enemy.hitFlash > 0 ? 8 : 0;
+  ctx.shadowBlur = enemy.boss ? 8 : enemy.elite ? 4 : 0;
   ctx.fillStyle = 'rgba(0,0,0,0.42)';
   ctx.beginPath();
   ctx.ellipse(0, enemy.radius * 0.68, enemy.radius * 0.76, enemy.radius * 0.3, 0, 0, Math.PI * 2);
@@ -1249,7 +1251,7 @@ function drawPlayer() {
   ctx.rotate(player.angle);
   ctx.globalAlpha = invulnerable && Math.floor(state.elapsed * 20) % 2 ? 0.55 : 1;
   ctx.shadowColor = state.elapsed < state.overdriveUntil ? '#70fff1' : '#65a8ff';
-  ctx.shadowBlur = state.elapsed < state.overdriveUntil ? 32 : 18;
+  ctx.shadowBlur = state.elapsed < state.overdriveUntil ? 10 : 5;
   ctx.fillStyle = 'rgba(2,5,12,0.5)';
   ctx.beginPath(); ctx.ellipse(-3, 10, 22, 12, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#162c49';
@@ -1281,7 +1283,7 @@ function drawDronesAndOrbit() {
       const angle = state.elapsed * 1.35 + index * Math.PI * 2 / state.drones;
       const x = state.player.x + Math.cos(angle) * (48 + state.drones * 2.5);
       const y = state.player.y + Math.sin(angle) * (48 + state.drones * 2.5);
-      ctx.save(); ctx.translate(x, y); ctx.rotate(angle + Math.PI / 2); ctx.shadowColor = '#69b8ff'; ctx.shadowBlur = 15; ctx.fillStyle = '#69b8ff'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(7, 6); ctx.lineTo(0, 3); ctx.lineTo(-7, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(angle + Math.PI / 2); ctx.fillStyle = '#69b8ff'; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(7, 6); ctx.lineTo(0, 3); ctx.lineTo(-7, 6); ctx.closePath(); ctx.fill(); ctx.restore();
     }
   }
   if (state.orbit) {
@@ -1291,7 +1293,7 @@ function drawDronesAndOrbit() {
       const angle = state.elapsed * (2.4 + state.orbit * 0.08) + index * Math.PI * 2 / state.orbit;
       const x = state.player.x + Math.cos(angle) * radius;
       const y = state.player.y + Math.sin(angle) * radius;
-      ctx.save(); ctx.translate(x, y); ctx.rotate(angle + state.elapsed * 8); ctx.shadowColor = '#aaff75'; ctx.shadowBlur = 18; ctx.fillStyle = '#e6ffc7'; ctx.beginPath(); ctx.moveTo(17, 0); ctx.lineTo(-8, -6); ctx.lineTo(-3, 0); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(angle + state.elapsed * 8); ctx.fillStyle = '#e6ffc7'; ctx.beginPath(); ctx.moveTo(17, 0); ctx.lineTo(-8, -6); ctx.lineTo(-3, 0); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); ctx.restore();
     }
   }
 }
@@ -1304,17 +1306,17 @@ function drawProjectiles() {
     ctx.strokeStyle = bullet.color;
     ctx.lineWidth = bullet.radius * (bullet.kind === 'missile' ? 1.2 : 1.55);
     ctx.shadowColor = bullet.color;
-    ctx.shadowBlur = bullet.kind === 'missile' ? 24 : 13;
+    ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(bullet.px, bullet.py); ctx.lineTo(bullet.x, bullet.y); ctx.stroke();
     if (bullet.kind === 'missile') { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.radius * 0.75, 0, Math.PI * 2); ctx.fill(); }
   }
   for (const bullet of state.hostileBullets) {
-    ctx.strokeStyle = bullet.color; ctx.lineWidth = bullet.radius * 1.6; ctx.shadowColor = bullet.color; ctx.shadowBlur = 15;
+    ctx.strokeStyle = bullet.color; ctx.lineWidth = bullet.radius * 1.6; ctx.shadowColor = bullet.color; ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(bullet.px, bullet.py); ctx.lineTo(bullet.x, bullet.y); ctx.stroke();
   }
   for (const beam of state.beams) {
     ctx.globalAlpha = clamp(beam.life / beam.maxLife, 0, 1);
-    ctx.strokeStyle = beam.color; ctx.lineWidth = beam.width * 2.5; ctx.shadowColor = beam.color; ctx.shadowBlur = 16;
+    ctx.strokeStyle = beam.color; ctx.lineWidth = beam.width * 2.5; ctx.shadowColor = beam.color; ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(beam.x1, beam.y1); ctx.lineTo(beam.x2, beam.y2); ctx.stroke();
     ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1, beam.width * 0.55); ctx.beginPath(); ctx.moveTo(beam.x1, beam.y1); ctx.lineTo(beam.x2, beam.y2); ctx.stroke();
   }
@@ -1327,12 +1329,12 @@ function drawEffects() {
   ctx.lineCap = 'round';
   for (const particle of state.particles) {
     ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
-    ctx.strokeStyle = particle.color; ctx.lineWidth = particle.size; ctx.shadowColor = particle.color; ctx.shadowBlur = 8;
+    ctx.strokeStyle = particle.color; ctx.lineWidth = particle.size; ctx.shadowColor = particle.color; ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(particle.px, particle.py); ctx.lineTo(particle.x, particle.y); ctx.stroke();
   }
   for (const wave of state.shockwaves) {
     ctx.globalAlpha = clamp(wave.life / wave.maxLife, 0, 1);
-    ctx.strokeStyle = wave.color; ctx.lineWidth = wave.width * (wave.life / wave.maxLife); ctx.shadowColor = wave.color; ctx.shadowBlur = 18;
+    ctx.strokeStyle = wave.color; ctx.lineWidth = wave.width * (wave.life / wave.maxLife); ctx.shadowColor = wave.color; ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.restore();
@@ -1340,7 +1342,7 @@ function drawEffects() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const floater of state.floaters) {
     ctx.globalAlpha = clamp(floater.life / floater.maxLife, 0, 1);
-    ctx.fillStyle = floater.color; ctx.shadowColor = floater.color; ctx.shadowBlur = 8;
+    ctx.fillStyle = floater.color; ctx.shadowColor = floater.color; ctx.shadowBlur = 0;
     ctx.font = `950 ${floater.size}px system-ui, sans-serif`;
     ctx.fillText(floater.text, floater.x, floater.y);
   }
@@ -1370,7 +1372,10 @@ function loop(timestamp) {
   state.lastTs = timestamp;
   const dt = Math.min(0.05, Math.max(0, rawDt));
   update(dt);
-  render();
+  if (timestamp - lastRenderTs >= 25) {
+    lastRenderTs = timestamp;
+    render();
+  }
   rafId = requestAnimationFrame(loop);
 }
 

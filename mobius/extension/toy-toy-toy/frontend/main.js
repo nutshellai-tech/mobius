@@ -929,7 +929,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.8.2`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.9.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -1449,7 +1449,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.8.2');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.9.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1851,6 +1851,7 @@ function triggerOverdrive(auto = false) {
   if (state.mode !== 'playing') return;
   state.telemetry.overdriveUses += 1;
   state.overdriveUntil = Math.max(state.overdriveUntil, state.elapsed + 10);
+  triggerTurretUpgradeEffect('overdrive', theme.id === 'deadline' ? '咖啡因全栈超频' : '反应堆火力超载');
   showToast(auto ? theme.director.bailoutToast : theme.director.overdriveToast);
   showOverdriveBanner(auto ? theme.director.bailoutBanner : theme.director.overdriveBanner);
   state.shake = Math.max(state.shake, 0.36);
@@ -2787,6 +2788,8 @@ function applyDamage(enemy, amount, options = {}) {
     if (state.random() < criticalChance) {
       critical = true;
       damage *= 1.8 + state.levels.crit * 0.18;
+      addExplosionBurst(enemy.x, 0.9 * enemy.scale, enemy.z, '#ffd84f', 0.72 + state.levels.crit * 0.08, currentTheme().id === 'deadline' ? 'digital' : 'energy');
+      for (let index = 0; index < 6; index += 1) addFxParticle(enemy.x, 0.9 * enemy.scale, enemy.z, '#fff1a3', 0.7, 'shard');
     }
   }
 
@@ -2798,11 +2801,12 @@ function applyDamage(enemy, amount, options = {}) {
 
   if (options.primary && state.levels.frost > 0 && state.random() < 0.1 + state.levels.frost * 0.08) {
     enemy.slowUntil = Math.max(enemy.slowUntil, state.elapsed + 2.2 + state.levels.frost * 0.2);
+    addShockwave(enemy.x, enemy.z, '#69d8ff', 0.8 + state.levels.frost * 0.24);
+    for (let index = 0; index < 4 + state.levels.frost; index += 1) addFxParticle(enemy.x, 0.8 * enemy.scale, enemy.z, '#bfefff', 0.62, 'shard');
   }
 
   if (options.primary && state.levels.blast > 0) {
     const radius = 0.65 + state.levels.blast * 0.58;
-    addShockwave(enemy.x, enemy.z, '#ff9f43', radius);
     for (const other of enemies) {
       if (!other.active || other === enemy) continue;
       const distance = Math.hypot(other.x - enemy.x, other.z - enemy.z);
@@ -2822,6 +2826,7 @@ function applyDamage(enemy, amount, options = {}) {
         bx: target.x, by: 0.8 * target.scale, bz: target.z,
         life: 0.14, maxLife: 0.14,
       });
+      addFxParticle(target.x, 0.82 * target.scale, target.z, '#d9c2ff', 0.52, 'shard');
       applyDamage(target, damage * 0.42, { chain: true });
       source = target;
     }
@@ -3520,7 +3525,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.8.2',
+      version: '0.9.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,
@@ -3579,6 +3584,14 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         visibleWorkbenches: turretGroups.filter((turret) => turret.group.visible && turret.workbenchModel.visible).length,
         activeTickets: projectilePool.filter((projectile) => projectile.active && projectile.ticket.visible).length,
         activeShells: projectilePool.filter((projectile) => projectile.active && projectile.energy.visible).length,
+        muzzleFlashes: turretGroups.filter((turret) => turret.zombieMuzzle.visible || turret.deadlineMuzzle.visible).length,
+        sideBarrels: turretGroups.reduce((sum, turret) => sum + turret.sideBarrels.filter((mesh) => mesh.visible).length, 0),
+        sideScreens: turretGroups.reduce((sum, turret) => sum + turret.sideScreens.filter((mesh) => mesh.visible).length, 0),
+        blastPods: turretGroups.reduce((sum, turret) => sum + turret.blastPods.filter((mesh) => mesh.visible).length, 0),
+        chainAttachments: turretGroups.reduce((sum, turret) => sum + turret.chainCoils.filter((mesh) => mesh.visible).length, 0),
+        frostAttachments: turretGroups.reduce((sum, turret) => sum + turret.frostFins.filter((mesh) => mesh.visible).length, 0),
+        explosions: explosionMeshes.length,
+        upgradeBeams: upgradeBeams.length,
       },
       bonuses: { ...state.bonuses },
       levels: { ...state.levels },
