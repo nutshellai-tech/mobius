@@ -18,7 +18,7 @@ const hotspotStore = require("./lib/hotspot-store");
 const { buildArticlePackage } = require("./lib/export");
 const { relativeToUser } = require("./lib/assets");
 
-const VERSION = "0.4.1";
+const VERSION = "0.4.2";
 const WORKER = path.join(__dirname, "article-worker.js");
 const HOTSPOT_WORKER = path.join(__dirname, "hotspot-worker.js");
 const NODE_MODULES = path.resolve(__dirname, "../../../node_modules"); // mobius/node_modules

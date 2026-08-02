@@ -21,6 +21,11 @@ function tierFor(url) {
 }
 function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return String(u || ""); } }
 function sameHost(a, b) { return hostOf(a) === hostOf(b); }
+function writeLog(logger, level, message) {
+  if (typeof logger === "function") return logger(level, message);
+  const method = logger && typeof logger[level] === "function" ? logger[level] : null;
+  if (method) return method.call(logger, message);
+}
 
 async function grabUrl(url, opts = {}) {
   try {
@@ -53,7 +58,6 @@ async function webSearch(query, { timeoutMs = 15_000 } = {}) {
 }
 
 async function runResearch({ topic, db, provider, budgets, logger }) {
-  const log = logger || (() => {});
   const evidence = [];
   const maxEv = (budgets && budgets.per_article_search) || 6;
   const fetchedAt = new Date().toISOString();
@@ -64,7 +68,7 @@ async function runResearch({ topic, db, provider, budgets, logger }) {
     if (evidence.length >= maxEv) break;
     const g = await grabUrl(u);
     if (g && g.excerpt) evidence.push(mkEvidence(g.url, hostOf(g.url), g.excerpt, fetchedAt, g.tier));
-    else if (g?.error) log("warn", "抓取失败 " + u + ": " + g.error);
+    else if (g?.error) writeLog(logger, "warn", "抓取失败 " + u + ": " + g.error);
   }
 
   // 2) LLM 生成 query + 可选 web_search
@@ -112,4 +116,4 @@ function mkEvidence(url, name, excerpt, fetchedAt, tier, publishedAt = "") {
     excerpt, content_hash: hash(excerpt), tier: tier || "C" };
 }
 
-module.exports = { runResearch, tierFor, grabUrl, hostOf };
+module.exports = { runResearch, tierFor, grabUrl, hostOf, writeLog };
