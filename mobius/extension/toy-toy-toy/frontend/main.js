@@ -366,6 +366,7 @@ function mulberry32(seed) {
 }
 
 let audioContext = null;
+let audioNoiseBuffer = null;
 let muted = localStorage.getItem('toy-toy-toy-muted') === '1';
 
 function ensureAudio() {
@@ -381,7 +382,7 @@ function ensureAudio() {
   return audioContext;
 }
 
-function tone(frequency, duration = 0.08, type = 'square', gainValue = 0.035, delay = 0) {
+function tone(frequency, duration = 0.08, type = 'square', gainValue = 0.035, delay = 0, endFrequency = frequency) {
   const context = ensureAudio();
   if (!context) return;
   const start = context.currentTime + delay;
@@ -389,21 +390,98 @@ function tone(frequency, duration = 0.08, type = 'square', gainValue = 0.035, de
   const gain = context.createGain();
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, start);
-  gain.gain.setValueAtTime(gainValue, start);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), start + duration);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(gainValue, start + Math.min(0.012, duration * 0.2));
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
   oscillator.connect(gain).connect(context.destination);
   oscillator.start(start);
   oscillator.stop(start + duration + 0.02);
 }
 
+function noiseBurst(duration = 0.05, gainValue = 0.018, cutoff = 900, delay = 0) {
+  const context = ensureAudio();
+  if (!context) return;
+  if (!audioNoiseBuffer || audioNoiseBuffer.sampleRate !== context.sampleRate) {
+    audioNoiseBuffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+    const data = audioNoiseBuffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) data[index] = Math.random() * 2 - 1;
+  }
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  const start = context.currentTime + delay;
+  source.buffer = audioNoiseBuffer;
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(cutoff, start);
+  gain.gain.setValueAtTime(gainValue, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.connect(filter).connect(gain).connect(context.destination);
+  source.start(start, Math.random() * Math.max(0.01, 1 - duration), duration);
+  source.stop(start + duration + 0.01);
+}
+
 const sfx = {
-  shoot() {
+  shoot(power = 1) {
     if (state.themeId === 'deadline') {
-      tone(520, 0.018, 'triangle', 0.009);
-      tone(760, 0.016, 'square', 0.006, 0.012);
-    } else tone(180, 0.025, 'square', 0.008);
+      tone(680, 0.025, 'triangle', 0.009, 0, 410);
+      tone(1050, 0.018, 'square', 0.006, 0.014, 760);
+      noiseBurst(0.025, 0.006, 1800, 0.008);
+    } else {
+      tone(150 - Math.min(35, power * 8), 0.06, 'sawtooth', 0.012 + power * 0.002, 0, 72);
+      tone(420, 0.022, 'square', 0.007, 0.006, 210);
+      noiseBurst(0.045, 0.009 + power * 0.0015, 720);
+    }
   },
-  hit() { tone(95, 0.035, 'sawtooth', 0.01); },
+  impact({ critical = false, heavy = false, gate = false, variant = 'normal' } = {}) {
+    if (gate) {
+      tone(heavy ? 240 : 330, 0.07, 'square', heavy ? 0.026 : 0.014, 0, 120);
+      tone(heavy ? 760 : 580, 0.035, 'triangle', 0.01, 0.015, 260);
+      return;
+    }
+    if (state.themeId === 'deadline') {
+      tone(critical ? 980 : 560, critical ? 0.09 : 0.04, 'triangle', critical ? 0.03 : 0.009, 0, critical ? 1380 : 360);
+      if (heavy) noiseBurst(0.06, 0.015, 1600);
+    } else {
+      tone(critical ? 110 : heavy ? 86 : 120, critical ? 0.12 : 0.055, 'sawtooth', critical ? 0.034 : heavy ? 0.021 : 0.008, 0, 48);
+      if (heavy || critical) noiseBurst(0.075, critical ? 0.023 : 0.015, 640);
+    }
+    if (variant === 'chain') {
+      tone(420, 0.075, 'square', 0.014, 0, 1180);
+      tone(960, 0.05, 'triangle', 0.01, 0.025, 520);
+    } else if (variant === 'frost') {
+      tone(1420, 0.08, 'triangle', 0.013, 0, 760);
+      noiseBurst(0.04, 0.007, 2600);
+    } else if (variant === 'blast') {
+      tone(82, 0.12, 'sawtooth', 0.02, 0, 38);
+      noiseBurst(0.1, 0.018, 520);
+    }
+  },
+  kill({ elite = false, boss = false, critical = false, combo = 1 } = {}) {
+    if (boss) return;
+    const comboLift = Math.min(180, combo * 3);
+    if (state.themeId === 'deadline') {
+      tone(620 + comboLift, elite ? 0.13 : 0.055, 'triangle', elite ? 0.035 : 0.012, 0, 920 + comboLift);
+      if (elite || critical) tone(980, 0.1, 'square', 0.018, 0.045, 1480);
+    } else {
+      tone(elite ? 82 : 105, elite ? 0.16 : 0.07, 'sawtooth', elite ? 0.032 : 0.011, 0, 42);
+      if (elite || critical) noiseBurst(0.1, 0.022, 520);
+    }
+  },
+  lane() {
+    if (state.themeId === 'deadline') {
+      tone(360, 0.045, 'triangle', 0.018, 0, 620);
+      tone(720, 0.03, 'square', 0.009, 0.035, 520);
+    } else {
+      tone(120, 0.08, 'sawtooth', 0.018, 0, 210);
+      noiseBurst(0.08, 0.012, 480);
+    }
+  },
+  gateBreak() {
+    tone(180, 0.14, 'square', 0.04, 0, 720);
+    tone(520, 0.16, 'triangle', 0.035, 0.06, 1180);
+    noiseBurst(0.12, 0.023, 1200);
+  },
   upgrade() {
     tone(440, 0.09, 'triangle', 0.04);
     tone(660, 0.1, 'triangle', 0.04, 0.09);
@@ -421,6 +499,7 @@ const sfx = {
   boss() {
     tone(90, 0.45, 'sawtooth', 0.065);
     tone(70, 0.55, 'sawtooth', 0.06, 0.32);
+    noiseBurst(0.34, 0.028, 420, 0.08);
   },
   victory() {
     [523, 659, 784, 1047].forEach((frequency, index) => tone(frequency, 0.2, 'triangle', 0.05, index * 0.12));
@@ -582,6 +661,19 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   const turret = new THREE.Group();
   turret.position.set(0, 0, 10.2);
   turret.visible = index === 0;
+  const heroHaloMaterial = new THREE.MeshBasicMaterial({
+    color: 0x4fffd2,
+    transparent: true,
+    opacity: 0.32,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const heroHalo = new THREE.Mesh(new THREE.RingGeometry(0.72, 1.28, 32), heroHaloMaterial);
+  heroHalo.rotation.x = -Math.PI / 2;
+  heroHalo.position.y = 0.08;
+  turret.add(heroHalo);
 
   // 僵尸题材：重型电磁歼灭炮。底盘、能量核心、供弹环和功能挂件都会随升级真实变化。
   const cannonModel = new THREE.Group();
@@ -730,6 +822,47 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   zombieMuzzle.visible = false;
   pivot.add(zombieMuzzle);
   cannonModel.add(pivot);
+  const cannonEvolutionStages = [1, 2, 3].map((stage) => {
+    const group = new THREE.Group();
+    if (stage === 1) {
+      [-1, 1].forEach((side) => {
+        const capacitor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.2, 0.72, 8),
+          new THREE.MeshStandardMaterial({ color: 0x244f67, emissive: 0x4fffd2, emissiveIntensity: 0.45, metalness: 0.68, roughness: 0.25 }),
+        );
+        capacitor.position.set(side * 0.72, 1.3, 0.3);
+        group.add(capacitor);
+      });
+    } else if (stage === 2) {
+      [-1, 1].forEach((side) => {
+        const shoulderRail = new THREE.Mesh(
+          new THREE.BoxGeometry(0.22, 0.2, 1.48),
+          new THREE.MeshStandardMaterial({ color: 0x8dacb7, emissive: 0xff9f43, emissiveIntensity: 0.28, metalness: 0.86, roughness: 0.16 }),
+        );
+        shoulderRail.position.set(side * 0.48, 1.72, -0.4);
+        shoulderRail.rotation.z = side * -0.08;
+        group.add(shoulderRail);
+      });
+    } else {
+      const crown = new THREE.Mesh(
+        new THREE.TorusGeometry(0.72, 0.07, 8, 30),
+        new THREE.MeshBasicMaterial({ color: 0xffd84f, transparent: true, opacity: 0.52, blending: THREE.AdditiveBlending, toneMapped: false }),
+      );
+      crown.rotation.x = Math.PI / 2;
+      crown.position.y = 1.82;
+      group.add(crown);
+      for (let spikeIndex = 0; spikeIndex < 4; spikeIndex += 1) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.58, 5), new THREE.MeshBasicMaterial({ color: 0x4fffd2, toneMapped: false }));
+        const angle = spikeIndex * Math.PI / 2;
+        spike.position.set(Math.cos(angle) * 0.84, 1.76, Math.sin(angle) * 0.84);
+        spike.rotation.z = Math.cos(angle) * 0.34;
+        group.add(spike);
+      }
+    }
+    group.visible = false;
+    cannonModel.add(group);
+    return group;
+  });
   turret.add(cannonModel);
 
   // 程序员题材：会移动的 P0 救火车，显示器、咖啡、打印机和功能附件都受升级驱动。
@@ -876,6 +1009,45 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
   badge.scale.set(1.42, 0.5, 1);
   badge.renderOrder = 18;
   workbenchModel.add(badge);
+  const workbenchEvolutionStages = [1, 2, 3].map((stage) => {
+    const group = new THREE.Group();
+    if (stage === 1) {
+      [-1, 1].forEach((side) => {
+        const rack = new THREE.Mesh(
+          new THREE.BoxGeometry(0.32, 0.78, 0.46),
+          new THREE.MeshStandardMaterial({ color: 0x18294e, emissive: side > 0 ? 0x45f0d0 : 0xff526a, emissiveIntensity: 0.42, metalness: 0.48, roughness: 0.3 }),
+        );
+        rack.position.set(side * 0.88, 0.72, 0.1);
+        group.add(rack);
+      });
+    } else if (stage === 2) {
+      const deployBar = new THREE.Mesh(
+        new THREE.BoxGeometry(1.65, 0.12, 0.12),
+        new THREE.MeshStandardMaterial({ color: 0x568db5, emissive: 0x2388d4, emissiveIntensity: 0.7, metalness: 0.55, roughness: 0.2 }),
+      );
+      deployBar.position.set(0, 1.92, -0.05);
+      group.add(deployBar);
+      [-1, 1].forEach((side) => {
+        const support = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.08), deployBar.material);
+        support.position.set(side * 0.72, 1.56, -0.05);
+        group.add(support);
+      });
+    } else {
+      const deployHalo = new THREE.Mesh(
+        new THREE.TorusGeometry(0.66, 0.055, 7, 30),
+        new THREE.MeshBasicMaterial({ color: 0x45f0d0, transparent: true, opacity: 0.54, blending: THREE.AdditiveBlending, toneMapped: false }),
+      );
+      deployHalo.rotation.x = Math.PI / 2;
+      deployHalo.position.y = 2.12;
+      group.add(deployHalo);
+      const p0Core = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), new THREE.MeshBasicMaterial({ color: 0xffca5c, toneMapped: false }));
+      p0Core.position.y = 2.12;
+      group.add(p0Core);
+    }
+    group.visible = false;
+    workbenchModel.add(group);
+    return group;
+  });
   workbenchModel.scale.setScalar(1.5);
   workbenchModel.position.y = 0.38;
   workbenchModel.visible = false;
@@ -914,10 +1086,17 @@ for (let index = 0; index < MAX_CANNONS; index += 1) {
     frostFan,
     approvalLamp,
     screenMaterial,
+    heroHalo,
+    heroHaloMaterial,
+    cannonEvolutionStages,
+    workbenchEvolutionStages,
     targetRotation: 0,
     recoil: 0,
     muzzleLife: 0,
     upgradePulse: 0,
+    movementLean: 0,
+    lastX: 0,
+    evolutionStage: 0,
     phase: index * 0.7,
   });
   baseGroup.add(turret);
@@ -930,7 +1109,7 @@ const enemyPlaneGeometry = new THREE.PlaneGeometry(1.95, 2.55);
 enemyPlaneGeometry.translate(0, 1.275, 0);
 
 function createEnemyMaterial(themeId, type) {
-  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.9.0`);
+  const texture = textureLoader.load(`./assets/characters/${themeId}-atlas.svg?v=0.10.0`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -990,32 +1169,47 @@ const projectileGeometry = new THREE.IcosahedronGeometry(0.14, 1);
 const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffe36d, toneMapped: false });
 const projectileAuraMaterial = new THREE.MeshBasicMaterial({ color: 0x4fffd2, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
 const projectileTrailMaterial = new THREE.MeshBasicMaterial({ color: 0xff9f43, transparent: true, opacity: 0.58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-const ticketCanvas = document.createElement('canvas');
-ticketCanvas.width = 320;
-ticketCanvas.height = 200;
-const ticketCtx = ticketCanvas.getContext('2d');
-ticketCtx.fillStyle = '#f5fbff';
-ticketCtx.fillRect(4, 4, 312, 192);
-ticketCtx.fillStyle = '#ff526a';
-ticketCtx.fillRect(4, 4, 312, 48);
-ticketCtx.fillStyle = '#ffffff';
-ticketCtx.font = '1000 30px system-ui, sans-serif';
-ticketCtx.fillText('BUG 工单', 18, 38);
-ticketCtx.fillStyle = '#19324a';
-ticketCtx.font = '900 28px system-ui, sans-serif';
-ticketCtx.fillText('用户反馈', 18, 92);
-ticketCtx.fillStyle = '#7a94a8';
-ticketCtx.fillRect(18, 115, 260, 10);
-ticketCtx.fillRect(18, 140, 210, 10);
-ticketCtx.fillRect(18, 165, 245, 10);
-const ticketTexture = new THREE.CanvasTexture(ticketCanvas);
-ticketTexture.colorSpace = THREE.SRGBColorSpace;
-const ticketMaterial = new THREE.MeshBasicMaterial({ map: ticketTexture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+function createTicketMaterial(header, title, accent) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 320;
+  canvas.height = 200;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f5fbff';
+  ctx.fillRect(4, 4, 312, 192);
+  ctx.fillStyle = accent;
+  ctx.fillRect(4, 4, 312, 48);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '1000 30px system-ui, sans-serif';
+  ctx.fillText(header, 18, 38);
+  ctx.fillStyle = '#19324a';
+  ctx.font = '900 28px system-ui, sans-serif';
+  ctx.fillText(title, 18, 92);
+  ctx.fillStyle = '#7a94a8';
+  ctx.fillRect(18, 115, 260, 10);
+  ctx.fillRect(18, 140, 210, 10);
+  ctx.fillRect(18, 165, 245, 10);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+}
+
+const ticketMaterials = Object.freeze({
+  normal: createTicketMaterial('BUG 工单', '用户反馈', '#ff526a'),
+  blast: createTicketMaterial('P0 事故', '批量关闭', '#ff8a3d'),
+  chain: createTicketMaterial('@所有人', '调用链追踪', '#9a70ff'),
+  frost: createTicketMaterial('需求冻结', '本周不再改', '#3cbde8'),
+  critical: createTicketMaterial('HOTFIX', '一次通过', '#45c96b'),
+});
 const ticketStampMaterial = new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.92, side: THREE.DoubleSide, toneMapped: false });
 const ticketEchoMaterials = [
   new THREE.MeshBasicMaterial({ color: 0xff526a, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
   new THREE.MeshBasicMaterial({ color: 0x62a8ff, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
 ];
+const shellVariantMaterials = Object.freeze({
+  blast: new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+  chain: new THREE.MeshBasicMaterial({ color: 0xb37cff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+  frost: new THREE.MeshBasicMaterial({ color: 0x8de9ff, transparent: true, opacity: 0.92, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+});
 const projectilePool = [];
 for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
   const mesh = new THREE.Group();
@@ -1031,8 +1225,23 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
     shellFins.add(fin);
   }
   shellFins.visible = false;
+  const blastBand = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.045, 6, 16), shellVariantMaterials.blast);
+  blastBand.rotation.x = Math.PI / 2;
+  blastBand.visible = false;
+  const chainOrbit = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 18), shellVariantMaterials.chain);
+  chainOrbit.rotation.y = Math.PI / 2;
+  chainOrbit.visible = false;
+  const frostSpikes = new THREE.Group();
+  for (let spikeIndex = 0; spikeIndex < 4; spikeIndex += 1) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.34, 4), shellVariantMaterials.frost);
+    spike.rotation.z = spikeIndex * Math.PI / 2;
+    spike.position.x = Math.cos(spikeIndex * Math.PI / 2) * 0.18;
+    spike.position.y = Math.sin(spikeIndex * Math.PI / 2) * 0.18;
+    frostSpikes.add(spike);
+  }
+  frostSpikes.visible = false;
   const ticket = new THREE.Group();
-  const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.52), ticketMaterial);
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.52), ticketMaterials.normal);
   ticket.add(paper);
   const ticketStamp = new THREE.Mesh(new THREE.RingGeometry(0.1, 0.15, 14), ticketStampMaterial);
   ticketStamp.position.set(0.22, 0.08, 0.012);
@@ -1049,7 +1258,7 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
   ticket.rotation.x = -0.72;
   ticket.scale.setScalar(1.38);
   ticket.visible = false;
-  mesh.add(trail, aura, energy, shellFins, ticket);
+  mesh.add(trail, aura, energy, shellFins, blastBand, chainOrbit, frostSpikes, ticket);
   mesh.visible = false;
   worldGroup.add(mesh);
   projectilePool.push({
@@ -1059,7 +1268,11 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
     aura,
     trail,
     shellFins,
+    blastBand,
+    chainOrbit,
+    frostSpikes,
     ticket,
+    ticketPaper: paper,
     ticketStamp,
     ticketEchoes,
     x: 0,
@@ -1070,12 +1283,14 @@ for (let i = 0; i < WORLD.maxProjectiles; i += 1) {
     lane: 0,
     spin: i * 0.17,
     visualPower: 1,
+    variant: 'normal',
   });
 }
 
 const matrixDummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
 const enemyTint = new THREE.Color();
+const impactWhite = new THREE.Color(0xffffff);
 const muzzleWorldPosition = new THREE.Vector3();
 const enemies = [];
 const bonusTargets = [];
@@ -1139,10 +1354,15 @@ const state = {
   finishAt: 0,
   shake: 0,
   flash: 0,
+  flashColor: '#ffffff',
+  hitStopUntil: 0,
+  lastHitStopAt: 0,
   lastTs: performance.now(),
   lastUiAt: 0,
   lastShotSoundAt: 0,
+  lastImpactSoundAt: 0,
   lastKillSoundAt: 0,
+  lastLaneSoundAt: 0,
   telemetry: {
     spawned: 0,
     shots: 0,
@@ -1153,6 +1373,10 @@ const state = {
     upgrades: 0,
     gatesOffered: 0,
     gatesChosen: 0,
+    impacts: 0,
+    criticalHits: 0,
+    specialImpacts: 0,
+    hitStops: 0,
   },
   bonuses: {
     damage: 1,
@@ -1409,6 +1633,12 @@ const GATE_EFFECTS = Object.freeze([
   },
 ]);
 
+// 挡板颜色是刻意设计的干扰项：每轮重新洗牌，与收益、风险和效果类型完全解耦。
+const GATE_DISTRACTOR_COLORS = Object.freeze([
+  0xff536d, 0xff9f43, 0xffd84f, 0x8fff65, 0x4fffd2,
+  0x62a8ff, 0xb37cff, 0xff72e8, 0x7ef0ff,
+]);
+
 function currentTheme() {
   return THEMES[state.themeId] || THEMES.zombie;
 }
@@ -1455,7 +1685,7 @@ function renderLevelPicker() {
     const frame = ENEMY_ATLAS_FRAMES[role.visual] || 0;
     return `
       <div class="enemy-roster-item">
-        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.9.0');background-position:${frame * 25}% center"></i>
+        <i style="background-image:url('./assets/characters/${state.themeId}-atlas.svg?v=0.10.0');background-position:${frame * 25}% center"></i>
         <span>${role.name}</span>
       </div>
     `;
@@ -1546,12 +1776,13 @@ function applyTheme(themeId, { persist = true, refreshLeaderboard = true } = {})
   for (const visual of Object.values(enemyVisuals)) {
     visual.mesh.material = visual.materials[theme.id];
   }
-  turretGroups.forEach(({ housingMaterial, barrelMaterial, coreMaterial, screenMaterial, cannonModel, workbenchModel }) => {
+  turretGroups.forEach(({ housingMaterial, barrelMaterial, coreMaterial, screenMaterial, cannonModel, workbenchModel, heroHaloMaterial }) => {
     housingMaterial.color.setHex(theme.palette.core);
     housingMaterial.emissive.setHex(theme.palette.core);
     barrelMaterial.emissive.setHex(theme.palette.core);
     coreMaterial.emissive.setHex(theme.palette.core);
     screenMaterial.emissive.setHex(theme.id === 'deadline' ? 0x2388d4 : theme.palette.core);
+    heroHaloMaterial.color.setHex(theme.id === 'deadline' ? 0x62a8ff : theme.palette.core);
     cannonModel.visible = theme.id === 'zombie';
     workbenchModel.visible = theme.id === 'deadline';
   });
@@ -1674,7 +1905,17 @@ function resetGame() {
   state.finishAt = 0;
   state.shake = 0;
   state.flash = 0;
-  state.telemetry = { spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0, upgrades: 0, gatesOffered: 0, gatesChosen: 0 };
+  state.flashColor = '#ffffff';
+  state.hitStopUntil = 0;
+  state.lastHitStopAt = 0;
+  state.lastShotSoundAt = 0;
+  state.lastImpactSoundAt = 0;
+  state.lastKillSoundAt = 0;
+  state.lastLaneSoundAt = 0;
+  state.telemetry = {
+    spawned: 0, shots: 0, speech: 0, frenzyUses: 0, overdriveUses: 0, bossUses: 0,
+    upgrades: 0, gatesOffered: 0, gatesChosen: 0, impacts: 0, criticalHits: 0, specialImpacts: 0, hitStops: 0,
+  };
   // 关卡敌人会增长，基础装备也必须有温和科技成长；否则高关开局的来袭 HP/s 已超过裸装 DPS，第一扇门前就数学无解。
   const campaignDamage = Math.pow(1.05, Math.max(0, state.level - 1));
   const campaignRate = Math.pow(1.04, Math.max(0, state.level - 1));
@@ -1695,6 +1936,11 @@ function resetGame() {
     turret.pivot.position.z = 0;
     turret.keyboard.rotation.x = 0;
     turret.recoil = 0;
+    turret.movementLean = 0;
+    turret.lastX = 0;
+    turret.evolutionStage = 0;
+    turret.cannonEvolutionStages.forEach((stage) => { stage.visible = false; });
+    turret.workbenchEvolutionStages.forEach((stage) => { stage.visible = false; });
   });
   els.bossHud.classList.add('hidden');
   selectLane(1);
@@ -1794,6 +2040,8 @@ function spawnEnemy(forceRole = null, options = {}) {
     tint: isBoss ? level.bossTint : role.tint,
     slowUntil: 0,
     hitUntil: 0,
+    impactPulse: 0,
+    impactSide: 0,
     wobble: randomBetween(0, Math.PI * 2),
     speechCount: 0,
   };
@@ -2050,56 +2298,106 @@ function disposeBonusTarget(target) {
   target.active = false;
 }
 
-function gateBoardSprite(effect, hitsRemaining, color) {
+function gateOutcomePreview(effect) {
+  const theme = currentTheme();
+  const teamLabel = theme.id === 'deadline' ? '组' : '座';
+  const team = state.levels.cannon;
+  const damage = state.bonuses.damage;
+  const rate = state.bonuses.rate;
+  switch (effect.id) {
+    case 'team_double': return { primary: `${team} → ${Math.min(MAX_CANNONS, Math.max(2, team * 2))} ${teamLabel}`, secondary: team >= MAX_CANNONS ? '已满编：改为火力 ×1.22' : '单位数量直接翻倍' };
+    case 'team_half': return { primary: `${team} → ${Math.max(1, Math.ceil(team / 2))} ${teamLabel}`, secondary: '余下单位火力 ×2.25 · 射速 ×1.18' };
+    case 'rapid_flow': return { primary: `射速 ×${rate.toFixed(2)} → ×${(rate * 1.55).toFixed(2)}`, secondary: `火力 ×${damage.toFixed(2)} → ×${Math.max(1, damage * 0.9).toFixed(2)}` };
+    case 'heavy_packet': return { primary: `火力 ×${damage.toFixed(2)} → ×${(damage * 1.7).toFixed(2)}`, secondary: '暴击率额外 +6%' };
+    case 'split_queue': return { primary: `并行 ${1 + state.levels.multi} → ${2 + Math.min(3, state.levels.multi)} 个`, secondary: '射速额外 ×1.12' };
+    case 'blast_formula': return { primary: `范围特效 Lv.${state.levels.blast} → Lv.${Math.min(5, state.levels.blast + 1)}`, secondary: '火力额外 ×1.08' };
+    case 'frost_formula': return { primary: `冻结 Lv.${state.levels.frost} → Lv.${Math.min(4, state.levels.frost + 1)}`, secondary: '射速额外 ×1.10' };
+    case 'chain_formula': return { primary: `连锁 Lv.${state.levels.chain} → Lv.${Math.min(5, state.levels.chain + 1)}`, secondary: '暴击率额外 +3%' };
+    case 'crit_formula': return { primary: `暴击 Lv.${state.levels.crit} → Lv.${Math.min(5, state.levels.crit + 1)}`, secondary: '火力额外 ×1.12' };
+    case 'swap_stats': return { primary: `火力 ×${damage.toFixed(2)} ⇄ 射速 ×${rate.toFixed(2)}`, secondary: '交换后补暴击率 +4%' };
+    case 'odd_even': return team % 2 === 1
+      ? { primary: `${team} 是奇数 → ${Math.min(MAX_CANNONS, team * 2)} ${teamLabel}`, secondary: '奇数触发扩编 ×2' }
+      : { primary: `${team} 是偶数 → ${Math.max(1, team / 2)} ${teamLabel}`, secondary: '裁半，但火力 ×1.90' };
+    case 'compound_risk': return { primary: '火力 ×1.30 · 射速 ×1.30', secondary: `${theme.baseLabel}立即 -12%` };
+    case 'recovery': return { primary: `${theme.baseLabel} +25%`, secondary: '碎片 +1 · 射速 ×1.08' };
+    case 'roulette': return { primary: '随机执行另一项效果', secondary: '结果完全未知，颜色也不给提示' };
+    default: return { primary: effect.icon, secondary: effect.copy[theme.id]?.[1] || '' };
+  }
+}
+
+function gateBoardSprite(effect, hitsRemaining, requiredHits, color, lane) {
   const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 320;
+  canvas.width = 760;
+  canvas.height = 420;
   const ctx = canvas.getContext('2d');
+  const preview = gateOutcomePreview(effect);
+  const theme = currentTheme();
+  const laneName = theme.lanes[lane] || `路线 ${lane + 1}`;
+  const drawFitted = (text, x, y, maxWidth, startSize, minSize, weight = 900) => {
+    let size = startSize;
+    do {
+      ctx.font = `${weight} ${size}px system-ui, sans-serif`;
+      size -= 1;
+    } while (ctx.measureText(text).width > maxWidth && size > minSize);
+    ctx.fillText(text, x, y);
+  };
   const redraw = (hits) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(4, 10, 20, 0.95)';
+    ctx.fillStyle = 'rgba(3, 9, 18, 0.97)';
     ctx.strokeStyle = `#${color.toString(16).padStart(6, '0')}`;
-    ctx.lineWidth = 7;
+    ctx.lineWidth = 9;
     ctx.beginPath();
-    ctx.roundRect(10, 10, 620, 300, 30);
+    ctx.roundRect(12, 12, 736, 396, 34);
     ctx.fill();
     ctx.stroke();
+    ctx.fillStyle = '#88a3b5';
+    ctx.font = '900 22px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${laneName} · COLOR IS NOISE / 颜色不代表收益`, 34, 42);
     ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
-    ctx.font = '1000 82px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(effect.icon, 90, 92);
+    drawFitted(effect.icon, 118, 158, 168, 112, 58, 1000);
     ctx.fillStyle = '#effaff';
-    ctx.font = '1000 40px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(effect.copy[currentTheme().id]?.[0] || effect.id, 160, 72);
-    ctx.fillStyle = '#9bb1c0';
-    const description = effect.copy[currentTheme().id]?.[1] || '';
-    let descriptionSize = 23;
-    do {
-      ctx.font = `700 ${descriptionSize}px system-ui, sans-serif`;
-      descriptionSize -= 1;
-    } while (ctx.measureText(description).width > 450 && descriptionSize > 15);
-    ctx.fillText(description, 160, 116);
+    drawFitted(effect.copy[theme.id]?.[0] || effect.id, 220, 92, 500, 39, 27, 1000);
     ctx.fillStyle = '#ffffff';
-    ctx.font = '1000 40px system-ui, sans-serif';
-    ctx.fillText(currentTheme().id === 'deadline' ? `需要 ${hits} 份工单反馈` : `需要 ${hits} 发炮弹`, 160, 178);
-    ctx.fillStyle = '#ffcf55';
-    ctx.font = '1000 29px system-ui, sans-serif';
-    ctx.fillText(`击破后锁定这一项`, 160, 230);
+    drawFitted(preview.primary, 220, 156, 500, 49, 30, 1000);
+    ctx.fillStyle = '#a9c1d0';
+    drawFitted(preview.secondary, 220, 218, 500, 27, 19, 800);
+
+    const ratio = clamp((requiredHits - hits) / Math.max(1, requiredHits), 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.roundRect(34, 275, 692, 30, 15);
+    ctx.fill();
+    ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+    ctx.beginPath();
+    ctx.roundRect(34, 275, Math.max(12, 692 * ratio), 30, 15);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '1000 34px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      hits > 0
+        ? `${theme.id === 'deadline' ? '剩余反馈' : '剩余炮击'} ${hits} / ${requiredHits}`
+        : '已击穿 · 正在锁定选择',
+      380,
+      352,
+    );
   };
   redraw(hitsRemaining);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: true }));
-  sprite.scale.set(4.8, 2.4, 1);
-  sprite.position.y = 1.85;
+  sprite.scale.set(5.35, 2.96, 1);
+  sprite.position.y = 2.12;
   sprite.renderOrder = 15;
-  return { sprite, texture, redraw };
+  return { sprite, texture, redraw, preview };
 }
 
-function createChoiceGate(effect, lane, requiredHits) {
-  const color = effect.color;
+function createChoiceGate(effect, lane, requiredHits, color) {
   const startZ = -8.4;
   const group = new THREE.Group();
   group.position.set(WORLD.lanes[lane], 0.04, startZ);
@@ -2121,13 +2419,14 @@ function createChoiceGate(effect, lane, requiredHits) {
     pillar.position.set(x, 1.4, 0);
     group.add(pillar);
   });
-  const board = gateBoardSprite(effect, requiredHits, color);
+  const board = gateBoardSprite(effect, requiredHits, requiredHits, color, lane);
   group.add(board.sprite);
   worldGroup.add(group);
   const gate = {
     active: true,
     kind: 'gate',
     effect,
+    displayColor: color,
     lane,
     x: WORLD.lanes[lane],
     y: 1.2,
@@ -2260,10 +2559,11 @@ function spawnChoiceGates() {
     if (!fallback) break;
     selected.push(fallback);
   }
+  const distractorColors = shuffle(GATE_DISTRACTOR_COLORS).slice(0, 3);
   selected.forEach((effect, lane) => {
     const scaleByTeam = Math.max(0, state.levels.cannon - 1) * 0.8;
     const requiredHits = Math.round(effect.hits + state.gateRound * 0.55 + state.level * 0.35 + scaleByTeam + randomBetween(-1, 2));
-    createChoiceGate(effect, lane, requiredHits);
+    createChoiceGate(effect, lane, requiredHits, distractorColors[lane]);
   });
   for (let index = 0; index < 5 + Math.ceil(state.level / 3); index += 1) {
     const escort = spawnEnemy(null, { lane: index % 3, z: -10.8 + randomBetween(0, 5.6) });
@@ -2280,8 +2580,8 @@ function spawnChoiceGates() {
   state.gateRound += 1;
   state.telemetry.gatesOffered += 3;
   showToast(currentTheme().id === 'deadline'
-    ? '评审开始：A / D 切换工位，只能轰开一份方案'
-    : '三门选择开始：A / D 切路，只能击破一扇挡板', 2200);
+    ? '评审开始：颜色是随机干扰项，只看公式和真实数值'
+    : '三门选择开始：颜色是随机干扰项，只看公式和真实数值', 2500);
 }
 
 function finishGateWindow(delay = 1.25) {
@@ -2306,7 +2606,7 @@ function resolveChoiceGate(gate) {
     killEnemy(enemy);
     convoyCleared += 1;
   }
-  const color = cssHex(gate.effect.color);
+  const color = cssHex(gate.displayColor);
   addShockwave(gate.x, gate.z, color, 3.8);
   if (convoyCleared) addFxText(gate.x, 2.2, gate.z + 0.8, `选择冲击波 ×${convoyCleared}`, color, 1.2, 16);
   for (let index = 0; index < 26; index += 1) addFxParticle(gate.x, 1.3, gate.z, color, 1.2);
@@ -2316,6 +2616,7 @@ function resolveChoiceGate(gate) {
   }
   showOverdriveBanner(`${gate.effect.icon} ${copy[0]}`);
   showToast(`${copy[0]}：${detail}`, 3100);
+  sfx.gateBreak();
   sfx.upgrade();
   finishGateWindow();
   updateHud(true);
@@ -2372,8 +2673,17 @@ function updateBonusTargets(dt) {
 }
 
 function selectLane(lane) {
-  state.focusLane = clamp(Number(lane) || 0, 0, 2);
+  const nextLane = clamp(Number(lane) || 0, 0, 2);
+  const changed = nextLane !== state.focusLane;
+  state.focusLane = nextLane;
   els.laneButtons.forEach((button) => button.classList.toggle('active', Number(button.dataset.lane) === state.focusLane));
+  if (changed && state.mode === 'playing' && performance.now() - state.lastLaneSoundAt > 110) {
+    state.lastLaneSoundAt = performance.now();
+    state.shake = Math.max(state.shake, 0.09);
+    state.flash = Math.max(state.flash, 0.08);
+    state.flashColor = currentTheme().palette.accent;
+    sfx.lane();
+  }
 }
 
 function moveLane(direction) {
@@ -2418,6 +2728,7 @@ function updateEnemies(dt) {
   for (const enemy of enemies) {
     if (!enemy.active) continue;
     const slowed = state.elapsed < enemy.slowUntil;
+    enemy.impactPulse = Math.max(0, enemy.impactPulse - dt * 7.5);
     enemy.z += enemy.speed * (slowed ? 0.44 : 1) * dt;
     enemy.wobble += dt * (enemy.type === 'runner' ? 7 : 3.2);
     enemy.x += Math.sin(enemy.wobble) * dt * 0.08;
@@ -2460,6 +2771,14 @@ function acquireProjectile() {
   return projectilePool.find((projectile) => !projectile.active) || null;
 }
 
+function chooseProjectileVariant() {
+  const sequence = state.telemetry.shots + 1;
+  if (state.levels.frost > 0 && sequence % Math.max(3, 8 - state.levels.frost) === 0) return 'frost';
+  if (state.levels.chain > 0 && sequence % Math.max(3, 7 - state.levels.chain) === 0) return 'chain';
+  if (state.levels.blast > 0 && sequence % Math.max(2, 5 - Math.min(3, state.levels.blast)) === 0) return 'blast';
+  return 'normal';
+}
+
 function fireProjectile(turret, target, damage) {
   const projectile = acquireProjectile();
   if (!projectile || !target) return;
@@ -2473,13 +2792,18 @@ function fireProjectile(turret, target, damage) {
   projectile.target = target;
   projectile.damage = damage;
   projectile.lane = state.focusLane;
+  projectile.variant = chooseProjectileVariant();
   projectile.visualPower = clamp(Math.sqrt(Math.max(1, damage) / 22), 0.9, 3.2);
   projectile.mesh.position.set(projectile.x, projectile.y, projectile.z);
   projectile.energy.scale.setScalar(0.86 + projectile.visualPower * 0.16);
   projectile.aura.scale.setScalar(0.82 + projectile.visualPower * 0.22);
   projectile.trail.scale.set(0.85 + projectile.visualPower * 0.08, 0.85 + projectile.visualPower * 0.08, 1 + projectile.visualPower * 0.2);
   projectile.shellFins.visible = currentTheme().id === 'zombie' && (state.levels.blast > 0 || state.levels.multi > 0);
+  projectile.blastBand.visible = currentTheme().id === 'zombie' && projectile.variant === 'blast';
+  projectile.chainOrbit.visible = currentTheme().id === 'zombie' && projectile.variant === 'chain';
+  projectile.frostSpikes.visible = currentTheme().id === 'zombie' && projectile.variant === 'frost';
   projectile.ticket.scale.setScalar(1.22 + Math.min(0.42, projectile.visualPower * 0.1));
+  projectile.ticketPaper.material = ticketMaterials[projectile.variant] || ticketMaterials.normal;
   projectile.ticketStamp.scale.setScalar(1 + state.levels.crit * 0.12 + state.bonuses.crit * 0.7);
   projectile.ticketEchoes.forEach((echo, echoIndex) => {
     echo.visible = state.levels.multi > echoIndex || state.levels.chain > echoIndex;
@@ -2505,15 +2829,30 @@ function currentCombatStats() {
   };
 }
 
+function triggerHitStop(milliseconds) {
+  if (state.speed > 2.5) return;
+  const now = performance.now();
+  if (milliseconds < 80 && now - state.lastHitStopAt < 220) return;
+  state.lastHitStopAt = now;
+  state.hitStopUntil = Math.max(state.hitStopUntil, now + milliseconds);
+  state.telemetry.hitStops += 1;
+}
+
+function triggerCombatFlash(amount, color) {
+  state.flash = Math.max(state.flash, amount);
+  state.flashColor = color || currentTheme().palette.accent;
+}
+
 function formationSlot(index, count) {
   const row = count > 4 ? Math.floor(index / 4) : 0;
   const rowStart = row * 4;
   const rowCount = Math.min(count > 4 ? 4 : count, count - rowStart);
   const column = index - rowStart;
+  const spacing = rowCount >= 4 ? 1.12 : rowCount === 3 ? 1.32 : rowCount === 2 ? 1.18 : 0;
   return {
-    x: (column - (rowCount - 1) / 2) * 0.72,
-    z: row * 0.72,
-    scale: count > 4 ? 0.88 : count > 2 ? 0.98 : 1.1,
+    x: (column - (rowCount - 1) / 2) * spacing,
+    z: row * 0.88,
+    scale: count > 4 ? 0.8 : count > 2 ? 0.91 : count > 1 ? 1.02 : 1.24,
   };
 }
 
@@ -2523,7 +2862,28 @@ function updateTurretUpgradeVisuals(turret, dt) {
   const upgradePulse = state.elapsed < state.turretUpgradeUntil ? 1 : 0;
   const damageTier = clamp(Math.max(state.levels.damage - 1, Math.floor(Math.log(Math.max(1, state.bonuses.damage)) / Math.log(1.55))), 0, 4);
   const rateTier = clamp(Math.max(state.levels.rate - 1, Math.floor(Math.log(Math.max(1, state.bonuses.rate)) / Math.log(1.42))), 0, 4);
+  const evolutionScore = damageTier + rateTier
+    + Math.min(3, state.levels.multi)
+    + Math.min(3, state.levels.blast)
+    + Math.min(2, state.levels.chain)
+    + Math.min(2, state.levels.frost)
+    + Math.min(2, state.levels.crit);
+  const evolutionStage = evolutionScore >= 10 ? 3 : evolutionScore >= 6 ? 2 : evolutionScore >= 2 ? 1 : 0;
+  turret.evolutionStage = evolutionStage;
   const time = state.elapsed + turret.phase;
+
+  turret.cannonEvolutionStages.forEach((stage, stageIndex) => {
+    stage.visible = stageIndex < evolutionStage;
+    if (stage.visible) stage.rotation.y += dt * (stageIndex === 2 ? 0.72 : 0.12) * (stageIndex % 2 ? -1 : 1);
+  });
+  turret.workbenchEvolutionStages.forEach((stage, stageIndex) => {
+    stage.visible = stageIndex < evolutionStage;
+    if (stage.visible) stage.rotation.y += dt * (stageIndex === 2 ? 0.9 : 0.08) * (stageIndex % 2 ? -1 : 1);
+  });
+  const haloPulse = 1 + Math.sin(time * (overdrive ? 10 : 4.5)) * 0.09 + evolutionStage * 0.08 + upgradePulse * 0.22;
+  turret.heroHalo.scale.setScalar(haloPulse);
+  turret.heroHalo.rotation.z += dt * (1.1 + rateTier * 0.35) * (turret.phase % 1 > 0.5 ? -1 : 1);
+  turret.heroHaloMaterial.opacity = 0.15 + evolutionStage * 0.055 + (overdrive ? 0.18 : 0) + upgradePulse * 0.17;
 
   turret.sideBarrels.forEach((mesh, barrelIndex) => {
     mesh.visible = state.levels.multi > barrelIndex || damageTier >= barrelIndex + 2;
@@ -2587,8 +2947,8 @@ function updateTurretUpgradeVisuals(turret, dt) {
   turret.deadlineMuzzle.rotation.z = Math.sin(time * 23) * 0.1;
   turret.upgradePulse = Math.max(0, turret.upgradePulse - dt * 1.8);
   const modelScale = 1 + turret.upgradePulse * 0.16;
-  turret.cannonModel.scale.setScalar(modelScale);
-  turret.workbenchModel.scale.setScalar(1.5 * modelScale);
+  turret.cannonModel.scale.setScalar((1.08 + evolutionStage * 0.035) * modelScale);
+  turret.workbenchModel.scale.setScalar((1.5 + evolutionStage * 0.04) * modelScale);
 }
 
 function triggerTurretUpgradeEffect(effectId, label) {
@@ -2612,7 +2972,7 @@ function triggerTurretUpgradeEffect(effectId, label) {
       addFxParticle(x, 0.7, z, color, 0.8, particleIndex % 3 === 0 ? 'shard' : 'particle');
     }
   });
-  addFxText(WORLD.lanes[state.focusLane], 3.1, 9.2, theme.id === 'deadline' ? `热修部署 · ${label}` : `炮台进化 · ${label}`, color, 1.45, 18);
+  addFxText(WORLD.lanes[state.focusLane], 4.35, 8.65, theme.id === 'deadline' ? `热修部署 · ${label}` : `炮台进化 · ${label}`, color, 1.15, 16);
 }
 
 function updateTurrets(dt) {
@@ -2642,8 +3002,16 @@ function updateTurrets(dt) {
     const slot = formationSlot(index, cannonCount);
     const targetX = laneX + slot.x;
     const targetZ = 10.2 + slot.z;
+    const previousX = turret.group.position.x;
     turret.group.position.x = lerp(turret.group.position.x, targetX, Math.min(1, dt * 11));
     turret.group.position.z = lerp(turret.group.position.z, targetZ, Math.min(1, dt * 11));
+    const movement = turret.group.position.x - previousX;
+    turret.movementLean = lerp(turret.movementLean, clamp(-movement * 4.8, -0.18, 0.18), Math.min(1, dt * 15));
+    turret.cannonModel.rotation.z = turret.movementLean;
+    turret.workbenchModel.rotation.z = turret.movementLean * 1.35;
+    if (Math.abs(movement) > 0.018 && state.random() < dt * 20) {
+      addFxParticle(turret.group.position.x, 0.2, turret.group.position.z + 0.45, currentTheme().id === 'deadline' ? '#62a8ff' : '#4fffd2', 0.42, currentTheme().id === 'deadline' ? 'ticket' : 'particle');
+    }
     const turretTargets = targets.length <= 1
       ? targets
       : Array.from({ length: targetsPerCannon }, (_, targetIndex) => targets[(index + targetIndex * cannonCount) % targets.length])
@@ -2677,7 +3045,7 @@ function updateTurrets(dt) {
       safety += 1;
       if (performance.now() - state.lastShotSoundAt > 48) {
         state.lastShotSoundAt = performance.now();
-        sfx.shoot();
+        sfx.shoot(clamp(Math.sqrt(baseDamage / 22), 0.8, 3));
       }
     }
   });
@@ -2708,7 +3076,7 @@ function updateProjectiles(dt) {
       projectile.y = targetY;
       projectile.z = target.z;
       addProjectileImpact(projectile, target);
-      applyDamage(target, projectile.damage, { primary: true });
+      applyDamage(target, projectile.damage, { primary: true, variant: projectile.variant });
       retireProjectile(projectile);
       continue;
     }
@@ -2722,6 +3090,10 @@ function updateProjectiles(dt) {
     projectile.energy.rotation.z += dt * 12;
     projectile.aura.scale.setScalar((0.82 + projectile.visualPower * 0.22) * (1 + Math.sin(projectile.spin * 1.8) * 0.12));
     projectile.shellFins.rotation.z += dt * 11;
+    projectile.blastBand.rotation.z += dt * 14;
+    projectile.chainOrbit.rotation.x += dt * 17;
+    projectile.chainOrbit.rotation.z -= dt * 10;
+    projectile.frostSpikes.rotation.z += dt * 8;
     if (state.themeId === 'deadline') {
       projectile.ticket.rotation.z = Math.sin(projectile.spin) * 0.34;
       projectile.ticket.rotation.y += dt * 7.5;
@@ -2755,11 +3127,15 @@ function applyDamage(enemy, amount, options = {}) {
       enemy.hitsRemaining > 0
         ? `还差 ${enemy.hitsRemaining} ${currentTheme().id === 'deadline' ? '份' : '发'}`
         : '方案击穿！',
-      cssHex(enemy.effect.color),
+      cssHex(enemy.displayColor),
       0.62,
       enemy.hitsRemaining > 0 ? 12 : 17,
     );
     state.shake = Math.max(state.shake, enemy.hitsRemaining > 0 ? 0.055 : 0.34);
+    if (performance.now() - state.lastImpactSoundAt > 72) {
+      state.lastImpactSoundAt = performance.now();
+      sfx.impact({ gate: true, heavy: enemy.hitsRemaining <= 0 || enemy.hitsRemaining <= Math.ceil(enemy.requiredHits * 0.2) });
+    }
     if (enemy.hitsRemaining <= 0) resolveChoiceGate(enemy);
     return;
   }
@@ -2789,6 +3165,7 @@ function applyDamage(enemy, amount, options = {}) {
   }
   let damage = amount;
   let critical = false;
+  const variant = options.variant || 'normal';
   if (options.primary) {
     const criticalChance = 0.06 + state.levels.crit * 0.085 + state.bonuses.crit;
     if (state.random() < criticalChance) {
@@ -2800,27 +3177,51 @@ function applyDamage(enemy, amount, options = {}) {
   }
 
   enemy.hp -= damage;
+  enemy.impactPulse = Math.max(enemy.impactPulse || 0, critical ? 1 : variant === 'blast' ? 0.9 : 0.62);
+  enemy.impactSide = state.random() < 0.5 ? -1 : 1;
   enemy.hitUntil = Math.max(enemy.hitUntil, state.elapsed + (critical ? 0.15 : 0.085));
   addFxText(enemy.x, 0.8 * enemy.scale, enemy.z, `${critical ? '暴击 ' : ''}${Math.round(damage)}`, critical ? '#ffd84f' : '#e9fff9', critical ? 1.2 : 0.78, critical ? 17 : 12);
   for (let i = 0; i < (critical ? 5 : 2); i += 1) addFxParticle(enemy.x, 0.7, enemy.z, critical ? '#ffd84f' : '#4fffd2', critical ? 0.85 : 0.5);
   state.shake = Math.max(state.shake, critical ? 0.16 : 0.04);
+  if (options.primary) {
+    state.telemetry.impacts += 1;
+    if (critical) state.telemetry.criticalHits += 1;
+    if (variant !== 'normal') state.telemetry.specialImpacts += 1;
+    const heavyImpact = critical || variant === 'blast' || enemy.type === 'boss' || damage >= enemy.maxHp * 0.22;
+    if (critical) {
+      triggerHitStop(enemy.type === 'boss' ? 52 : 34);
+      triggerCombatFlash(0.2, '#ffd84f');
+    } else if (variant === 'blast') {
+      triggerCombatFlash(0.1, currentTheme().id === 'deadline' ? '#ff526a' : '#ff9f43');
+    }
+    if (performance.now() - state.lastImpactSoundAt > (heavyImpact ? 58 : 105)) {
+      state.lastImpactSoundAt = performance.now();
+      sfx.impact({ critical, heavy: heavyImpact, variant });
+    }
+    if (variant !== 'normal' && state.random() < 0.28) {
+      const variantCopy = currentTheme().id === 'deadline'
+        ? { blast: 'P0 批量关闭', chain: '@所有人 · 调用链', frost: '需求已冻结' }
+        : { blast: '重炮尸爆', chain: '电弧贯穿', frost: '冰晶弹头' };
+      addFxText(enemy.x, 1.18 * enemy.scale, enemy.z, variantCopy[variant] || '', variant === 'blast' ? '#ff9f43' : variant === 'chain' ? '#c8a7ff' : '#9beaff', 0.62, 11);
+    }
+  }
 
-  if (options.primary && state.levels.frost > 0 && state.random() < 0.1 + state.levels.frost * 0.08) {
+  if (options.primary && state.levels.frost > 0 && (variant === 'frost' || state.random() < 0.1 + state.levels.frost * 0.08)) {
     enemy.slowUntil = Math.max(enemy.slowUntil, state.elapsed + 2.2 + state.levels.frost * 0.2);
     addShockwave(enemy.x, enemy.z, '#69d8ff', 0.8 + state.levels.frost * 0.24);
     for (let index = 0; index < 4 + state.levels.frost; index += 1) addFxParticle(enemy.x, 0.8 * enemy.scale, enemy.z, '#bfefff', 0.62, 'shard');
   }
 
   if (options.primary && state.levels.blast > 0) {
-    const radius = 0.65 + state.levels.blast * 0.58;
+    const radius = 0.65 + state.levels.blast * 0.58 + (variant === 'blast' ? 0.45 : 0);
     for (const other of enemies) {
       if (!other.active || other === enemy) continue;
       const distance = Math.hypot(other.x - enemy.x, other.z - enemy.z);
-      if (distance <= radius) applyDamage(other, damage * 0.34, { splash: true });
+      if (distance <= radius) applyDamage(other, damage * (variant === 'blast' ? 0.46 : 0.34), { splash: true });
     }
   }
 
-  if (options.primary && state.levels.chain > 0 && state.random() < 0.16 + state.levels.chain * 0.1) {
+  if (options.primary && state.levels.chain > 0 && (variant === 'chain' || state.random() < 0.16 + state.levels.chain * 0.1)) {
     const candidates = enemies
       .filter((other) => other.active && other !== enemy && other.lane === enemy.lane && Math.hypot(other.x - enemy.x, other.z - enemy.z) < 5.4)
       .sort((a, b) => Math.hypot(a.x - enemy.x, a.z - enemy.z) - Math.hypot(b.x - enemy.x, b.z - enemy.z))
@@ -2853,6 +3254,14 @@ function killEnemy(enemy, critical = false) {
   state.score += Math.round(enemy.score * comboBonus * (critical ? 1.18 : 1));
   state.shake = Math.max(state.shake, enemy.type === 'boss' ? 1.45 : 0.08 * enemy.scale);
   addDefeatEffect(enemy, critical);
+  const elite = ['elite', 'tank'].includes(enemy.type);
+  if (enemy.type === 'boss') {
+    triggerHitStop(110);
+    triggerCombatFlash(0.52, '#ffffff');
+  } else if (elite || critical) {
+    triggerHitStop(elite ? 48 : 34);
+    triggerCombatFlash(elite ? 0.18 : 0.13, critical ? '#ffd84f' : currentTheme().palette.accent);
+  }
 
   if (enemy.type === 'boss') {
     state.bossAlive = false;
@@ -2862,9 +3271,9 @@ function killEnemy(enemy, critical = false) {
     showOverdriveBanner(theme.victoryBanner);
     showToast(theme.victoryToast, 2600);
     sfx.victory();
-  } else if (performance.now() - state.lastKillSoundAt > 105) {
+  } else if (performance.now() - state.lastKillSoundAt > (elite ? 82 : 128)) {
     state.lastKillSoundAt = performance.now();
-    sfx.hit();
+    sfx.kill({ elite, critical, combo: state.combo });
   }
 }
 
@@ -2916,18 +3325,25 @@ function addUpgradeBeam(x, z, color) {
 function addProjectileImpact(projectile, target) {
   const theme = currentTheme();
   const style = theme.id === 'deadline' ? 'digital' : 'energy';
-  const baseColor = theme.id === 'deadline' ? '#62a8ff' : theme.palette.accent;
+  const variantColor = projectile.variant === 'blast' ? '#ff9f43'
+    : projectile.variant === 'chain' ? '#b37cff'
+      : projectile.variant === 'frost' ? '#8de9ff'
+        : null;
+  const baseColor = variantColor || (theme.id === 'deadline' ? '#62a8ff' : theme.palette.accent);
   const power = clamp(0.36 + projectile.visualPower * 0.16, 0.45, 0.92);
-  if (state.levels.blast > 0) {
-    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.72 + state.levels.blast * 0.16, style);
+  if (projectile.variant === 'blast') {
+    addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, theme.id === 'deadline' ? '#ff526a' : '#ff9f43', 0.92 + state.levels.blast * 0.18, style);
   } else {
     addShockwave(target.x, target.z, baseColor, 0.42 + power * 0.34);
     for (let index = 0; index < 3; index += 1) {
       addFxParticle(target.x, target.kind === 'gate' ? 1.35 : 0.72 * target.scale, target.z, index ? baseColor : '#ffffff', 0.42 + power * 0.2, theme.id === 'deadline' ? 'ticket' : 'shard');
     }
-    if (projectile.visualPower >= 2.2) addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * (target.scale || 1), target.z, baseColor, power * 0.72, style);
+    if (projectile.visualPower >= 2.2 || (state.levels.blast > 0 && projectile.spin % 3 < 0.6)) addExplosionBurst(target.x, target.kind === 'gate' ? 1.35 : 0.72 * (target.scale || 1), target.z, baseColor, power * 0.64, style);
   }
-  if (state.levels.frost > 0) {
+  if (projectile.variant === 'chain') {
+    addShockwave(target.x, target.z, '#b37cff', 1.05 + state.levels.chain * 0.12);
+  }
+  if (projectile.variant === 'frost' || state.levels.frost > 0) {
     for (let index = 0; index < 3 + state.levels.frost; index += 1) addFxParticle(target.x, 0.9, target.z, '#9beaff', 0.7, 'shard');
   }
 }
@@ -2946,11 +3362,31 @@ function addDefeatEffect(enemy, critical = false) {
     if (isBoss || isElite || critical || state.random() < 0.18) {
       addFxText(enemy.x, Math.max(1.15, enemy.scale * 1.25), enemy.z, critical ? `✓ ${label} · 一次通过` : `✓ ${label}`, critical ? '#ffd84f' : '#8fff65', isBoss ? 1.8 : 0.85, isBoss ? 24 : 12);
     }
-    for (let index = 0; index < (isBoss ? 34 : 7); index += 1) addFxParticle(enemy.x, 0.8 * enemy.scale, enemy.z, index % 3 ? '#f5fbff' : '#ff526a', isBoss ? 1.4 : 0.65, 'ticket');
+    for (let index = 0; index < (isBoss ? 34 : 7); index += 1) {
+      const powerScale = isBoss ? 1.4 : 0.65;
+      addFxParticle(
+        enemy.x,
+        0.8 * enemy.scale,
+        enemy.z,
+        index % 3 ? '#f5fbff' : '#ff526a',
+        powerScale,
+        'ticket',
+        { vx: randomBetween(-2.8, 2.8) * powerScale, vy: randomBetween(2.2, 5.4) * powerScale, vz: randomBetween(-3.4, 0.7) * powerScale },
+      );
+    }
   } else {
     const chunkColor = isBoss ? '#ff526a' : critical ? '#ffd84f' : '#8fff65';
     for (let index = 0; index < (isBoss ? 38 : 6 + Math.round(enemy.scale * 3)); index += 1) {
-      addFxParticle(enemy.x, 0.75 * enemy.scale, enemy.z, index % 4 === 0 ? '#ff6b57' : chunkColor, isBoss ? 1.45 : 0.62 + enemy.scale * 0.12, 'shard');
+      const powerScale = isBoss ? 1.45 : 0.62 + enemy.scale * 0.12;
+      addFxParticle(
+        enemy.x,
+        0.75 * enemy.scale,
+        enemy.z,
+        index % 4 === 0 ? '#ff6b57' : chunkColor,
+        powerScale,
+        'shard',
+        { vx: randomBetween(-3.1, 3.1) * powerScale, vy: randomBetween(1.5, 4.8) * powerScale, vz: randomBetween(-4.6, 0.4) * powerScale },
+      );
     }
     if (isElite || critical) addFxText(enemy.x, 1.2 * enemy.scale, enemy.z, isBoss ? '尸王核心崩解' : critical ? '核心粉碎' : '精英击破', chunkColor, isBoss ? 1.7 : 0.72, isBoss ? 24 : 12);
   }
@@ -3031,13 +3467,13 @@ function addFxText(x, y, z, text, color = '#ffffff', life = 0.8, size = 12) {
   fxItems.push({ kind: 'text', x, y, z, text, color, life, maxLife: life, size, vy: 1.25 });
 }
 
-function addFxParticle(x, y, z, color, power = 1, kind = 'particle') {
+function addFxParticle(x, y, z, color, power = 1, kind = 'particle', motion = null) {
   if (fxItems.length > 190) return;
   fxItems.push({
     kind, x, y, z, color,
-    vx: randomBetween(-2.4, 2.4) * power,
-    vy: randomBetween(1.2, 4.2) * power,
-    vz: randomBetween(-2.1, 2.1) * power,
+    vx: motion?.vx ?? randomBetween(-2.4, 2.4) * power,
+    vy: motion?.vy ?? randomBetween(1.2, 4.2) * power,
+    vz: motion?.vz ?? randomBetween(-2.1, 2.1) * power,
     life: randomBetween(0.32, 0.72),
     maxLife: 0.72,
     size: randomBetween(2, 5) * power,
@@ -3221,6 +3657,14 @@ function renderFx() {
   }
 
   for (const bubble of speechBubbles) renderSpeechBubble(bubble, width, height);
+  if (state.flash > 0.005) {
+    fxCtx.save();
+    fxCtx.globalCompositeOperation = 'screen';
+    fxCtx.globalAlpha = clamp(state.flash, 0, 0.62);
+    fxCtx.fillStyle = state.flashColor || '#ffffff';
+    fxCtx.fillRect(0, 0, width, height);
+    fxCtx.restore();
+  }
 }
 
 function showUpgrade() {
@@ -3346,15 +3790,25 @@ function renderEnemies() {
     if (index >= WORLD.maxEnemies) continue;
     const slowed = state.elapsed < enemy.slowUntil;
     const hit = state.elapsed < enemy.hitUntil;
+    const impact = clamp(enemy.impactPulse || 0, 0, 1);
     const stride = Math.sin(enemy.wobble * 2.15);
-    matrixDummy.position.set(enemy.x, 0.025 + Math.abs(stride) * 0.045, enemy.z);
+    matrixDummy.position.set(
+      enemy.x + (enemy.impactSide || 0) * impact * 0.16,
+      0.025 + Math.abs(stride) * 0.045 + impact * 0.08,
+      enemy.z - impact * (enemy.type === 'boss' ? 0.16 : 0.34),
+    );
     const squash = 1 + stride * (enemy.type === 'runner' ? 0.085 : 0.045);
     const frozenScale = slowed ? 0.94 : 1;
-    matrixDummy.scale.set(enemy.scale * squash * frozenScale, enemy.scale / squash, enemy.scale);
-    matrixDummy.rotation.set(-0.72, 0, stride * (enemy.type === 'runner' ? 0.105 : 0.055));
+    matrixDummy.scale.set(
+      enemy.scale * squash * frozenScale * (1 + impact * 0.17),
+      enemy.scale / squash * (1 - impact * 0.15),
+      enemy.scale,
+    );
+    matrixDummy.rotation.set(-0.72, 0, stride * (enemy.type === 'runner' ? 0.105 : 0.055) + (enemy.impactSide || 0) * impact * 0.12);
     matrixDummy.updateMatrix();
     visual.mesh.setMatrixAt(index, matrixDummy.matrix);
     enemyTint.setHex(hit ? 0xff6d78 : slowed ? 0x79d9ff : (enemy.tint || 0xffffff));
+    if (impact > 0) enemyTint.lerp(impactWhite, impact * 0.78);
     visual.mesh.setColorAt(index, enemyTint);
 
     shadowDummy.position.set(enemy.x, -0.065, enemy.z + 0.34 * enemy.scale);
@@ -3446,6 +3900,7 @@ function updateHud(force = false) {
 function renderScene(dt) {
   renderEnemies();
   state.shake = Math.max(0, state.shake - dt * 2.7);
+  state.flash = Math.max(0, state.flash - dt * 4.8);
   const shakeAmount = state.shake * state.shake;
   camera.position.set(
     cameraHome.x + randomBetween(-shakeAmount, shakeAmount),
@@ -3459,7 +3914,10 @@ function renderScene(dt) {
 function frame(now) {
   const rawDt = clamp((now - state.lastTs) / 1000, 0, 0.05);
   state.lastTs = now;
-  if (state.mode === 'playing') updateGame(rawDt * state.speed);
+  if (state.mode === 'playing') {
+    const hitStopScale = now < state.hitStopUntil ? 0.06 : 1;
+    updateGame(rawDt * state.speed * hitStopScale);
+  }
   else if (state.mode === 'upgrade') updateUpgradeCountdown(now);
   updateHud();
   renderScene(rawDt);
@@ -3534,10 +3992,47 @@ async function submitRun(victory) {
 }
 
 window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
+  configureBuild(build = {}) {
+    const levelKeys = ['damage', 'rate', 'blast', 'chain', 'frost', 'multi', 'crit', 'cannon'];
+    levelKeys.forEach((key) => {
+      if (!Number.isFinite(Number(build[key]))) return;
+      const maximum = key === 'cannon' ? MAX_CANNONS : key === 'multi' ? 3 : key === 'frost' ? 4 : key === 'damage' || key === 'rate' ? 7 : 5;
+      state.levels[key] = clamp(Math.round(Number(build[key])), key === 'damage' || key === 'rate' || key === 'cannon' ? 1 : 0, maximum);
+    });
+    if (Number.isFinite(Number(build.damageBonus))) state.bonuses.damage = clamp(Number(build.damageBonus), 1, 100);
+    if (Number.isFinite(Number(build.rateBonus))) state.bonuses.rate = clamp(Number(build.rateBonus), 1, 100);
+    if (Number.isFinite(Number(build.critBonus))) state.bonuses.crit = clamp(Number(build.critBonus), 0, 1);
+    triggerTurretUpgradeEffect('debug-build', '全构筑视觉验收');
+    updateHud(true);
+    return true;
+  },
+  forceGate() {
+    if (state.mode !== 'playing') return false;
+    choiceGates.splice(0).forEach(disposeChoiceGate);
+    state.gatePhase = 'prep';
+    state.gatePrepUntil = state.elapsed;
+    spawnChoiceGates();
+    return true;
+  },
+  pullEnemies(z = -1.5, durability = 1) {
+    let index = 0;
+    enemies.forEach((enemy) => {
+      if (!enemy.active || enemy.type === 'boss') return;
+      enemy.lane = 1;
+      enemy.x = WORLD.lanes[1] + ((index % 5) - 2) * 0.46;
+      enemy.z = Number(z) - Math.floor(index / 5) * 0.48;
+      if (Number(durability) > 1) {
+        enemy.maxHp *= Number(durability);
+        enemy.hp = enemy.maxHp;
+      }
+      index += 1;
+    });
+    return index;
+  },
   snapshot() {
     const combat = currentCombatStats();
     return {
-      version: '0.9.0',
+      version: '0.10.0',
       mode: state.mode,
       lastVictory: state.lastVictory,
       theme: state.themeId,
@@ -3572,6 +4067,8 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
           lane: gate.lane,
           hitsRemaining: gate.hitsRemaining,
           requiredHits: gate.requiredHits,
+          displayColor: cssHex(gate.displayColor),
+          preview: gate.board.preview,
         })),
       },
       activeSpeech: speechBubbles.map((bubble) => ({ type: bubble.enemy?.type, text: bubble.text })),
@@ -3596,6 +4093,17 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         visibleWorkbenches: turretGroups.filter((turret) => turret.group.visible && turret.workbenchModel.visible).length,
         activeTickets: projectilePool.filter((projectile) => projectile.active && projectile.ticket.visible).length,
         activeShells: projectilePool.filter((projectile) => projectile.active && projectile.energy.visible).length,
+        projectileVariants: ['normal', 'blast', 'chain', 'frost'].reduce((summary, variant) => ({
+          ...summary,
+          [variant]: projectilePool.filter((projectile) => projectile.active && projectile.variant === variant).length,
+        }), {}),
+        projectileTravel: (() => {
+          const active = projectilePool.filter((projectile) => projectile.active);
+          return active.length ? {
+            minZ: Math.min(...active.map((projectile) => projectile.z)),
+            maxZ: Math.max(...active.map((projectile) => projectile.z)),
+          } : null;
+        })(),
         muzzleFlashes: turretGroups.filter((turret) => turret.zombieMuzzle.visible || turret.deadlineMuzzle.visible).length,
         sideBarrels: turretGroups.reduce((sum, turret) => sum + turret.sideBarrels.filter((mesh) => mesh.visible).length, 0),
         sideScreens: turretGroups.reduce((sum, turret) => sum + turret.sideScreens.filter((mesh) => mesh.visible).length, 0),
@@ -3604,6 +4112,8 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         frostAttachments: turretGroups.reduce((sum, turret) => sum + turret.frostFins.filter((mesh) => mesh.visible).length, 0),
         explosions: explosionMeshes.length,
         upgradeBeams: upgradeBeams.length,
+        evolutionStages: turretGroups.filter((turret) => turret.group.visible).map((turret) => turret.evolutionStage),
+        hitStopActive: performance.now() < state.hitStopUntil,
       },
       bonuses: { ...state.bonuses },
       levels: { ...state.levels },
@@ -3614,6 +4124,7 @@ window.__TOY_TOY_TOY_DEBUG__ = Object.freeze({
         frenzyDisabled: els.frenzyBtn.disabled,
         overdriveDisabled: els.overdriveBtn.disabled,
         bossDisabled: els.bossBtn.disabled,
+        audioState: audioContext?.state || (muted ? 'muted' : 'not-created'),
       },
     };
   },
