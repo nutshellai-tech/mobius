@@ -1083,7 +1083,7 @@ const BONUS_CONFIG = Object.freeze({
 });
 const shockwaves = [];
 const explosionGeometry = new THREE.IcosahedronGeometry(0.48, 1);
-const upgradeBeamGeometry = new THREE.CylinderGeometry(0.2, 0.5, 4.2, 12, 1, true);
+const upgradeBeamGeometry = new THREE.CylinderGeometry(0.07, 0.2, 2.2, 14, 1, true);
 const explosionMeshes = [];
 const upgradeBeams = [];
 const fxItems = [];
@@ -2895,14 +2895,14 @@ function addUpgradeBeam(x, z, color) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 0.38,
+    opacity: 0.22,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
     toneMapped: false,
   });
   const mesh = new THREE.Mesh(upgradeBeamGeometry, material);
-  mesh.position.set(x, 2.05, z);
+  mesh.position.set(x, 1.12, z);
   worldGroup.add(mesh);
   upgradeBeams.push({ mesh, life: 0.82, maxLife: 0.82 });
 }
@@ -3003,9 +3003,9 @@ function updateShockwaves(dt) {
     const beam = upgradeBeams[index];
     beam.life -= dt;
     const progress = 1 - beam.life / beam.maxLife;
-    beam.mesh.scale.set(1 + progress * 1.8, 1, 1 + progress * 1.8);
+    beam.mesh.scale.set(1 + progress * 0.65, 1, 1 + progress * 0.65);
     beam.mesh.rotation.y += dt * 5;
-    beam.mesh.material.opacity = Math.max(0, Math.sin(progress * Math.PI) * 0.52);
+    beam.mesh.material.opacity = Math.max(0, Math.sin(progress * Math.PI) * 0.28);
     if (beam.life <= 0) {
       worldGroup.remove(beam.mesh);
       beam.mesh.material.dispose();
