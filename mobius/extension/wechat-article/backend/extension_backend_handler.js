@@ -14,9 +14,11 @@ const claimsLib = require("./lib/claims");
 const { render, validateWechatFields } = require("./lib/render");
 const wechat = require("./lib/wechat");
 const image = require("./lib/image");
+const hotspotStore = require("./lib/hotspot-store");
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.0";
 const WORKER = path.join(__dirname, "article-worker.js");
+const HOTSPOT_WORKER = path.join(__dirname, "hotspot-worker.js");
 const NODE_MODULES = path.resolve(__dirname, "../../../node_modules"); // mobius/node_modules
 const FRAMEWORKS = new Set(["interpretation", "opinion", "list"]);
 
@@ -26,13 +28,13 @@ const fail = (e, extra) => ({ ok: false, error: String(e && (e.message || e)).sl
 const ARTICLE_ACTIVE = job.ACTIVE_STATES;
 
 // ---------- spawn detached worker ----------
-function spawnWorker(extDataDir, jobId) {
+function spawnWorker(extDataDir, jobId, workerPath = WORKER) {
   const dir = job.jobDir(extDataDir, jobId);
   const specPath = path.join(dir, "spec.json");
   const logFd = fs.openSync(path.join(dir, "worker.log"), "a");
   let child;
   try {
-    child = spawn(process.execPath, [WORKER, specPath], {
+    child = spawn(process.execPath, [workerPath, specPath], {
       env: Object.assign({}, process.env, { NODE_PATH: NODE_MODULES }),
       detached: true, stdio: ["ignore", logFd, logFd],
     });
@@ -113,7 +115,8 @@ function handleStartArticle(p, extDataDir) {
   const framework = FRAMEWORKS.has(p.framework) ? p.framework : "interpretation";
   const referenceUrls = Array.isArray(p.referenceUrls) ? p.referenceUrls
     .filter((u) => /^https?:\/\//.test(String(u))).slice(0, 8).map((u) => txt(u, 1024)) : [];
-  const topic = { title, angle: txt(p.angle, 600), framework, referenceUrls, questions: txt(p.questions, 1000), audience: txt(p.audience, 300) };
+  const topic = { id: txt(p.topic_id, 120), cluster_id: txt(p.hotspot_id || p.cluster_id, 120),
+    title, angle: txt(p.angle, 600), framework, referenceUrls, questions: txt(p.questions, 1000), audience: txt(p.audience, 300) };
   const modelKey = txt(p.model_key, 160);
   const mode = p.mode === "auto_push" ? "auto_push" : "manual";
   const jobs = job.listJobs(extDataDir, 20);
@@ -123,6 +126,65 @@ function handleStartArticle(p, extDataDir) {
   const r = spawnWorker(extDataDir, jobId);
   if (!r.ok) return r;
   return ok({ job_id: jobId, state: "queued" });
+}
+
+// ---------- 热点检索（后台 Worker） ----------
+const HOTSPOT_CATEGORIES = new Set(["大模型", "Agent", "AI 编程", "多模态", "机器人", "AI 应用", "开源模型", "论文研究", "算力与芯片", "融资与商业", "政策与监管"]);
+function handleStartCollect(p, extDataDir) {
+  const query = txt(p.query, 200);
+  const windowHours = [24, 72, 168].includes(Number(p.window_hours || p.windowHours)) ? Number(p.window_hours || p.windowHours) : 72;
+  const region = ["all", "domestic", "overseas"].includes(p.region) ? p.region : "all";
+  const categories = Array.isArray(p.categories) ? p.categories.filter((x) => HOTSPOT_CATEGORIES.has(x)).slice(0, 12) : [];
+  const active = job.listJobs(extDataDir, 30).find((j) => j.kind === "hotspot" && ARTICLE_ACTIVE.has(j.state));
+  if (active) return fail("已有热点检索在运行", { job_id: active.jobId });
+  let db, search;
+  try {
+    db = store.open(extDataDir);
+    search = hotspotStore.createSearch(db, { query, window_hours: windowHours, region, categories });
+    db.close(); db = null;
+    const jobId = job.createJob(extDataDir, { kind: "hotspot", spec: { searchId: search.id, query, windowHours,
+      region, categories, modelKey: txt(p.model_key, 120) } });
+    const spawned = spawnWorker(extDataDir, jobId, HOTSPOT_WORKER);
+    if (!spawned.ok) {
+      db = store.open(extDataDir);
+      hotspotStore.updateSearch(db, search.id, { status: "failed", error: spawned.error || "启动失败" });
+      db.close(); db = null;
+      return spawned;
+    }
+    return ok({ job_id: jobId, search_id: search.id, state: "queued" });
+  } catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
+}
+function handleListHotspots(p, extDataDir) {
+  let db;
+  try {
+    db = store.open(extDataDir);
+    const result = hotspotStore.listHotspots(db, { searchId: txt(p.search_id, 120), category: txt(p.category, 80),
+      sort: ["recommended", "latest", "fastest", "match"].includes(p.sort) ? p.sort : "recommended", limit: Math.min(Number(p.limit) || 30, 100) });
+    db.close(); return ok(result);
+  } catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
+}
+function handleGetHotspot(p, extDataDir) {
+  let db;
+  try {
+    db = store.open(extDataDir); const hotspot = hotspotStore.getHotspot(db, txt(p.hotspot_id || p.id, 120)); db.close();
+    return hotspot ? ok({ hotspot }) : fail("热点不存在");
+  } catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
+}
+function handleCreateTopic(p, extDataDir) {
+  let db;
+  try {
+    db = store.open(extDataDir); const hotspot = hotspotStore.getHotspot(db, txt(p.hotspot_id || p.id, 120));
+    if (!hotspot) { db.close(); return fail("热点不存在"); }
+    const profile = cfgStore.load(extDataDir).account_profile || {};
+    const result = hotspotStore.createTopic(db, hotspot, { title: txt(p.title, 200), angle: txt(p.angle, 600),
+      audience: txt(p.audience, 300), framework: p.framework }, profile);
+    db.close(); return ok({ ...result, hotspot });
+  } catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
+}
+function handleListTopics(p, extDataDir) {
+  let db;
+  try { db = store.open(extDataDir); const topics = hotspotStore.listTopics(db, p.limit); db.close(); return ok({ topics }); }
+  catch (e) { try { db && db.close(); } catch (_) {} return fail(e); }
 }
 function handlePushDraft(p, extDataDir) {
   const articleId = txt(p.article_id || p.articleId, 120);
@@ -237,7 +299,7 @@ function handlePurge(p, extDataDir) {
   if (p.confirm !== "DELETE_ALL") return fail("需要 confirm='DELETE_ALL' 才能清空");
   try {
     const db = store.open(extDataDir);
-    for (const t of ["article", "article_version", "evidence", "claim", "topic", "hot_item", "hot_cluster", "operation", "published_history", "article_image"])
+    for (const t of ["article", "article_version", "evidence", "claim", "topic", "hot_search_result", "hot_search", "hot_item", "hot_cluster", "operation", "published_history", "article_image"])
       try { db.prepare(`DELETE FROM ${t}`).run(); } catch (_) {}
     db.close();
     try { const jd = job.jobsDir(extDataDir); for (const d of fs.readdirSync(jd)) fs.rmSync(path.join(jd, d), { recursive: true, force: true }); } catch (_) {}
@@ -266,6 +328,13 @@ module.exports = async function ({ username, display_name, ext_main_payload, ext
       case "job_status": { const s = job.readStatus(extDataDir, txt(p.job_id, 120)); return s ? ok({ status: s }) : fail("job 不存在"); }
       case "list_jobs": return ok({ jobs: job.listJobs(extDataDir, Math.min(Number(p.limit) || 50, 200)) });
       case "cancel_job": return ok(job.cancelJob(extDataDir, txt(p.job_id, 120)));
+      case "start_collect": return handleStartCollect(p, extDataDir);
+      case "collect_status": { const s = job.readStatus(extDataDir, txt(p.job_id, 120)); return s ? ok({ status: s }) : fail("热点检索任务不存在"); }
+      case "stop_collect": return ok(job.cancelJob(extDataDir, txt(p.job_id, 120)));
+      case "list_hotspots": return handleListHotspots(p, extDataDir);
+      case "get_hotspot": return handleGetHotspot(p, extDataDir);
+      case "create_topic_from_hotspot": return handleCreateTopic(p, extDataDir);
+      case "list_topics": return handleListTopics(p, extDataDir);
       case "list_articles": return handleListArticles(p, extDataDir);
       case "get_article": return handleGetArticle(p, extDataDir);
       case "save_article": return handleSaveArticle(p, extDataDir);
@@ -278,8 +347,6 @@ module.exports = async function ({ username, display_name, ext_main_payload, ext
       case "reconcile_draft": return await handleReconcile(p, extDataDir);
       case "export_data": return handleExport(extDataDir);
       case "purge_data": return handlePurge(p, extDataDir);
-      case "start_collect": case "collect_status": case "stop_collect": case "list_hotspots": case "list_topics":
-        return ok({ stub: true, note: "热点采集为 M3 阶段，本期未启用" });
       default: return fail("未知 action: " + action);
     }
   } catch (e) {

@@ -8,7 +8,8 @@ const fs = require("fs"), path = require("path"), crypto = require("crypto");
 const now = () => new Date().toISOString();
 const STALE_MS = 90_000;
 
-const ACTIVE_STATES = new Set(["queued", "running", "researching", "outlining", "writing", "reviewing", "rendering", "uploading"]);
+const ACTIVE_STATES = new Set(["queued", "running", "researching", "outlining", "writing", "reviewing", "rendering", "uploading",
+  "collecting", "filtering", "clustering", "verifying", "ranking"]);
 
 function jobsDir(extDataDir) { return path.join(extDataDir, "jobs"); }
 function jobDir(extDataDir, jobId) { return path.join(jobsDir(extDataDir), jobId); }

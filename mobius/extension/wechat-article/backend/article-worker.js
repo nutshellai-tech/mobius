@@ -109,7 +109,7 @@ async function runArticle() {
 
   if (db) {
     try {
-      store.upsertArticle(db, { id: articleId, job_id: jobId, title, digest, body_md: hum.bodyMd, body_html: bodyHtml,
+      store.upsertArticle(db, { id: articleId, topic_id: topic.id || null, job_id: jobId, title, digest, body_md: hum.bodyMd, body_html: bodyHtml,
         framework: topic.framework, outline: JSON.stringify(outlineObj), state: "draft",
         quality: JSON.stringify({ lint: lintResult, humanize: hum.detection, facts: facts.length, evidence: evidence.length }) });
       const insEv = db.prepare("INSERT OR REPLACE INTO evidence (id,article_id,source_url,source_name,author,published_at,fetched_at,excerpt,content_hash,tier,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");

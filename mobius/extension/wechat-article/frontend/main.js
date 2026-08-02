@@ -12,11 +12,21 @@ const state = {
   config: null, channels: [], default_model: "",
   articles: [], current: null, tab: "write", pollStop: null, pollJobId: "",
   activeJob: null, completedJob: null,
+  writeMode: localStorage.getItem("wechat-article-write-mode") || "hotspot",
+  formDraft: { title: "", angle: "", framework: "interpretation", audience: "", refs: "", questions: "", model: "" },
+  selectedTopic: null,
+  hotspot: {
+    query: "", windowHours: 72, region: "all", categories: [], sort: "recommended",
+    search: null, results: [], detail: null, selectedAngle: 0, selectedTitle: 0,
+    activeJob: null, pollStop: null, pollJobId: "",
+  },
 };
 
-const ACTIVE_JOB_STATES = new Set(["queued", "running", "researching", "outlining", "writing", "reviewing", "rendering", "uploading"]);
+const ACTIVE_JOB_STATES = new Set(["queued", "running", "researching", "outlining", "writing", "reviewing", "rendering", "uploading",
+  "collecting", "filtering", "clustering", "verifying", "ranking"]);
 const TERMINAL_JOB_STATES = new Set(["done", "waiting_user", "failed", "cancelled", "unknown_external_result"]);
 const ACTIVE_JOB_STORAGE_KEY = "wechat-article-active-job";
+const HOTSPOT_JOB_STORAGE_KEY = "wechat-article-hotspot-job";
 
 async function api(action, payload = {}) {
   try { return await extCall({ action, ...payload }); }
@@ -32,7 +42,8 @@ function pollRecursive(fn, intervalMs) {
   (async () => { while (!stop) { try { await fn(); } catch (_) {} if (stop) return; await new Promise((r) => setTimeout(r, intervalMs)); } })();
   return () => { stop = true; };
 }
-const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const safeUrl = (s) => /^https?:\/\//i.test(String(s || "")) ? String(s) : "#";
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
 // 前端轻量 Markdown → HTML（实时预览用；推送前以后端 render_preview 为准）
@@ -71,12 +82,19 @@ async function bootstrap() {
     state.articles = la.articles || [];
     const lj = await api("list_jobs", { limit: 20 });
     const active = (lj.jobs || []).find((j) => j.kind === "article" && ACTIVE_JOB_STATES.has(j.state));
+    const activeHotspot = (lj.jobs || []).find((j) => j.kind === "hotspot" && ACTIVE_JOB_STATES.has(j.state));
     const savedJobId = localStorage.getItem(ACTIVE_JOB_STORAGE_KEY) || "";
     if (active) state.activeJob = active;
     else if (savedJobId) state.activeJob = { jobId: savedJobId, state: "queued", phase: "init", progress: 0, message: "正在恢复后台任务状态" };
+    const savedHotspotJobId = localStorage.getItem(HOTSPOT_JOB_STORAGE_KEY) || "";
+    if (activeHotspot) state.hotspot.activeJob = activeHotspot;
+    else if (savedHotspotJobId) state.hotspot.activeJob = { jobId: savedHotspotJobId, state: "queued", phase: "collect", progress: 0, message: "正在恢复热点检索" };
+    const hs = await api("list_hotspots", { limit: 30 });
+    if (hs.ok) { state.hotspot.search = hs.search || null; state.hotspot.results = hs.hotspots || []; state.hotspot.detail = state.hotspot.results[0] || null; }
   } catch (_) {}
   render();
   if (state.activeJob?.jobId) runJobPoll(state.activeJob.jobId, { resumed: true });
+  if (state.hotspot.activeJob?.jobId) runHotspotPoll(state.hotspot.activeJob.jobId, { resumed: true });
 }
 
 function render() {
@@ -107,37 +125,216 @@ function render() {
 // ---------- 选题 / 写作 ----------
 function renderWrite() {
   if (state.current) { renderEditor(); return; }
-  const hasActiveJob = !!state.activeJob;
-  const ch = state.channels;
-  const chOpts = ch.map((c) => `<option value="${c.key}" ${c.key === state.default_model ? "selected" : ""}>${esc(c.label)} · ${esc(c.model)}</option>`).join("");
+  const discovering = state.writeMode === "hotspot" && !state.selectedTopic;
   $("#view").innerHTML = `
-    <section class="card">
-      <h2>新建一篇图文</h2>
-      <label><span>主题 / 标题 *</span><input id="f-title" type="text" placeholder="例：OpenAI 发布 GPT-5，多模态能力翻倍"/></label>
-      <div class="row" style="margin:8px 0">
-        <button id="btn-clarify" class="btn">AI 补全角度与待核实问题</button>
-        <span class="muted">先用一句话给主题，再让 AI 帮你想角度</span>
-      </div>
-      <div class="grid2">
-        <label><span>角度 / 切入点</span><textarea id="f-angle" placeholder="为什么现在写、给读者什么增量信息"></textarea></label>
-        <div>
-          <label><span>框架</span><select id="f-framework">
-            <option value="interpretation">热点解读</option><option value="opinion">观点文章</option><option value="list">实用清单</option>
-          </select></label>
-          <label><span>目标读者</span><input id="f-audience" type="text" placeholder="AI 从业者 / 产品经理 / 普通读者"/></label>
+    <section class="card compose-shell">
+      <div class="compose-head">
+        <div><h2>新建一篇图文</h2><div class="stepper"><span class="active">1 发现热点</span><i></i><span class="${discovering ? "" : "active"}">2 确定角度</span><i></i><span>3 生成文章</span></div></div>
+        <div class="mode-switch" role="tablist">
+          <button id="mode-hotspot" class="${state.writeMode === "hotspot" ? "active" : ""}">从热点开始</button>
+          <button id="mode-manual" class="${state.writeMode === "manual" ? "active" : ""}">自定义主题</button>
         </div>
       </div>
-      <label><span>参考链接（可信源，每行一条；优先一手源）</span><textarea id="f-refs" placeholder="https://openai.com/blog/..."></textarea></label>
-      <label><span>需核实的问题（可选）</span><textarea id="f-questions" placeholder="哪些数字/日期/能力描述必须查证"></textarea></label>
-      <div class="row">
-        <label style="margin:0; min-width:240px"><span>生成模型</span><select id="f-model"><option value="">默认</option>${chOpts}</select></label>
-        <button id="btn-start" class="primary" ${hasActiveJob ? "disabled" : ""}>${hasActiveJob ? "后台生成中…" : "开始生成初稿"}</button>
-        <span class="muted">约 1–3 分钟（资料→大纲→正文→去AI味→渲染）</span>
-      </div>
-      <div id="progress"></div>
+      <div id="compose-body"></div>
     </section>`;
-  $("#btn-clarify").onclick = onClarify;
-  $("#btn-start").onclick = onStart;
+  $("#mode-hotspot").onclick = () => { captureFormDraft(); state.writeMode = "hotspot"; state.selectedTopic = null; localStorage.setItem("wechat-article-write-mode", "hotspot"); render(); };
+  $("#mode-manual").onclick = () => { captureFormDraft(); state.writeMode = "manual"; state.selectedTopic = null; localStorage.setItem("wechat-article-write-mode", "manual"); render(); };
+  if (discovering) renderHotspotDiscovery(); else renderWriteForm();
+}
+
+const HOTSPOT_CATEGORIES = ["大模型", "Agent", "AI 编程", "多模态", "机器人", "AI 应用", "开源模型", "论文研究", "算力与芯片", "政策与监管"];
+function fmtTime(value) {
+  const ts = Date.parse(value); if (!Number.isFinite(ts)) return "时间未知";
+  const diff = Date.now() - ts, hours = Math.floor(diff / 3600_000);
+  if (hours < 1) return "刚刚更新"; if (hours < 24) return `${hours} 小时前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
+function hotspotCoverageHtml(search, status) {
+  const c = status?.coverage || search?.coverage || {};
+  if (!search && !status) return '<div class="coverage-bar muted">尚未检索。可留空查看全部 AI 热点，也可输入关注方向。</div>';
+  const finished = c.completed_at || search?.completed_at || search?.updated_at;
+  const sourceRows = Array.isArray(c.sources) ? c.sources : [];
+  return `<div class="coverage-bar">
+    <div><b>检索覆盖</b> ${c.succeeded ?? 0}/${c.attempted ?? 0} 个来源 · 命中 ${c.recent_items ?? 0} 篇 · 归并 ${c.clusters ?? search?.result_count ?? 0} 个事件 · 一手源热点 ${c.official_clusters ?? 0} 个</div>
+    <div class="coverage-actions"><span>${finished ? `截止 ${esc(new Date(finished).toLocaleString("zh-CN", { hour12: false }))}` : "检索中"}</span>
+      ${sourceRows.length ? `<details><summary>查看来源明细</summary><div class="source-popover">${sourceRows.map((s) => `<div><span class="source-dot ${s.ok ? "ok" : "bad"}"></span>${esc(s.name)}<em>${s.ok ? `${s.count || 0} 篇` : esc(s.error || "失败")}</em></div>`).join("")}</div></details>` : ""}
+    </div></div>`;
+}
+function hotspotProgressHtml() {
+  const st = state.hotspot.activeJob; if (!st) return "";
+  const pct = Math.max(4, Math.round((st.progress || 0) * 100));
+  const stages = [
+    ["collect", "扫描官方、媒体与公众号来源"], ["filter", "筛选近时段内容并去重"], ["cluster", "跨来源归并同一事件"], ["verify", "核验一手来源、时间与可信度"], ["done", "计算热度和账号匹配度"],
+  ];
+  const index = Math.max(0, stages.findIndex((x) => x[0] === st.phase));
+  return `<div class="hotspot-progress"><div class="progress"><div class="bar"><i style="width:${pct}%"></i></div><div class="msg">${esc(st.message || "正在检索")}</div></div>
+    <div class="stage-list">${stages.map((x, i) => `<span class="${i < index ? "done" : i === index ? "active" : ""}">${i < index ? "✓" : i === index ? "●" : "○"} ${x[1]}</span>`).join("")}</div>
+    <button id="btn-stop-hotspot" class="btn compact">取消检索</button></div>`;
+}
+function hotspotCardHtml(h) {
+  return `<article class="hotspot-card ${state.hotspot.detail?.id === h.id ? "selected" : ""}" data-hotspot-id="${esc(h.id)}">
+    <div class="hotspot-rank">#${h.rank || "—"}</div><div class="hotspot-card-body">
+      <div class="hotspot-title-row"><h3>${esc(h.title)}</h3><span class="category-tag">${esc(h.category)}</span></div>
+      <p>${esc(h.summary || "")}</p>
+      <div class="hotspot-tags">${(h.status_tags || []).map((x) => `<span>${esc(x)}</span>`).join("")}</div>
+      <div class="hotspot-meta"><span>${fmtTime(h.latest_at)}</span><span>${h.source_count || 0} 个独立来源</span><span>${h.official_count || 0} 个一手来源</span></div>
+      <div class="score-row"><span>热度 <b>${h.heat_score || 0}</b></span><span>匹配 <b>${h.account_match || 0}</b></span><span>证据 <b>${h.evidence_strength || 0}</b></span></div>
+    </div><button class="choose-mini" data-choose-id="${esc(h.id)}">选为主题</button>
+  </article>`;
+}
+function hotspotDetailHtml(h) {
+  if (!h) return `<div class="hotspot-detail empty-detail"><div class="radar-mark">◎</div><h3>选择一个热点查看详情</h3><p>这里会展示事件时间、来源证据、写作角度与待核实问题。</p></div>`;
+  const angles = h.angles || [], titles = h.title_candidates || [];
+  return `<aside class="hotspot-detail">
+    <div class="detail-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><strong>${h.total_score || 0}<small>综合分</small></strong></div>
+    <p class="detail-summary">${esc(h.summary || "")}</p>
+    <section><h4>为什么值得写</h4><div class="why-box">近 ${state.hotspot.windowHours} 小时有 ${h.source_count || 0} 个独立来源，${h.official_count ? `包含 ${h.official_count} 个一手来源` : "尚缺一手来源"}；与当前账号匹配度 ${h.account_match || 0}，证据完整度 ${h.evidence_strength || 0}。</div></section>
+    <section><h4>推荐标题</h4><div class="title-options">${titles.map((x, i) => `<button data-title-index="${i}" class="${i === state.hotspot.selectedTitle ? "active" : ""}">${esc(x)}</button>`).join("") || `<button class="active">${esc(h.title)}</button>`}</div></section>
+    <section><h4>选择写作角度</h4><div class="angle-options">${angles.map((a, i) => `<button data-angle-index="${i}" class="${i === state.hotspot.selectedAngle ? "active" : ""}"><b>${esc(a.title || `角度 ${i + 1}`)}</b><span>${esc(a.text || a)}</span></button>`).join("")}</div></section>
+    <section><h4>来源与证据</h4><div class="evidence-list">${(h.sources || []).map((s) => `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noreferrer"><span class="tag ${esc(s.tier)}">${esc(s.tier)}</span><div><b>${esc(s.name)}</b><small>${s.official ? "一手来源" : "可信来源"} · ${fmtTime(s.published_at)}</small><em>${esc(s.title)}</em></div></a>`).join("") || '<div class="muted">暂无可展示来源</div>'}</div></section>
+    ${h.questions?.length ? `<section><h4>需要核实</h4><ul class="question-list">${h.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul></section>` : ""}
+    <div class="detail-sticky"><button id="btn-select-hotspot" class="primary">选择此热点和角度</button></div>
+  </aside>`;
+}
+
+function renderHotspotDiscovery() {
+  const hs = state.hotspot;
+  const modelOpts = state.channels.map((c) => `<option value="${esc(c.key)}" ${c.key === (state.formDraft.model || state.default_model) ? "selected" : ""}>${esc(c.label)} · ${esc(c.model)}</option>`).join("");
+  $("#compose-body").innerHTML = `<div class="hotspot-search">
+    <div class="search-line"><div><label><span>关注方向（可留空查看全部 AI 热点）</span><input id="hotspot-query" type="text" value="${esc(hs.query)}" placeholder="例如：Agent、AI 编程、多模态、OpenAI"/></label></div>
+      <label class="search-model"><span>分析模型</span><select id="hotspot-model"><option value="">默认</option>${modelOpts}</select></label>
+      <button id="btn-search-hotspot" class="primary" ${hs.activeJob ? "disabled" : ""}>${hs.activeJob ? "深度检索中…" : "开始深度检索"}</button></div>
+    <div class="filter-row"><b>时间</b>${[[24,"24 小时"],[72,"近 3 天"],[168,"近 7 天"]].map(([v,l]) => `<button data-hours="${v}" class="chip ${hs.windowHours === v ? "active" : ""}">${l}</button>`).join("")}
+      <b>范围</b>${[["all","全部"],["domestic","国内"],["overseas","海外"]].map(([v,l]) => `<button data-region="${v}" class="chip ${hs.region === v ? "active" : ""}">${l}</button>`).join("")}</div>
+    <div class="filter-row categories"><b>分类</b>${HOTSPOT_CATEGORIES.map((c) => `<button data-category="${esc(c)}" class="chip ${hs.categories.includes(c) ? "active" : ""}">${esc(c)}</button>`).join("")}</div>
+    ${hotspotProgressHtml()}${hotspotCoverageHtml(hs.search, hs.activeJob)}
+  </div>
+  <div class="hotspot-toolbar"><div><b>相关热点</b><span>${hs.results.length ? `共 ${hs.results.length} 个独立事件` : "等待检索"}</span></div>
+    <select id="hotspot-sort"><option value="recommended">综合推荐</option><option value="latest">最新发生</option><option value="fastest">传播最快</option><option value="match">最适合本账号</option></select></div>
+  <div class="hotspot-workspace"><div class="hotspot-list">${hs.results.length ? hs.results.map(hotspotCardHtml).join("") : `<div class="hotspot-empty"><div class="radar-mark">◎</div><h3>${hs.search ? "当前条件下没有发现热点" : "检索近 3 天 AI 最新热点"}</h3><p>${hs.search ? "可放宽分类、切换近 7 天或直接自定义主题。" : "将扫描官方、一手来源、中英文媒体与公众号，去重后归并为独立事件。"}</p></div>`}</div>${hotspotDetailHtml(hs.detail)}</div>`;
+  $("#hotspot-sort").value = hs.sort;
+  $("#hotspot-query").oninput = (e) => { hs.query = e.target.value; };
+  $$('[data-hours]').forEach((b) => b.onclick = () => { hs.windowHours = Number(b.dataset.hours); render(); });
+  $$('[data-region]').forEach((b) => b.onclick = () => { hs.region = b.dataset.region; render(); });
+  $$('[data-category]').forEach((b) => b.onclick = () => { const c = b.dataset.category; hs.categories = hs.categories.includes(c) ? hs.categories.filter((x) => x !== c) : [...hs.categories, c]; render(); });
+  $("#btn-search-hotspot").onclick = onHotspotSearch;
+  $("#hotspot-sort").onchange = async (e) => { hs.sort = e.target.value; await loadHotspots(hs.search?.id); };
+  $$('[data-hotspot-id]').forEach((card) => card.onclick = (e) => { if (e.target.closest('[data-choose-id]')) return; hs.detail = hs.results.find((x) => x.id === card.dataset.hotspotId) || null; hs.selectedAngle = 0; hs.selectedTitle = 0; render(); });
+  $$('[data-choose-id]').forEach((b) => b.onclick = () => { hs.detail = hs.results.find((x) => x.id === b.dataset.chooseId) || null; hs.selectedAngle = 0; hs.selectedTitle = 0; render(); });
+  $$('[data-angle-index]').forEach((b) => b.onclick = () => { hs.selectedAngle = Number(b.dataset.angleIndex); render(); });
+  $$('[data-title-index]').forEach((b) => b.onclick = () => { hs.selectedTitle = Number(b.dataset.titleIndex); render(); });
+  if ($("#btn-select-hotspot")) $("#btn-select-hotspot").onclick = onSelectHotspot;
+  if ($("#btn-stop-hotspot")) $("#btn-stop-hotspot").onclick = onStopHotspot;
+}
+
+function captureFormDraft() {
+  if (!$("#f-title")) return;
+  state.formDraft = { title: $("#f-title").value, angle: $("#f-angle").value, framework: $("#f-framework").value,
+    audience: $("#f-audience").value, refs: $("#f-refs").value, questions: $("#f-questions").value, model: $("#f-model").value };
+}
+function openEvidenceModal(h) {
+  $("#hotspot-evidence-modal")?.remove();
+  const modal = document.createElement("div"); modal.id = "hotspot-evidence-modal"; modal.className = "modal-backdrop";
+  modal.innerHTML = `<div class="evidence-modal"><div class="modal-head"><div><span class="category-tag">${esc(h.category)}</span><h3>${esc(h.title)}</h3></div><button id="close-evidence-modal" aria-label="关闭">×</button></div>
+    <p>${esc(h.summary || "")}</p><h4>来源与证据</h4><div class="evidence-list">${(h.sources || []).map((s) => `<a href="${esc(safeUrl(s.url))}" target="_blank" rel="noreferrer"><span class="tag ${esc(s.tier)}">${esc(s.tier)}</span><div><b>${esc(s.name)}</b><small>${s.official ? "一手来源" : "可信来源"} · ${fmtTime(s.published_at)}</small><em>${esc(s.title)}</em></div></a>`).join("")}</div>
+    ${h.questions?.length ? `<h4>需要核实</h4><ul class="question-list">${h.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}</div>`;
+  document.body.appendChild(modal);
+  $("#close-evidence-modal").onclick = () => modal.remove();
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+}
+function renderWriteForm() {
+  const hasActiveJob = !!state.activeJob, d = state.formDraft;
+  const chOpts = state.channels.map((c) => `<option value="${esc(c.key)}" ${c.key === (d.model || state.default_model) ? "selected" : ""}>${esc(c.label)} · ${esc(c.model)}</option>`).join("");
+  const selected = state.selectedTopic;
+  $("#compose-body").innerHTML = `${selected ? `<div class="selected-hotspot"><div><span>已选择热点</span><b>${esc(selected.hotspot.title)}</b><small>${(selected.hotspot.status_tags || []).join(" · ")} · ${selected.hotspot.source_count || 0} 个独立来源 · ${fmtTime(selected.hotspot.latest_at)}</small></div><div><button id="btn-view-selected" class="btn">查看证据</button><button id="btn-change-hotspot" class="btn">更换热点</button></div></div>` : ""}
+    <div class="write-form">
+      ${selected?.hotspot?.title_candidates?.length ? `<div class="candidate-strip"><span>推荐标题</span>${selected.hotspot.title_candidates.map((x) => `<button data-fill-title="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : ""}
+      <label><span>主题 / 标题 *</span><input id="f-title" type="text" value="${esc(d.title)}" placeholder="例：OpenAI 发布新模型，多模态能力升级"/></label>
+      <div class="row" style="margin:8px 0"><button id="btn-clarify" class="btn">${selected ? "AI 重新生成角度与核实问题" : "AI 补全角度与待核实问题"}</button><span class="muted">标题、角度和资料都可以继续手动调整</span></div>
+      <div class="grid2"><label><span>角度 / 切入点</span><textarea id="f-angle" placeholder="为什么现在写、给读者什么增量信息">${esc(d.angle)}</textarea></label><div>
+        <label><span>框架</span><select id="f-framework"><option value="interpretation">热点解读</option><option value="opinion">观点文章</option><option value="list">实用清单</option></select></label>
+        <label><span>目标读者</span><input id="f-audience" type="text" value="${esc(d.audience)}" placeholder="AI 从业者 / 产品经理 / 普通读者"/></label></div></div>
+      <label><span>参考链接（可信源，每行一条；优先一手源）</span><textarea id="f-refs" placeholder="https://openai.com/blog/...">${esc(d.refs)}</textarea></label>
+      <label><span>需核实的问题（可选）</span><textarea id="f-questions" placeholder="哪些数字/日期/能力描述必须查证">${esc(d.questions)}</textarea></label>
+      <div class="row"><label style="margin:0; min-width:240px"><span>生成模型</span><select id="f-model"><option value="">默认</option>${chOpts}</select></label>
+        <button id="btn-start" class="primary" ${hasActiveJob ? "disabled" : ""}>${hasActiveJob ? "后台生成中…" : "开始生成初稿"}</button><span class="muted">约 1–3 分钟（资料→大纲→正文→去AI味→渲染）</span></div><div id="progress"></div>
+    </div>`;
+  $("#f-framework").value = d.framework || "interpretation";
+  $("#btn-clarify").onclick = onClarify; $("#btn-start").onclick = onStart;
+  $$('[data-fill-title]').forEach((b) => b.onclick = () => { $("#f-title").value = b.dataset.fillTitle; state.formDraft.title = b.dataset.fillTitle; });
+  if ($("#btn-change-hotspot")) $("#btn-change-hotspot").onclick = () => { captureFormDraft(); state.selectedTopic = null; state.writeMode = "hotspot"; render(); };
+  if ($("#btn-view-selected")) $("#btn-view-selected").onclick = () => { captureFormDraft(); openEvidenceModal(selected.hotspot); };
+  paintJobStatus();
+}
+
+async function onHotspotSearch() {
+  const hs = state.hotspot;
+  hs.query = $("#hotspot-query").value.trim();
+  state.formDraft.model = $("#hotspot-model").value;
+  const btn = $("#btn-search-hotspot"); btn.disabled = true; btn.textContent = "正在启动检索…";
+  try {
+    const r = await api("start_collect", { query: hs.query, window_hours: hs.windowHours, region: hs.region,
+      categories: hs.categories, model_key: state.formDraft.model });
+    if (!r.ok && !r.job_id) { toast(r.error || "启动检索失败"); btn.disabled = false; btn.textContent = "开始深度检索"; return; }
+    hs.search = { id: r.search_id || hs.search?.id, query: hs.query, window_hours: hs.windowHours, region: hs.region, categories: hs.categories, status: "queued", coverage: {} };
+    hs.results = []; hs.detail = null;
+    hs.activeJob = { jobId: r.job_id, state: "queued", phase: "collect", progress: 0, message: "热点检索已转入后台" };
+    localStorage.setItem(HOTSPOT_JOB_STORAGE_KEY, r.job_id);
+    render(); runHotspotPoll(r.job_id);
+  } catch (_) { btn.disabled = false; btn.textContent = "开始深度检索"; }
+}
+
+function runHotspotPoll(jobId, { resumed = false } = {}) {
+  const hs = state.hotspot;
+  if (hs.pollStop && hs.pollJobId === jobId) return;
+  if (hs.pollStop) hs.pollStop();
+  hs.pollJobId = jobId; localStorage.setItem(HOTSPOT_JOB_STORAGE_KEY, jobId);
+  if (resumed) toast("已恢复热点检索，继续同步覆盖进度");
+  hs.pollStop = pollRecursive(async () => {
+    const r = await api("collect_status", { job_id: jobId });
+    if (!r.ok || !r.status) {
+      hs.pollStop?.(); hs.pollStop = null; hs.pollJobId = ""; hs.activeJob = null; localStorage.removeItem(HOTSPOT_JOB_STORAGE_KEY);
+      toast(r.error || "热点检索任务无法恢复"); render(); return;
+    }
+    const st = r.status; hs.activeJob = { ...st, jobId };
+    if (state.tab === "write" && state.writeMode === "hotspot" && !state.selectedTopic) render();
+    if (["done", "failed", "cancelled"].includes(st.state)) {
+      hs.pollStop?.(); hs.pollStop = null; hs.pollJobId = ""; hs.activeJob = null; localStorage.removeItem(HOTSPOT_JOB_STORAGE_KEY);
+      if (st.state === "done") { await loadHotspots(st.searchId || hs.search?.id); toast(`检索完成：得到 ${st.resultCount || 0} 个独立热点`); }
+      else { toast(st.state === "cancelled" ? "已取消热点检索" : `热点检索失败：${st.error || st.message || "未知错误"}`); render(); }
+    }
+  }, 2200);
+}
+
+async function loadHotspots(searchId) {
+  const hs = state.hotspot;
+  const r = await api("list_hotspots", { search_id: searchId || "", sort: hs.sort, limit: 30 });
+  if (!r.ok) return toast(r.error || "热点加载失败");
+  hs.search = r.search || hs.search; hs.results = r.hotspots || [];
+  hs.detail = hs.results.find((x) => x.id === hs.detail?.id) || hs.results[0] || null;
+  hs.selectedAngle = 0; hs.selectedTitle = 0; render();
+}
+
+async function onStopHotspot() {
+  const hs = state.hotspot; if (!hs.activeJob?.jobId) return;
+  const r = await api("stop_collect", { job_id: hs.activeJob.jobId });
+  if (r.ok) { hs.pollStop?.(); hs.pollStop = null; hs.activeJob = null; hs.pollJobId = ""; localStorage.removeItem(HOTSPOT_JOB_STORAGE_KEY); toast("已取消热点检索"); render(); }
+}
+
+async function onSelectHotspot() {
+  const hs = state.hotspot, h = hs.detail; if (!h) return;
+  const angle = h.angles?.[hs.selectedAngle] || h.angles?.[0] || {};
+  const title = h.title_candidates?.[hs.selectedTitle] || h.title;
+  const btn = $("#btn-select-hotspot"); btn.disabled = true; btn.textContent = "正在生成选题…";
+  const r = await api("create_topic_from_hotspot", { hotspot_id: h.id, title,
+    angle: angle.text || angle, framework: angle.framework || "interpretation" });
+  if (!r.ok) { btn.disabled = false; btn.textContent = "选择此热点和角度"; return toast(r.error || "创建选题失败"); }
+  const p = r.prefill || {};
+  state.selectedTopic = { topic_id: r.topic_id, cluster_id: r.cluster_id, hotspot: r.hotspot || h };
+  state.formDraft = { title: p.title || title, angle: p.angle || angle.text || "", framework: p.framework || angle.framework || "interpretation",
+    audience: p.audience || "", refs: (p.referenceUrls || []).join("\n"), questions: p.questions || "", model: state.formDraft.model || "" };
+  state.writeMode = "hotspot"; localStorage.setItem("wechat-article-write-mode", "hotspot"); render();
+  toast("已带入热点、写作角度和可信来源，可继续调整");
 }
 
 async function onClarify() {
@@ -153,7 +350,7 @@ async function onClarify() {
       if (Array.isArray(r.questions)) $("#f-questions").value = r.questions.map((q) => "- " + q).join("\n");
       toast("已补全，可再手动调整");
     } else toast(r.error || "补全失败");
-  } finally { btn.disabled = false; btn.textContent = "AI 补全角度与待核实问题"; }
+  } finally { btn.disabled = false; btn.textContent = state.selectedTopic ? "AI 重新生成角度与核实问题" : "AI 补全角度与待核实问题"; }
 }
 
 async function onStart() {
@@ -161,6 +358,8 @@ async function onStart() {
   if (!title) return toast("先填主题");
   const btn = $("#btn-start"); btn.disabled = true;
   const params = {
+    topic_id: state.selectedTopic?.topic_id || "",
+    hotspot_id: state.selectedTopic?.cluster_id || "",
     title,
     angle: $("#f-angle").value.trim(),
     framework: $("#f-framework").value,
@@ -169,6 +368,7 @@ async function onStart() {
     questions: $("#f-questions").value.trim(),
     model_key: $("#f-model").value,
   };
+  captureFormDraft();
   try {
     const r = await api("start_article", params);
     if (!r.ok) { toast(r.error || "启动失败"); btn.disabled = false; return; }
