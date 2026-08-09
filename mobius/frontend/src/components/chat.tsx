@@ -1385,10 +1385,11 @@ function runtimeStatusForSessionList(r: any) {
   return 'idle'
 }
 
-export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pinnedIds, onTogglePinned }: {
+export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pinnedIds, onTogglePinned, dataTour }: {
   session: any; isSelected: boolean; onSelect: (s: any) => void;
   onEdit?: (s: any) => void; onDelete?: (s: any) => void;
-  pinnedIds?: Set<string>; onTogglePinned?: (s: any) => void
+  pinnedIds?: Set<string>; onTogglePinned?: (s: any) => void;
+  dataTour?: string
 }) {
   const { theme } = useStore()
   const textPrimary = theme !== 'light' ? '#f1f5f9' : '#1e293b'
@@ -1399,6 +1400,7 @@ export function SessionRow({ session, isSelected, onSelect, onEdit, onDelete, pi
 
   return (
     <div onClick={() => onSelect(session)}
+      data-tour={dataTour}
       className={`group flex h-[54px] items-center gap-1.5 overflow-hidden px-2 py-1.5 rounded-lg cursor-pointer mb-0.5 transition-colors ${
         isSelected ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-[var(--bg-card-hover)] border border-transparent'
       } ${nameMuted ? 'opacity-75' : ''}`}>
