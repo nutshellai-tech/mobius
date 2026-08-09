@@ -1460,6 +1460,29 @@ type RemoteFileSource = {
   hardware?: string
 }
 
+type MentionFileSource = {
+  key: string
+  kind: 'hub' | 'local' | 'remote'
+  name: string
+  status?: string
+  remote_path?: string
+}
+
+type ChatDesktopFileBridge = {
+  isDesktop?: boolean
+  listProjectLocalFiles?: (projectId: string, path: string) => Promise<{
+    ok?: boolean
+    error?: string
+    bind_path?: string
+    entries?: Entry[]
+  }>
+}
+
+function getChatDesktopFileBridge(): ChatDesktopFileBridge | undefined {
+  if (typeof window === 'undefined') return undefined
+  return (window as { mobiusDesktop?: ChatDesktopFileBridge }).mobiusDesktop
+}
+
 function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
   projectId: string
   open: boolean
@@ -1467,11 +1490,29 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
   onPickPath: (path: string) => void
 }) {
   const [sources, setSources] = useState<RemoteFileSource[]>([])
-  const [selectedRemote, setSelectedRemote] = useState('')
+  const [selectedSourceKey, setSelectedSourceKey] = useState('hub')
   const [sourcesLoading, setSourcesLoading] = useState(false)
   const [sourcesError, setSourcesError] = useState('')
   const [dirs, setDirs] = useState<Record<string, DirState>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['/']))
+
+  const sourceOptions = useMemo<MentionFileSource[]>(() => {
+    const options: MentionFileSource[] = [{ key: 'hub', kind: 'hub', name: '中枢（local）' }]
+    const desktop = getChatDesktopFileBridge()
+    if (desktop?.isDesktop && desktop.listProjectLocalFiles) {
+      options.push({ key: 'local', kind: 'local', name: '本机（local）' })
+    }
+    for (const source of sources) {
+      options.push({
+        key: `remote:${source.name}`,
+        kind: 'remote',
+        name: source.name,
+        status: source.status,
+        remote_path: source.remote_path,
+      })
+    }
+    return options
+  }, [sources])
 
   const loadSources = useCallback(async () => {
     if (!projectId) return
@@ -1481,11 +1522,16 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
       const data = await api(`/api/projects/${projectId}/remote-file-sources`)
       const next = Array.isArray(data?.remotes) ? data.remotes as RemoteFileSource[] : []
       setSources(next)
-      setSelectedRemote(current => current && next.some(source => source.name === current) ? current : (next[0]?.name || ''))
+      const desktop = getChatDesktopFileBridge()
+      setSelectedSourceKey(current => {
+        if (current === 'hub') return current
+        if (current === 'local' && desktop?.isDesktop && desktop.listProjectLocalFiles) return current
+        return next.some(source => `remote:${source.name}` === current) ? current : 'hub'
+      })
     } catch (error: any) {
       setSources([])
-      setSelectedRemote('')
-      setSourcesError(error?.message || '加载远程服务器失败')
+      setSelectedSourceKey('hub')
+      setSourcesError(error?.message || '加载远程文件来源失败')
     } finally {
       setSourcesLoading(false)
     }
@@ -1504,21 +1550,29 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
   }, [open, onClose])
 
   const loadDir = useCallback(async (relPath: string) => {
-    if (!projectId || !selectedRemote) return
+    if (!projectId || !selectedSourceKey) return
+    const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
+    if (!selectedSource) return
     setDirs(previous => ({ ...previous, [relPath]: { ...previous[relPath], loading: true, error: undefined } }))
     try {
-      const data = await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(selectedRemote)}&path=${encodeURIComponent(relPath)}`)
+      const desktop = getChatDesktopFileBridge()
+      const data = selectedSource.kind === 'hub'
+        ? await api(`/api/projects/${projectId}/files?path=${encodeURIComponent(relPath)}`)
+        : selectedSource.kind === 'local'
+          ? await desktop?.listProjectLocalFiles?.(projectId, relPath)
+          : await api(`/api/projects/${projectId}/remote-files?remote=${encodeURIComponent(selectedSource.name)}&path=${encodeURIComponent(relPath)}`)
+      if (selectedSource.kind === 'local' && !data?.ok) throw new Error(data?.error || '加载本机文件失败')
       setDirs(previous => ({ ...previous, [relPath]: { loading: false, entries: Array.isArray(data?.entries) ? data.entries : [] } }))
     } catch (error: any) {
-      setDirs(previous => ({ ...previous, [relPath]: { loading: false, error: error?.message || '加载远程目录失败' } }))
+      setDirs(previous => ({ ...previous, [relPath]: { loading: false, error: error?.message || '加载文件目录失败' } }))
     }
-  }, [projectId, selectedRemote])
+  }, [projectId, selectedSourceKey, sourceOptions])
 
   useEffect(() => {
     setDirs({})
     setExpanded(new Set(['/']))
-    if (open && selectedRemote) void loadDir('/')
-  }, [open, selectedRemote, loadDir])
+    if (open && selectedSourceKey) void loadDir('/')
+  }, [open, selectedSourceKey, loadDir])
 
   const toggleDir = useCallback((relPath: string) => {
     setExpanded(previous => {
@@ -1537,7 +1591,7 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
   }, [onPickPath])
 
   if (!open) return null
-  const selectedSource = sources.find(source => source.name === selectedRemote)
+  const selectedSource = sourceOptions.find(source => source.key === selectedSourceKey)
   const rootState = dirs['/']
 
   return (
@@ -1558,7 +1612,7 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
             <Server className="h-4 w-4" strokeWidth={1.8} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>远程服务器 · 文件</div>
+            <div className="truncate text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>项目文件</div>
             <div className="truncate text-[11px]" style={{ color: 'var(--text-muted)' }}>选择文件，把绝对路径插入输入框</div>
           </div>
           <button
@@ -1575,7 +1629,7 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
 
         <div className="flex-shrink-0 border-b p-3" style={{ borderColor: 'var(--border-color)' }}>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>远程服务器</span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>文件来源</span>
             <button
               type="button"
               onClick={() => void loadSources()}
@@ -1589,50 +1643,47 @@ function RemoteFileMentionDrawer({ projectId, open, onClose, onPickPath }: {
           </div>
           {sourcesLoading && sources.length === 0 ? (
             <div className="flex h-16 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              <Loader2 className="h-4 w-4 animate-spin" />加载远程服务器…
-            </div>
-          ) : sourcesError ? (
-            <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">{sourcesError}</div>
-          ) : sources.length === 0 ? (
-            <div className="rounded-lg border px-3 py-3 text-[12px] leading-relaxed" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
-              当前项目还没有可用的远程服务器。请先在项目设置中同步 AIMUX 远程算力清单。
+              <Loader2 className="h-4 w-4 animate-spin" />加载文件来源…
             </div>
           ) : (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {sources.map(source => {
-                const active = source.name === selectedRemote
-                return (
-                  <button
-                    key={source.name}
-                    type="button"
-                    onClick={() => setSelectedRemote(source.name)}
-                    className="min-w-[150px] rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
-                    style={{ borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)', background: active ? 'rgba(59,130,246,0.10)' : 'var(--bg-primary)' }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                      <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
-                      {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
-                    </div>
-                    <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
-                      {source.remote_path || '默认登录目录'}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+            <>
+              {sourcesError && <div className="mb-2 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">远程来源加载失败：{sourcesError}</div>}
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {sourceOptions.map(source => {
+                  const active = source.key === selectedSourceKey
+                  return (
+                    <button
+                      key={source.key}
+                      type="button"
+                      onClick={() => setSelectedSourceKey(source.key)}
+                      className="min-w-[150px] rounded-lg border px-3 py-2 text-left transition-colors hover:bg-[var(--bg-card-hover)] focus-visible:ring-2 focus-visible:ring-blue-500/50"
+                      style={{ borderColor: active ? 'rgba(59,130,246,0.55)' : 'var(--border-color)', background: active ? 'rgba(59,130,246,0.10)' : 'var(--bg-primary)' }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 flex-shrink-0 rounded-full ${source.kind !== 'remote' || source.status === 'reachable' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                        <span className="min-w-0 flex-1 truncate text-[12px] font-medium" style={{ color: 'var(--text-primary)' }}>{source.name}</span>
+                        {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-blue-400" strokeWidth={2} />}
+                      </div>
+                      <div className="mt-1 truncate font-mono text-[10px]" title={source.remote_path || '默认登录目录'} style={{ color: 'var(--text-muted)' }}>
+                        {source.kind === 'hub' ? '项目绑定路径' : source.kind === 'local' ? 'Electron 本机路径' : (source.remote_path || '默认登录目录')}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
           )}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex h-10 flex-shrink-0 items-center gap-1.5 border-b px-4 text-[11px]" style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
             <FolderOpen className="h-3.5 w-3.5 text-blue-400" strokeWidth={1.8} />
-            <span className="truncate">{selectedSource?.name || '未选择服务器'}</span>
+            <span className="truncate">{selectedSource?.name || '未选择来源'}</span>
             {selectedSource && <ChevronRight className="h-3 w-3 flex-shrink-0" />}
-            <span className="truncate font-mono">{selectedSource?.remote_path || (selectedSource ? '默认登录目录' : '')}</span>
+            <span className="truncate font-mono">{selectedSource?.kind === 'hub' ? '项目绑定路径' : selectedSource?.kind === 'local' ? 'Electron 本机路径' : (selectedSource?.remote_path || (selectedSource ? '默认登录目录' : ''))}</span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-            {!selectedRemote || sources.length === 0 ? null : !rootState ? (
+            {!selectedSource ? null : !rootState ? (
               <div className="flex h-28 items-center justify-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 <Loader2 className="h-4 w-4 animate-spin" />加载文件…
               </div>
