@@ -38,7 +38,7 @@ export function ResearchCard({
   const hasChief = !!chief || Number(research.chief_count || 0) > 0
 
   return (
-    <div className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-emerald-500/30 ${compact ? 'h-[108px]' : 'h-[176px]'}`}
+    <div className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-emerald-500/30 ${compact ? 'h-[136px]' : 'h-[220px]'}`}
       style={{
         background: 'var(--bg-primary)',
         borderColor: 'var(--border-color)',

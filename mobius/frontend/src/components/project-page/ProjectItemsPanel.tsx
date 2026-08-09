@@ -369,7 +369,7 @@ function IssueList({
 
   return (
     <div className="space-y-3">
-      <div className={`grid ${compact ? 'grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2' : 'grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3'}`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
         {issues.map((issue: any) => (
           <IssueCard
             key={issue.id}
@@ -491,7 +491,7 @@ function ResearchList({
 
   return (
     <div className="space-y-3">
-      <div className={`grid ${compact ? 'grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-2' : 'grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3'}`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 ${compact ? 'gap-2' : 'gap-3'}`}>
       {researches.map((research: any) => (
         <ResearchCard
           key={research.id}

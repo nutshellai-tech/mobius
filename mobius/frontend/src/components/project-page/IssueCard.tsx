@@ -56,7 +56,7 @@ export function IssueCard({
   return (
     <div
       data-tour={isLogoReviewIssue ? 'logo-review-issue-card' : undefined}
-      className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-blue-500/30 ${compact ? 'h-[108px]' : 'h-[176px]'}`}
+      className={`rounded-lg border overflow-hidden flex flex-col group transition-all hover:border-blue-500/30 ${compact ? 'h-[136px]' : 'h-[220px]'}`}
       style={{
         background: 'var(--bg-primary)',
         borderColor: 'var(--border-color)',
