@@ -443,7 +443,7 @@ function isSameQueuedRequest(sigA, sigB) {
   return false
 }
 
-// Resolve the aimux binary to spawn as a stdio MCP server (for TUI sessions that
+// Resolve the aimux binary to spawn as a stdio MCP server (for desktop/TUI sessions that
 // opted into add_remote_aimux_mcp). Mirrors tmux-codex.js + aimux-remote.ts
 // AIMUX_BIN_CANDIDATES (kept inline to avoid crossing the .js/.ts boundary).
 function resolveAimuxBin() {

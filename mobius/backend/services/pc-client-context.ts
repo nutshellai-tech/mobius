@@ -35,15 +35,16 @@ export function parsePcClientMetadata(raw: unknown): PcClientMetadata | null {
 }
 
 /**
- * For Mobius TUI sessions that opted into the aimux remote_* MCP toolset
- * (is_tui === true AND add_remote_aimux_mcp === true) and are bound to an
- * aimux remote, return that remote name (aimux_id); otherwise undefined.
+ * For client sessions that explicitly opted into the aimux remote_* MCP
+ * toolset (add_remote_aimux_mcp === true) and are bound to an aimux remote,
+ * return that remote name (aimux_id); otherwise undefined.  TUI and Electron
+ * use the same per-session protocol; the explicit flag keeps web sessions
+ * unchanged and prevents accidental MCP injection.
  * Used to gate per-session MCP injection when spawning codex / claude-code.
  */
 export function aimuxRemoteNameFromMeta(raw: unknown): string | undefined {
   const meta = parsePcClientMetadata(raw);
   if (
-    meta?.is_tui === true &&
     meta?.add_remote_aimux_mcp === true &&
     typeof meta.aimux_id === 'string' &&
     meta.aimux_id.trim()
@@ -151,16 +152,16 @@ const MODE_PROMPTS: Record<ClientKind, Record<PcWorkMode, Record<ContextLanguage
     },
     pc: {
       en: (id, rp) =>
-        `Use aimux to connect to the following remote machine to carry out all work, ` +
+        `Use the registered remote_* MCP tools (backed by aimux) to connect to the following remote machine and carry out all work, ` +
         `and try to avoid modifying local code: ${id}${rp}`,
-      zh: (id, rp) => `使用aimux连接到以下远程机器执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
+      zh: (id, rp) => `使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器执行所有工作，尽量不修改本地的代码： ${id}${rp}`,
     },
     dual: {
       en: (id, rp) =>
-        `You are authorized to use aimux to connect to the following remote machine: ${id}. ` +
+        `You are authorized to use the registered remote_* MCP tools (backed by aimux) to connect to the following remote machine: ${id}. ` +
         dualModeTail(id, rp, 'en'),
       zh: (id, rp) =>
-        `你现在被授权使用aimux连接到以下远程机器： ${id}，` +
+        `你现在被授权使用已注册的 remote_* MCP 工具（由 aimux 提供）连接到以下远程机器： ${id}，` +
         dualModeTail(id, rp, 'zh'),
     },
   },
