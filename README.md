@@ -37,30 +37,18 @@ One system to connect your team, AI agents, devices, and compute
 ## News
 
 **2026-08-09**
-- **Windows one-key installation**: a single PowerShell command installs Node, Python, coding agents, and the TUI on a fresh Windows machine — with npm mirror fallback, built-in AIMUX runtime diagnostics, and a fully verified install pipeline.
-- **Pure-membership project access**: projects are now invisible to non-members; the member panel is redesigned Aone-style (role filter tabs + member table + search), and the create-project flow shares the same member-invite experience.
-- **Desktop CI auto-build + webhook**: every release is auto-built and synced to the download menu.
+- **Windows one-key install**: a single PowerShell command installs the Mobius TUI on a fresh Windows machine.
 
 **2026-08-02**
 - **Easy Mode**: an optional clutter-free layout (cross-project recent sessions + JSONL + floating input). First-time users choose between Easy and Normal mode and can switch anytime.
-- **TUI published to npm as `@mobius-os/mobius`**: multiline/paste-aware composer, automatic SSE reconnect, and reasoning/thinking display.
-- **Remote compute inside agent sessions**: aimux remote MCP tools are injected into claude-code / codex sessions so agents can call remote machines directly from the chat; the code-conversation file browser gains project-scoped remote browsing.
+- **TUI released**: connect to Mobius from any terminal with the TUI, and use Mobius the way you use Codex.
 
 **2026-07-26**
-- **Native editor upgrades**: Markdown WYSIWYG editing, drag-to-move files/folders in the file tree, and source/rich-text mode switching.
-- **JSONL viewer de-noising**: six classes of metadata noise cards are hidden, Cursor-style tool-call status icons and explore-tool aggregation added, plus animated card expansion.
-- **Search**: results stream in via SSE with case/whole-word matching; clicking a result jumps to the exact JSONL card.
+- **Search improvements**: results stream in via SSE with case/whole-word matching; clicking a result jumps to the exact JSONL card.
 
-**2026-07-19**
-- **Desktop multi-tab & extension host bar** (experimental): tabbed pages in the desktop shell plus an embedded host bar for running extension apps.
-- **Cluster overview page**: a hex-lattice session overview that clusters sessions by project and creator with physics-based layout.
-
-**2026-07-16**
-- **Web Terminal now supports two launch modes**: open a shell in the current project directory, or open a terminal that automatically attaches to the current session's Agent tmux backend for live TUI inspection.
 
 **2026-07-14**
-- **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place file saving + chat) for browsing, editing, and discussing project files in one place.
-- **Scene-level first-visit tours** added for the Admin Center, Research page, and self-cognition workbench.
+- **Code Conversation v2** workspace mode: a 3-pane layout (file browser + built-in CodeMirror editor with syntax highlighting and in-place saving + chat).
 
 
 
