@@ -1616,12 +1616,12 @@ export function NewResearchModal({ projectId, onClose, onCreated }: { projectId:
   }, [DRAFT_KEY, title, desc, descTouched])
   const submit = async () => {
     if (!title.trim()) { setErr('请填写研究标题'); return }
-    if (!effectiveDesc.trim()) { setErr('请填写研究描述'); return }
+    const submittedDescription = effectiveDesc.trim() || title.trim()
     setLoading(true); setErr('')
     try {
       const research = await api(`/api/projects/${projectId}/researches`, {
         method: 'POST',
-        body: JSON.stringify({ title, description: effectiveDesc }),
+        body: JSON.stringify({ title, description: submittedDescription }),
       })
       draftClear(DRAFT_KEY)
       onCreated(research)
