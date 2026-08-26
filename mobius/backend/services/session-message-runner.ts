@@ -76,6 +76,8 @@ export type ExternalSessionEvent = {
   }>;
 };
 
+type InitialContextMode = 'session' | 'provided';
+type RuntimeEnv = Record<string, string>;
 
 function readPendingTransferPaths(sessionId: any): PendingTransferPaths | null {
   try {
@@ -216,6 +218,8 @@ async function runSessionMessage({
   logger = console,
   urgent = false,
   externalEvent = null,
+  initialContextMode = 'session',
+  runtimeEnv = undefined,
 }: {
   user?: any;
   sessionId?: any;
@@ -229,12 +233,25 @@ async function runSessionMessage({
   logger?: any;
   urgent?: boolean;
   externalEvent?: ExternalSessionEvent | null;
+  initialContextMode?: InitialContextMode;
+  runtimeEnv?: RuntimeEnv;
 } = {}): Promise<any> {
   const normalizedSessionId = String(sessionId || '').trim();
   const normalizedContent = typeof content === 'string' ? content : '';
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
   const isExternalEvent = !!externalEvent;
+
+  if (initialContextMode === 'provided' && source !== 'harness.dispatch') {
+    throw httpError(
+      'provided initial context 仅允许 Harness 内部 dispatch 使用',
+      403,
+      'initial_context_mode_forbidden',
+    );
+  }
+  if (runtimeEnv !== undefined && source !== 'harness.dispatch') {
+    throw httpError('runtimeEnv 仅允许 Harness 内部 dispatch 使用', 403, 'runtime_env_forbidden');
+  }
 
   if (!user?.id) throw httpError('用户不可用', 401);
 
@@ -357,6 +374,7 @@ async function runSessionMessage({
     : null;
   if (
     !isExternalEvent
+    && initialContextMode === 'session'
     && Messages.countUserMessagesFor(normalizedSessionId) <= 1
   ) {
     const ctx = buildSessionContext(user, normalizedSessionId);
@@ -476,6 +494,7 @@ async function runSessionMessage({
       mobiusJsonl,
       suppressRunningFlag: isExternalEvent,
       aimuxRemoteName: aimuxRemoteNameFromMeta(sess?.pc_client_metadata),
+      runtimeEnv,
     };
     if (urgent) {
       // 加急: 中断当前推理/输出再投递. pauseCurrentAndResumeFromSession 带 prompt =

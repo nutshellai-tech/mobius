@@ -897,6 +897,144 @@ function migrateSessionsV2AgentStatusEnum() {
 }
 migrateSessionsV2AgentStatusEnum();
 
+// ===== Main/Sub Harness core schema =====
+// schema.sql handles empty databases. Replaying only its Harness block here is
+// the explicit, idempotent migration path for existing databases. This runs
+// after the sessions_v2 rebuild migrations because those temporarily disable
+// connection-level foreign key enforcement.
+function migrateHarnessMemberProfileReuse() {
+  const tableSql = String((db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='harness_run_members'"
+  ).get() as { sql?: string } | undefined)?.sql || '');
+  if (!/UNIQUE\s*\(\s*run_id\s*,\s*profile_id\s*\)/i.test(tableSql)) return;
+
+  // SQLite cannot drop a table-level UNIQUE constraint in place. Rebuild only
+  // the member table while foreign-key enforcement is suspended outside the
+  // transaction; child tables keep referencing the same final table name.
+  db.pragma('foreign_keys = OFF');
+  try {
+    const rebuild = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE harness_run_members_new (
+          id TEXT PRIMARY KEY,
+          run_id TEXT NOT NULL,
+          profile_id TEXT,
+          role TEXT NOT NULL CHECK(role IN ('main','worker','evaluator')),
+          display_name TEXT NOT NULL,
+          selection_order INTEGER NOT NULL DEFAULT 0,
+          config_snapshot_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available','busy','retired')),
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+          FOREIGN KEY(run_id) REFERENCES harness_runs(id) ON DELETE CASCADE,
+          FOREIGN KEY(profile_id) REFERENCES harness_profiles(id) ON DELETE SET NULL,
+          UNIQUE(run_id, id)
+        );
+        INSERT INTO harness_run_members_new
+          (id, run_id, profile_id, role, display_name, selection_order, config_snapshot_json, status, created_at)
+        SELECT id, run_id, profile_id, role, display_name, selection_order, config_snapshot_json, status, created_at
+        FROM harness_run_members;
+        DROP TABLE harness_run_members;
+        ALTER TABLE harness_run_members_new RENAME TO harness_run_members;
+        CREATE UNIQUE INDEX idx_harness_run_one_main
+          ON harness_run_members(run_id) WHERE role = 'main';
+        CREATE INDEX idx_harness_run_members_order
+          ON harness_run_members(run_id, selection_order, created_at);
+      `);
+    });
+    rebuild();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+  const violations = db.prepare('PRAGMA foreign_key_check').all();
+  if (violations.length > 0) {
+    throw new Error(`Harness member profile reuse migration produced ${violations.length} foreign-key violation(s)`);
+  }
+  console.log('[mobius/db] migrate: harness_run_members 允许同一 Profile 创建多个成员实例');
+}
+
+function migrateHarnessSchema() {
+  const marker = '-- ===== Harness core schema (Phase 0) =====';
+  const endMarker = '-- ===== End Harness core schema =====';
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+  const markerIndex = schemaSql.indexOf(marker);
+  if (markerIndex < 0) throw new Error('Harness schema marker is missing from schema.sql');
+  const endMarkerIndex = schemaSql.indexOf(endMarker, markerIndex);
+  if (endMarkerIndex < 0) throw new Error('Harness schema end marker is missing from schema.sql');
+  const harnessSql = schemaSql.slice(markerIndex, endMarkerIndex + endMarker.length);
+  if (Number(db.pragma('foreign_keys', { simple: true })) !== 1) {
+    throw new Error('Harness migration refused because PRAGMA foreign_keys is disabled');
+  }
+  const migrate = db.transaction(() => {
+    db.exec(harnessSql);
+    const runCols = db.prepare('PRAGMA table_info(harness_runs)').all().map((column: any) => column.name);
+    if (!runCols.includes('session_name')) {
+      db.exec('ALTER TABLE harness_runs ADD COLUMN session_name TEXT');
+    }
+    if (!runCols.includes('language')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh','en'))");
+    }
+    if (!runCols.includes('excluded_skill_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_skill_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+    if (!runCols.includes('excluded_memory_ids')) {
+      db.exec("ALTER TABLE harness_runs ADD COLUMN excluded_memory_ids TEXT NOT NULL DEFAULT '[]'");
+    }
+    const profiles = [
+      { id: 'system-codex-readonly-v1', name: 'Codex Read-only', backend: 'codex', model: 'codex' },
+      { id: 'system-claude-readonly-v1', name: 'Claude Code Read-only', backend: 'claude-code', model: 'opus' },
+    ];
+    const insertProfile = db.prepare(`
+      INSERT OR IGNORE INTO harness_profiles
+        (id, scope, name, description, backend, default_model, capabilities_json, definition_json, version)
+      VALUES (?, 'system', ?, 'Built-in conservative read-only profile', ?, ?, ?, ?, 1)
+    `);
+    for (const profile of profiles) {
+      const capabilities = {
+        can_main: true,
+        can_work: true,
+        can_evaluate: true,
+        supports_write: false,
+        supports_network: false,
+        supports_runtime_verification: false,
+        max_concurrency: 1,
+      };
+      insertProfile.run(
+        profile.id,
+        profile.name,
+        profile.backend,
+        profile.model,
+        JSON.stringify(capabilities),
+        JSON.stringify({
+          schema_version: '1.1',
+          backend: profile.backend,
+          model: profile.model,
+          capabilities,
+          model_traits: {
+            needs_context_reset: false,
+            context_window_tokens: 0,
+            supports_auto_compaction: false,
+            calibrated: false,
+          },
+          skills: [],
+          tools: { allow: [], deny: [], capability_tags: [] },
+          cost_profile: { relative_cost_factor: 1 },
+          default_context_policy: {},
+          default_tool_policy: { workspace_mode: 'read_only' },
+        }),
+      );
+    }
+  });
+  migrate();
+  migrateHarnessMemberProfileReuse();
+  const foreignKeys = Number(db.pragma('foreign_keys', { simple: true }));
+  if (foreignKeys !== 1) {
+    throw new Error('Harness migration requires PRAGMA foreign_keys = ON');
+  }
+  console.log(`[mobius/db] ✅ Harness schema ready (busy_timeout=${busyTimeoutMs}ms)`);
+}
+migrateHarnessSchema();
+
 // ===== sessions_v2 轻量迁移: 每个 Session 的注入上下文语言 =====
 // 存量 session 默认 'zh', 保持此前中文注入行为; 新建 Session 由前端/路由显式写入。
 function migrateSessionsLanguage() {

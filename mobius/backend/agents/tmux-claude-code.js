@@ -32,6 +32,7 @@ const {
 const { buildClaudeCliExec } = require('./provider-cli-command')
 
 const { AgentBackend } = require('./base')
+const { runtimeEnvEntries } = require('./runtime-env')
 const {
   appendMobiusPromptEntry,
   appendMobiusExternalEntry,
@@ -815,7 +816,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // ── 内部实现 ──────────────────────────────────────────
-  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _createImpl({ sessionId, cwd, flagRoot, model, useProxy, displayName, initialPrompt, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false, runtimeEnv }) {
     if (!sessionId || !cwd) throw new Error('createNewSession 需要 sessionId + cwd')
     if (!initialPrompt) throw new Error('createNewSession 需要 initialPrompt')
     if (!fs.existsSync(cwd)) throw new Error(`cwd 不存在: ${cwd}`)
@@ -823,7 +824,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // tmux 模式特点: window 可跨后端重启存活. 已有活窗口 → 复用 (跟原 hub.startSession
     // idempotent 一致). 这跟 stream-json 那版"严格新建"语义不同, 是有意为之.
     if (!windowExists(sessionId)) {
-      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp })
+      await this._spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy, aimuxRemoteName, enableGulingMcp, runtimeEnv })
     } else {
       // 窗口在但 runtime entry 可能不在 (后端首次 reload) — 兜底建一个
       if (!this.runtime.has(sessionId) && agentSessionId) {
@@ -856,7 +857,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
   }
 
   // 宽松版 — 没活进程就按 opts 自动 spawn (chat 不区分首发/续发, 统一走这里).
-  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _queueImpl({ sessionId, prompt, cwd, flagRoot, model, useProxy, displayName, agentSessionId, isInitialContextPrompt = false, settingsPath, forceNoProxy = false, mobiusJsonl = null, suppressRunningFlag = false, aimuxRemoteName, enableGulingMcp = false, runtimeEnv }) {
     if (!sessionId) throw new Error('需要 sessionId')
     if (!prompt) throw new Error('需要 prompt')
 
@@ -884,6 +885,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
         agentSessionId: finalAgentSid,
         aimuxRemoteName,
         enableGulingMcp,
+        runtimeEnv,
       })
     }
     this._appendMobiusPromptEntry(sessionId, mobiusJsonl)
@@ -977,7 +979,7 @@ class TmuxClaudeCodeBackend extends AgentBackend {
 
   // ── tmux 操作底层 ─────────────────────────────────────
   // 启动一个新的 Claude Code tmux 窗口，并把运行态登记到内存和持久化存储。
-  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false }) {
+  async _spawnWindow({ sessionId, cwd, flagRoot, model, useProxy, displayName, agentSessionId, settingsPath, forceNoProxy = false, aimuxRemoteName, enableGulingMcp = false, runtimeEnv }) {
     const nativeMode = !settingsPath
     // native 启动时强制复核官方 status 与管理员开关；专用 settings 仍走原渠道。
     const claudeExecutable = nativeMode
@@ -1087,9 +1089,18 @@ class TmuxClaudeCodeBackend extends AgentBackend {
     // 提前写入项目可信状态，减少 TUI 启动时的交互弹窗。
     ensureProjectTrusted(cwd)
 
+    // HOME 与 Harness scoped credentials 只挂载到当前窗口，不嵌入 shell 命令，
+    // 也不写入后端 runtime 文件。
+    const runtimeEntries = [
+      ['HOME', HOME],
+      ...runtimeEnvEntries(runtimeEnv),
+    ]
+    const runtimeArgs = runtimeEntries.flatMap(([key, value]) => ['-e', `${key}=${value}`])
     // 在 hub session 下创建后台 tmux window，并在 cwd 中执行 bash -lc cmd。
-    // 显式固定 HOME，避免长寿命 tmux server 保留旧环境；不读取或复制 ~/.claude 凭据。
-    const r = tmux(['new-window', '-d', '-e', `HOME=${HOME}`, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd])
+    const r = tmux(
+      ['new-window', '-d', ...runtimeArgs, '-t', HUB, '-n', sessionId, '-c', cwd, 'bash', '-lc', cmd],
+      { redactEnvironmentKeys: runtimeEntries.slice(1).map(([key]) => key) },
+    )
     // tmux 创建失败时把 stderr 带出，方便定位命令层问题。
     if (r.status !== 0) throw new Error(`tmux new-window 失败: ${r.stderr}`)
     // 记录窗口、目录、Claude 会话、代理和 settings 信息。
