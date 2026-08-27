@@ -36,7 +36,7 @@ export type HarnessExecutionMode = 'single' | 'multi';
 export type HarnessMemberRole = 'main' | 'worker' | 'evaluator';
 export type HarnessRiskLevel = 'low' | 'medium' | 'high';
 
-export interface HarnessRunPolicyV1 {
+export interface HarnessRunPolicyV1_0 {
   schema_version: '1.0';
   collaboration_shape: 'pipeline';
   max_concurrent_subharnesses: 1;
@@ -49,6 +49,24 @@ export interface HarnessRunPolicyV1 {
   cost_soft_limit_usd: number;
   cost_hard_limit_usd: number;
 }
+
+export interface HarnessRunPolicyV1_1 {
+  schema_version: '1.1';
+  topology_selection_mode: 'explicit' | 'recommend' | 'auto_safe';
+  collaboration_shape: 'pipeline' | 'adaptive' | 'fanout';
+  max_concurrent_subharnesses: 1 | 2 | 3 | 4;
+  parallel_read_only_only: true;
+  max_depth: 0 | 1;
+  max_nodes: 1 | 2 | 3 | 4 | 5;
+  default_timeout_seconds: number;
+  workspace_policy: 'read_only';
+  evaluator_policy: 'by_risk' | 'always' | 'off';
+  context_reset_policy: 'off';
+  cost_soft_limit_usd: number;
+  cost_hard_limit_usd: number;
+}
+
+export type HarnessRunPolicyV1 = HarnessRunPolicyV1_0 | HarnessRunPolicyV1_1;
 
 export interface HarnessRosterDraftMemberV1 {
   member_key: string;
@@ -68,8 +86,13 @@ export interface HarnessEstimateRequestV1 {
   roster: {
     main_member_key: string;
     members: HarnessRosterDraftMemberV1[];
+    /**
+     * Reserve an adaptive pool of Worker instances from the selected Profiles.
+     * The Main still decides how many of those instances are actually started.
+     */
+    auto_expand?: boolean;
   };
-  policy?: Partial<HarnessRunPolicyV1>;
+  policy?: Partial<HarnessRunPolicyV1_1>;
 }
 
 export interface HarnessEstimateAcknowledgementV1 {
@@ -104,7 +127,19 @@ export interface HarnessAcceptanceCriterionV1 {
   check?: { command?: string; expect_exit_code?: number; expect_artifact_kind?: string };
 }
 
-export interface HarnessTaskContractV1 {
+export interface HarnessTaskParallelismV1_2 {
+  mode: 'serial' | 'parallel_safe';
+  independence_key?: string;
+  reason?: string;
+  estimated_duration_seconds?: number;
+  read_scopes?: string[];
+  mutable_resources?: string[];
+  aggregation_key?: string;
+  expected_output_size_bytes?: number;
+  failure_policy?: 'continue_siblings' | 'stop_group';
+}
+
+export interface HarnessTaskContractV1_1 {
   schema_version: '1.1';
   objective: string;
   risk_level: HarnessRiskLevel;
@@ -128,8 +163,24 @@ export interface HarnessTaskContractV1 {
     deny?: string[];
     capability_tags: HarnessCapabilityTag[];
   };
-  budget: { timeout_seconds: number; max_turns?: number; max_cost_usd?: number };
+  budget: { timeout_seconds: number; max_turns?: number; max_cost_usd?: number; max_attempts?: number };
   communication: { parent_only: true; progress_interval_seconds?: number };
+}
+
+export interface HarnessTaskContractV1_2 extends Omit<HarnessTaskContractV1_1, 'schema_version'> {
+  schema_version: '1.2';
+  parallelism?: HarnessTaskParallelismV1_2;
+}
+
+export type HarnessTaskContractV1 = HarnessTaskContractV1_1 | HarnessTaskContractV1_2;
+
+export interface HarnessNodeBatchRequestV1 {
+  request_id: string;
+  nodes: Array<{
+    client_ref: string;
+    assignee_member_id: string;
+    task_contract: HarnessTaskContractV1;
+  }>;
 }
 
 export interface HarnessNodeResultV1 {
@@ -152,6 +203,42 @@ export interface HarnessNodeResultV1 {
   risks: string[];
   unresolved: string[];
   recommended_followups: string[];
+}
+
+export interface HarnessNodeOutputV1_2 {
+  kind: 'report' | 'structured_data';
+  name: string;
+  mime_type: 'text/markdown' | 'application/json';
+  content: string;
+}
+
+export interface HarnessSynthesisManifestV1 {
+  included_result_event_ids: string[];
+  excluded_results: Array<{ event_id: string; reason: string }>;
+  criterion_sources: Array<{
+    criterion_id: string;
+    source_event_ids: string[];
+  }>;
+  deduplication_keys: string[];
+  conflicts: Array<{
+    source_event_ids: string[];
+    resolution: string;
+    unresolved: boolean;
+  }>;
+  coverage_gaps: string[];
+}
+
+export interface HarnessNodeResultV1_2 extends Omit<HarnessNodeResultV1, 'schema_version'> {
+  schema_version: '1.2';
+  outputs: HarnessNodeOutputV1_2[];
+  synthesis_manifest?: HarnessSynthesisManifestV1;
+}
+
+export type HarnessNodeResult = HarnessNodeResultV1 | HarnessNodeResultV1_2;
+
+export interface HarnessResultAckRequestV1 {
+  request_id: string;
+  last_seen_seq: number;
 }
 
 export interface HarnessInternalTokenPayload {

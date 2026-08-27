@@ -66,9 +66,18 @@ function result(criterionId = 'facts', summary = 'Verified findings') {
   }
 }
 
+function resultV12(criterionId = 'facts', summary = 'Verified findings', outputs = [{
+  kind: 'report',
+  name: 'findings',
+  mime_type: 'text/markdown',
+  content: '# Findings\n\nComplete verified report.',
+}]) {
+  return { ...result(criterionId, summary), schema_version: '1.2', outputs }
+}
+
 function cleanup(fs, db, tempRoot) {
   try { db.close() } catch {}
   fs.rmSync(tempRoot, { recursive: true, force: true })
 }
 
-module.exports = { setup, rosterRequest, contract, result, cleanup }
+module.exports = { setup, rosterRequest, contract, result, resultV12, cleanup }

@@ -12,12 +12,15 @@ import {
 } from '../repositories/harness';
 import {
   canCreateHarnessRun,
+  canOperateHarnessRun,
   canReadHarnessRun,
   canReadIssue,
   canReadProject,
 } from '../services/access-control';
 import {
+  acknowledgeHarnessResultEvent,
   completeHarnessNode,
+  createNodeBatch,
   createTaskForMember,
   failHarnessNode,
   internalRoster,
@@ -26,11 +29,26 @@ import {
 } from '../services/harness-actions';
 import { estimateHarnessRun } from '../services/harness-estimator';
 import {
+  adaptiveHarnessSchedulingEnabled,
+  harnessBatchCreateEnabled,
+  harnessCapacity,
+  harnessNotificationDigestEnabled,
+  harnessResultAckRequired,
+  harnessRootResultWakeEnabled,
+} from '../services/harness-features';
+import {
   HarnessSchemaError,
   parseHarnessCreateRunRequest,
   parseHarnessEstimateRequest,
 } from '../services/harness-schema';
 import { requestHarnessScan } from '../services/harness-orchestrator';
+import { getHarnessSchedulingState } from '../services/harness-scheduling';
+import {
+  cancelHarnessNodeByUser,
+  cancelHarnessRunByUser,
+  retryHarnessNodeByUser,
+  waiveHarnessNodeByUser,
+} from '../services/harness-control';
 import { requireHarnessAction, verifyHarnessNodeToken } from '../services/harness-token';
 import type { HarnessInternalTokenPayload } from '../types/harness';
 
@@ -114,6 +132,17 @@ runsRouter.get('/', auth, (req, res) => {
   }
 });
 
+runsRouter.get('/features', auth, (_req, res) => {
+  res.json({
+    adaptive_scheduling_enabled: adaptiveHarnessSchedulingEnabled(),
+    batch_create_enabled: harnessBatchCreateEnabled(),
+    max_parallel_subs: Math.min(4, harnessCapacity('HARNESS_MAX_PARALLEL_SUBS', 4)),
+    root_result_wake_enabled: harnessRootResultWakeEnabled(),
+    result_ack_required: harnessResultAckRequired(),
+    notification_digest_enabled: harnessNotificationDigestEnabled(),
+  });
+});
+
 runsRouter.get('/:runId', auth, (req, res) => {
   try {
     const run = findRunOwner(String(req.params.runId));
@@ -125,6 +154,50 @@ runsRouter.get('/:runId', auth, (req, res) => {
   } catch (error) {
     sendError(res, error);
   }
+});
+
+function operableRun(req: express.Request): any {
+  const run = findRunOwner(String(req.params.runId));
+  if (!run || !canOperateHarnessRun(userOf(req), run)) {
+    throw Object.assign(new Error('无权操作此 Harness Run'), { status: 403, code: 'harness_operate_forbidden' });
+  }
+  return run;
+}
+
+runsRouter.post('/:runId/nodes/:nodeId/retry', auth, (req, res) => {
+  try {
+    const run = operableRun(req);
+    const result = retryHarnessNodeByUser(userOf(req).id, run.id, String(req.params.nodeId), req.body);
+    requestHarnessScan();
+    res.json(result);
+  } catch (error) { sendError(res, error); }
+});
+
+runsRouter.post('/:runId/nodes/:nodeId/cancel', auth, (req, res) => {
+  try {
+    const run = operableRun(req);
+    const result = cancelHarnessNodeByUser(userOf(req).id, run.id, String(req.params.nodeId), req.body);
+    requestHarnessScan();
+    res.json(result);
+  } catch (error) { sendError(res, error); }
+});
+
+runsRouter.post('/:runId/nodes/:nodeId/waive', auth, (req, res) => {
+  try {
+    const run = operableRun(req);
+    const result = waiveHarnessNodeByUser(userOf(req).id, run.id, String(req.params.nodeId), req.body);
+    requestHarnessScan();
+    res.json(result);
+  } catch (error) { sendError(res, error); }
+});
+
+runsRouter.post('/:runId/cancel', auth, (req, res) => {
+  try {
+    const run = operableRun(req);
+    const result = cancelHarnessRunByUser(userOf(req).id, run.id, req.body);
+    requestHarnessScan();
+    res.json(result);
+  } catch (error) { sendError(res, error); }
 });
 
 function internalAuth(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -174,12 +247,48 @@ internalRouter.get('/runs/:runId/events', async (req, res) => {
   } catch (error) { sendError(res, error); }
 });
 
+internalRouter.get('/runs/:runId/scheduling', (req, res) => {
+  try {
+    const payload = harnessPayload(req);
+    requireHarnessAction(payload, 'read_events');
+    if (payload.run_id !== req.params.runId) {
+      throw Object.assign(new Error('Scoped token 不能访问其他 Run'), { status: 403, code: 'harness_scope_violation' });
+    }
+    res.json({ ok: true, scheduling: getHarnessSchedulingState(req.params.runId) });
+  } catch (error) { sendError(res, error); }
+});
+
+internalRouter.post('/runs/:runId/result-events/:eventId/ack', (req, res) => {
+  try {
+    const payload = harnessPayload(req);
+    requireHarnessAction(payload, 'ack_result');
+    const result = acknowledgeHarnessResultEvent(
+      payload,
+      req.params.runId,
+      req.params.eventId,
+      req.body,
+    );
+    res.status(200).json(result);
+  } catch (error) { sendError(res, error); }
+});
+
 internalRouter.post('/runs/:runId/nodes', (req, res) => {
   try {
     const payload = harnessPayload(req);
     if (payload.run_id !== req.params.runId) throw Object.assign(new Error('Scoped token 不能访问其他 Run'), { status: 403, code: 'harness_scope_violation' });
     requireHarnessAction(payload, 'create_task_for_member');
     const result = createTaskForMember(payload, req.body);
+    requestHarnessScan();
+    res.status(result.ok ? 200 : 409).json(result);
+  } catch (error) { sendError(res, error); }
+});
+
+internalRouter.post('/runs/:runId/node-batches', (req, res) => {
+  try {
+    const payload = harnessPayload(req);
+    if (payload.run_id !== req.params.runId) throw Object.assign(new Error('Scoped token 不能访问其他 Run'), { status: 403, code: 'harness_scope_violation' });
+    requireHarnessAction(payload, 'create_task_for_member');
+    const result = createNodeBatch(payload, req.body);
     requestHarnessScan();
     res.status(result.ok ? 200 : 409).json(result);
   } catch (error) { sendError(res, error); }

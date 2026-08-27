@@ -11,14 +11,14 @@ process.env.MODEL_ACCESS_PATH = path.join(tempRoot, 'model-access.json')
 
 const { db } = require('../db')
 const { Sessions } = require('../backend/repositories/sessions')
-const { setup, rosterRequest, result, cleanup } = require('./harness/phase1-fixture')
+const { setup, rosterRequest, contract, result, resultV12, cleanup } = require('./harness/phase1-fixture')
 const { createHarnessRun } = require('../backend/repositories/harness')
 const { HarnessExecutorRegistry } = require('../backend/services/harness-executor')
 const { FakeHarnessExecutor } = require('./harness/fake-executor')
 const { claimNextHarnessDispatch, deliverClaimedHarnessDispatch } = require('../backend/services/harness-dispatcher')
 const { completeHarnessNode } = require('../backend/services/harness-actions')
 const { mintHarnessNodeToken, verifyHarnessNodeToken } = require('../backend/services/harness-token')
-const { verifySubmittedHarnessNode } = require('../backend/services/harness-orchestrator')
+const { verificationDecision, verifySubmittedHarnessNode } = require('../backend/services/harness-orchestrator')
 
 class DatabaseFakeExecutor extends FakeHarnessExecutor {
   constructor() {
@@ -59,6 +59,30 @@ class FailingStartExecutor extends FakeHarnessExecutor {
 
 async function main() {
   try {
+    assert.equal(verificationDecision({
+      task_contract_json: JSON.stringify(contract()),
+      result_json: JSON.stringify(resultV12()),
+    }).accepted, true)
+    const missingOutput = verificationDecision({
+      task_contract_json: JSON.stringify(contract()),
+      result_json: JSON.stringify({ ...resultV12(), outputs: [] }),
+    })
+    assert.equal(missingOutput.accepted, false)
+    assert.ok(missingOutput.reasons.some((reason) => reason.includes('缺少必需交付物 output: findings')))
+    const wrongKind = verificationDecision({
+      task_contract_json: JSON.stringify(contract()),
+      result_json: JSON.stringify({
+        ...resultV12(),
+        outputs: [{ kind: 'structured_data', name: 'findings', mime_type: 'application/json', content: '{}' }],
+      }),
+    })
+    assert.equal(wrongKind.accepted, false)
+    assert.ok(wrongKind.reasons.some((reason) => reason.includes('output 类型不匹配')))
+    assert.equal(verificationDecision({
+      task_contract_json: JSON.stringify(contract()),
+      result_json: JSON.stringify(result()),
+    }).accepted, true, 'Result 1.1 keeps its existing verification behavior')
+
     const fixture = setup(db, tempRoot, 'orchestrator')
     const snapshot = createHarnessRun(fixture.userId, fixture.projectId, {
       ...rosterRequest(fixture, 'single'), request_id: 'orchestrator-create',
@@ -87,7 +111,20 @@ async function main() {
       allowedMemberIds: [member.id],
     }))
     completeHarnessNode(payload, claim.node.id, {
-      request_id: 'root-complete-request', result: result('root-delivery', 'Final read-only report'),
+      request_id: 'root-complete-request',
+      result: {
+        ...resultV12('root-delivery', 'Final read-only report', [{
+          kind: 'report', name: '最终结果', mime_type: 'text/markdown', content: '# Final report',
+        }]),
+        synthesis_manifest: {
+          included_result_event_ids: [],
+          excluded_results: [],
+          criterion_sources: [{ criterion_id: 'root-delivery', source_event_ids: [] }],
+          deduplication_keys: [],
+          conflicts: [],
+          coverage_gaps: [],
+        },
+      },
     })
     verifySubmittedHarnessNode(claim.node.id)
     assert.equal(db.prepare('SELECT status FROM harness_nodes WHERE id=?').get(claim.node.id).status, 'succeeded')

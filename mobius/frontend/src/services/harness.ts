@@ -3,7 +3,25 @@ import { pollRecursive } from './polling'
 
 export type HarnessExecutionMode = 'single' | 'multi'
 export type HarnessMemberRole = 'main' | 'worker' | 'evaluator'
+export type HarnessCollaborationShape = 'pipeline' | 'adaptive' | 'fanout'
 export const MAX_HARNESS_AGENTS = 5
+
+export interface HarnessPolicyDraft {
+  schema_version: '1.1'
+  topology_selection_mode: 'explicit' | 'recommend' | 'auto_safe'
+  collaboration_shape: HarnessCollaborationShape
+  max_concurrent_subharnesses: 1 | 2 | 3 | 4
+  parallel_read_only_only: true
+}
+
+export interface HarnessFeatures {
+  adaptive_scheduling_enabled: boolean
+  batch_create_enabled: boolean
+  max_parallel_subs: number
+  root_result_wake_enabled: boolean
+  result_ack_required: boolean
+  notification_digest_enabled: boolean
+}
 
 export interface HarnessProfile {
   id: string
@@ -43,15 +61,19 @@ export interface HarnessRunDraft {
   roster: {
     main_member_key: string
     members: HarnessRosterMemberDraft[]
+    auto_expand?: boolean
   }
+  policy?: HarnessPolicyDraft
 }
 
 export interface HarnessEstimate {
   estimate_id: string
   expires_at: string
   estimated_duration_seconds_range: [number, number]
+  estimated_serial_duration_seconds_range: [number, number]
   estimated_cost_usd_range: [number, number]
   relative_to_single: number
+  estimated_parallel_speedup: number
   assumptions: string[]
 }
 
@@ -68,7 +90,12 @@ export interface HarnessRunRecord {
   started_at?: string | null
   completed_at?: string | null
   updated_at: string
-  policy: Record<string, unknown>
+  policy: {
+    schema_version: '1.0' | '1.1'
+    topology_selection_mode?: 'explicit' | 'recommend' | 'auto_safe'
+    collaboration_shape: HarnessCollaborationShape
+    max_concurrent_subharnesses: number
+  }
   final_result?: HarnessNodeResult | null
   failure?: { reason?: string } | null
   actual_cost_usd?: number
@@ -93,11 +120,18 @@ export interface HarnessMemberSnapshot {
 }
 
 export interface HarnessNodeResult {
+  schema_version?: '1.1' | '1.2'
   status: 'succeeded' | 'failed' | 'partial'
   summary: string
   risks: string[]
   unresolved: string[]
   recommended_followups: string[]
+  outputs?: Array<{
+    kind: 'report' | 'structured_data'
+    name: string
+    mime_type: 'text/markdown' | 'application/json'
+    content: string
+  }>
 }
 
 export interface HarnessNodeSnapshot {
@@ -112,7 +146,18 @@ export interface HarnessNodeSnapshot {
   created_at: string
   started_at?: string | null
   completed_at?: string | null
-  task_contract: { objective: string; workspace: { mode: 'read_only' } }
+  ready: boolean
+  blocked_by: string[]
+  waiting_reason?: string | null
+  attempt: number
+  max_attempts: number
+  waived_at?: string | null
+  waiver_reason?: string | null
+  task_contract: {
+    objective: string
+    workspace: { mode: 'read_only' }
+    parallelism?: { mode: 'serial' | 'parallel_safe'; independence_key?: string }
+  }
   result?: HarnessNodeResult | null
   failure_json?: string | null
   actual_cost_usd?: number
@@ -151,6 +196,10 @@ export function listHarnessProfiles(projectId: string, signal?: AbortSignal): Pr
   return api(`/api/harness-profiles?project_id=${encodeURIComponent(projectId)}`, { signal })
 }
 
+export function getHarnessFeatures(signal?: AbortSignal): Promise<HarnessFeatures> {
+  return api('/api/harness-runs/features', { signal })
+}
+
 export function estimateHarnessRun(draft: HarnessRunDraft, signal?: AbortSignal): Promise<HarnessEstimate> {
   return api('/api/harness-runs/estimate', {
     method: 'POST',
@@ -184,6 +233,29 @@ export function listHarnessRuns(issueId: string, signal?: AbortSignal): Promise<
 
 export function getHarnessRun(runId: string, signal?: AbortSignal): Promise<HarnessRunSnapshot> {
   return api(`/api/harness-runs/${encodeURIComponent(runId)}`, { signal })
+}
+
+function harnessControl(path: string, reason: string): Promise<{ ok: boolean; replayed?: boolean; data: Record<string, unknown> }> {
+  return api(path, {
+    method: 'POST',
+    body: JSON.stringify({ request_id: `ui:${crypto.randomUUID()}`, reason }),
+  })
+}
+
+export function retryHarnessNode(runId: string, nodeId: string, reason: string) {
+  return harnessControl(`/api/harness-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/retry`, reason)
+}
+
+export function cancelHarnessNode(runId: string, nodeId: string, reason: string) {
+  return harnessControl(`/api/harness-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/cancel`, reason)
+}
+
+export function waiveHarnessNode(runId: string, nodeId: string, reason: string) {
+  return harnessControl(`/api/harness-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/waive`, reason)
+}
+
+export function cancelHarnessRun(runId: string, reason: string) {
+  return harnessControl(`/api/harness-runs/${encodeURIComponent(runId)}/cancel`, reason)
 }
 
 export function isHarnessRunTerminal(status: string): boolean {

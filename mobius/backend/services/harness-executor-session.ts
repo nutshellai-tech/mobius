@@ -5,6 +5,8 @@ import { Users } from '../repositories/users';
 import { parseHarnessMemberSnapshot, parseJsonColumn } from './harness-schema';
 import { runSessionMessage } from './session-message-runner';
 import { buildSessionSelectionSnapshot } from './session-context';
+import modelRegistry from './model-registry';
+import agents from '../agents';
 import type {
   HarnessDispatchInput,
   HarnessDispatchOutcome,
@@ -108,7 +110,10 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
       sessionId: input.sessionId,
       content: prompt,
       requestId: input.requestId,
-      source: 'harness.dispatch',
+      source: input.kind === 'message' || input.kind === 'followup'
+        ? 'harness.result_notification'
+        : 'harness.dispatch',
+      urgent: false,
       initialContextMode: 'session',
       runtimeEnv: { MOBIUS_HARNESS_TOKEN: input.scopedToken },
     });
@@ -120,8 +125,15 @@ export class MobiusSessionHarnessExecutor implements HarnessExecutor {
     };
   }
 
-  async interrupt(_sessionId: string): Promise<void> {
-    throw Object.assign(new Error('Phase 1 不开放 Harness 节点中断'), { code: 'harness_interrupt_unavailable' });
+  async interrupt(sessionId: string): Promise<void> {
+    const session = Sessions.findById(sessionId);
+    if (!session) return;
+    const backend = agents.get(modelRegistry.backendNameForSessionModel(session.model));
+    if (!backend || typeof backend.terminateSession !== 'function') {
+      throw Object.assign(new Error('当前 Harness backend 不支持中断'), { code: 'harness_interrupt_unavailable' });
+    }
+    await backend.terminateSession(sessionId);
+    try { Sessions.setIdle(sessionId, session.user_id); } catch {}
   }
 
   async reconcile(dispatch: HarnessDispatchRow): Promise<'inferred' | 'absent' | 'unknown'> {

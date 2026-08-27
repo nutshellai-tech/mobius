@@ -60,6 +60,18 @@ async function main() {
         `missing auto-synced Harness Profile for ${option.key}`,
       )
     }
+    process.env.HARNESS_ADAPTIVE_SCHEDULING_ENABLED = '0'
+    process.env.HARNESS_BATCH_CREATE_ENABLED = '0'
+    const features = await request('/api/harness-runs/features')
+    delete process.env.HARNESS_ADAPTIVE_SCHEDULING_ENABLED
+    delete process.env.HARNESS_BATCH_CREATE_ENABLED
+    assert.equal(features.response.status, 200)
+    assert.equal(features.body.adaptive_scheduling_enabled, true)
+    assert.equal(features.body.batch_create_enabled, true)
+    assert.equal(features.body.max_parallel_subs, 4)
+    assert.equal(features.body.root_result_wake_enabled, true)
+    assert.equal(features.body.result_ack_required, true)
+    assert.equal(features.body.notification_digest_enabled, false)
 
     const invalid = await request('/api/harness-runs/estimate', {
       method: 'POST', body: JSON.stringify({ ...rosterRequest(fixture, 'single'), roster: { main_member_key: 'missing', members: rosterRequest(fixture, 'single').roster.members } }),
@@ -71,6 +83,7 @@ async function main() {
       ...rosterRequest(fixture, 'multi'),
       session_name: 'Integrated Multi Harness session',
       language: 'en',
+      roster: { ...rosterRequest(fixture, 'multi').roster, auto_expand: true },
     }
     const estimate = await request('/api/harness-runs/estimate', { method: 'POST', body: JSON.stringify(draft) })
     assert.equal(estimate.response.status, 200)
@@ -89,9 +102,15 @@ async function main() {
     })
     assert.equal(created.response.status, 201, JSON.stringify(created.body))
     assert.equal(created.body.run.execution_mode, 'multi')
+    assert.equal(created.body.run.policy.schema_version, '1.1')
+    assert.equal(created.body.run.policy.topology_selection_mode, 'auto_safe')
+    assert.equal(created.body.run.policy.collaboration_shape, 'adaptive')
+    assert.equal(created.body.run.policy.max_concurrent_subharnesses, 4)
     assert.equal(created.body.run.session_name, draft.session_name)
     assert.equal(created.body.run.language, 'en')
-    assert.equal(created.body.members.length, 2)
+    assert.equal(created.body.members.length, 5)
+    assert.equal(created.body.members.filter((member) => member.role === 'worker').length, 4)
+    assert.equal(created.body.events.filter((event) => event.type === 'run.roster_auto_expanded').length, 1)
 
     const list = await request(`/api/harness-runs?issue_id=${fixture.issueId}`)
     assert.equal(list.response.status, 200)
@@ -107,6 +126,19 @@ async function main() {
     assert.deepEqual(snapshot.body.run.acknowledged_estimate.cost_range, estimate.body.estimated_cost_usd_range)
     assert.deepEqual(snapshot.body.run.acknowledged_estimate.duration_range, estimate.body.estimated_duration_seconds_range)
     assert.ok(snapshot.body.events.every((event) => event.payload && !Array.isArray(event.payload)))
+
+    const cancelled = await request(`/api/harness-runs/${created.body.run.id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ request_id: 'route-cancel-request', reason: 'Route lifecycle control test.' }),
+    })
+    assert.equal(cancelled.response.status, 200, JSON.stringify(cancelled.body))
+    assert.equal(cancelled.body.data.status, 'cancelling')
+    const cancelReplay = await request(`/api/harness-runs/${created.body.run.id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ request_id: 'route-cancel-request', reason: 'Route lifecycle control test.' }),
+    })
+    assert.equal(cancelReplay.response.status, 200)
+    assert.equal(cancelReplay.body.replayed, true)
 
     console.log('harness Phase 1 route tests passed')
   } finally {

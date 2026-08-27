@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '../config';
 import { MAX_HARNESS_AGENTS } from '../types/harness';
 import type { HarnessEstimateRequestV1, HarnessProfileDefinitionV1, HarnessRunPolicyV1 } from '../types/harness';
+import { harnessCapacity } from './harness-features';
 
 export interface HarnessEstimateProfile {
   id: string;
@@ -13,8 +14,10 @@ export interface HarnessEstimateV1 {
   estimate_id: string;
   expires_at: string;
   estimated_duration_seconds_range: [number, number];
+  estimated_serial_duration_seconds_range: [number, number];
   estimated_cost_usd_range: [number, number];
   relative_to_single: number;
+  estimated_parallel_speedup: number;
   assumptions: string[];
 }
 
@@ -35,9 +38,12 @@ function stable(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function normalizedPhase1Policy(request: HarnessEstimateRequestV1): HarnessRunPolicyV1 {
-  const memberCount = request.roster.members.length;
-  return {
+export function normalizedPhase1Policy(
+  request: HarnessEstimateRequestV1,
+  effectiveMemberCount = request.roster.members.length,
+): HarnessRunPolicyV1 {
+  const memberCount = Math.max(1, effectiveMemberCount);
+  const base = {
     schema_version: '1.0',
     collaboration_shape: 'pipeline',
     max_concurrent_subharnesses: 1,
@@ -47,10 +53,25 @@ export function normalizedPhase1Policy(request: HarnessEstimateRequestV1): Harne
     workspace_policy: 'read_only',
     evaluator_policy: ['always', 'off'].includes(String(request.policy?.evaluator_policy))
       ? request.policy!.evaluator_policy as 'always' | 'off'
-      : 'by_risk',
+      : 'off',
     context_reset_policy: 'off',
     cost_soft_limit_usd: 2,
     cost_hard_limit_usd: 5,
+  } satisfies HarnessRunPolicyV1;
+  if (request.execution_mode !== 'multi') return base;
+  const requestedPolicy = request.policy?.schema_version === '1.1' ? request.policy : undefined;
+  const workerCount = Math.max(1, memberCount - 1);
+  const defaultConcurrency = Math.min(4, workerCount, harnessCapacity('HARNESS_MAX_PARALLEL_SUBS', 4));
+  const requestedConcurrency = Number(requestedPolicy?.max_concurrent_subharnesses)
+    || defaultConcurrency;
+  const concurrency = Math.max(1, Math.min(4, workerCount, requestedConcurrency)) as 1 | 2 | 3 | 4;
+  return {
+    ...base,
+    schema_version: '1.1',
+    topology_selection_mode: 'auto_safe',
+    collaboration_shape: 'adaptive',
+    max_concurrent_subharnesses: concurrency,
+    parallel_read_only_only: true,
   };
 }
 
@@ -70,16 +91,31 @@ export function estimateDigest(request: HarnessEstimateRequestV1, policy: Harnes
 }
 
 export function estimateHarnessRun(userId: string, request: HarnessEstimateRequestV1, profiles: HarnessEstimateProfile[]): HarnessEstimateV1 {
-  const policy = normalizedPhase1Policy(request);
+  const policy = normalizedPhase1Policy(request, profiles.length);
   const factors = profiles.map((profile) => profile.definition.cost_profile.relative_cost_factor);
-  const totalFactor = factors.reduce((sum, factor) => sum + factor, 0);
+  const baseTotalFactor = factors.reduce((sum, factor) => sum + factor, 0);
+  const parallelMultiplier = policy.schema_version === '1.1' && policy.collaboration_shape !== 'pipeline'
+    ? policy.collaboration_shape === 'fanout' ? 1.12 : 1.08
+    : 1;
+  const totalFactor = baseTotalFactor * parallelMultiplier;
   const baselineFactor = factors[0] || 1;
   const relative = Number((totalFactor / baselineFactor).toFixed(2));
   const lowerCost = Number((0.08 * totalFactor).toFixed(2));
   const upperCost = Number((0.35 * totalFactor).toFixed(2));
   const durationBase = Math.max(240, Math.min(policy.default_timeout_seconds, 1200));
   const costRange: [number, number] = [lowerCost, upperCost];
-  const durationRange: [number, number] = [durationBase, durationBase * request.roster.members.length];
+  const serialDurationRange: [number, number] = [durationBase, durationBase * profiles.length];
+  const parallel = policy.schema_version === '1.1' && policy.collaboration_shape !== 'pipeline'
+    && policy.max_concurrent_subharnesses > 1;
+  const subCount = Math.max(1, profiles.length - 1);
+  const waves = Math.ceil(subCount / Number(policy.max_concurrent_subharnesses));
+  const synthesisSeconds = Math.max(60, Math.round(durationBase * 0.2));
+  const durationRange: [number, number] = parallel
+    ? [durationBase + synthesisSeconds, Math.ceil((waves * durationBase + synthesisSeconds) * 1.15)]
+    : serialDurationRange;
+  const estimatedParallelSpeedup = parallel
+    ? Number((serialDurationRange[1] / durationRange[1]).toFixed(2))
+    : 1;
   const token = jwt.sign({
     kind: 'harness-estimate',
     user_id: userId,
@@ -93,10 +129,18 @@ export function estimateHarnessRun(userId: string, request: HarnessEstimateReque
     estimate_id: token,
     expires_at: new Date((decoded?.exp || Math.floor(Date.now() / 1000) + 900) * 1000).toISOString(),
     estimated_duration_seconds_range: durationRange,
+    estimated_serial_duration_seconds_range: serialDurationRange,
     estimated_cost_usd_range: costRange,
     relative_to_single: relative,
-    assumptions: [
-      'Phase 1 仅运行只读流水线，Sub Harness 串行执行',
+    estimated_parallel_speedup: estimatedParallelSpeedup,
+    assumptions: parallel ? [
+      `仅低风险、只读且无依赖的任务按最多 ${policy.max_concurrent_subharnesses} 路并发分 wave 估算`,
+      request.roster.auto_expand
+        ? `系统已从所选 Profile 预留 ${Math.max(1, profiles.length - 1)} 个 Worker 实例；仅实际派发的实例产生运行成本`
+        : '使用显式锁定的 Worker 阵容估算',
+      '成本包含 Main 综合和并行上下文重复开销；实际并发还受主机与 backend 容量限制',
+    ] : [
+      '当前阵容按单路执行估算，Run 策略仍保持智能调度',
       '估算按 Profile 相对成本系数计算，实际成本会记录用于后续校准',
     ],
   };

@@ -22,6 +22,7 @@ const actors = {
   'submitted:verifying': 'orchestrator',
   'submitted:failed': 'orchestrator',
   'verifying:succeeded': 'orchestrator',
+  'verifying:running': 'orchestrator',
   'verifying:queued': 'orchestrator',
   'verifying:failed': 'orchestrator',
   'cancelling:cancelled': 'orchestrator',

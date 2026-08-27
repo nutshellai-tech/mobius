@@ -43,9 +43,45 @@ try {
   assert.equal(first.members.length, 2)
   assert.equal(first.nodes.length, 1)
   assert.equal(first.dispatches.length, 1)
+  assert.equal(first.run.policy.schema_version, '1.1')
+  assert.equal(first.run.policy.topology_selection_mode, 'auto_safe')
+  assert.equal(first.run.policy.collaboration_shape, 'adaptive')
+  assert.equal(first.run.policy.max_concurrent_subharnesses, 1)
   assert.deepEqual(JSON.parse(first.run.excluded_skill_ids), draft.excluded_skill_ids)
   assert.deepEqual(JSON.parse(first.run.excluded_memory_ids), draft.excluded_memory_ids)
   assert.equal(getHarnessRunSnapshot(first.run.id).members[0].config_snapshot.profile_version, 1)
+
+  const autoPoolDraft = {
+    ...rosterRequest(fixture, 'multi'),
+    goal: 'Let Main adaptively schedule a reusable model across an Agent pool.',
+    roster: {
+      main_member_key: 'auto-main',
+      auto_expand: true,
+      members: [{ member_key: 'auto-main', profile_id: 'system-codex-readonly-v1' }],
+    },
+  }
+  const autoPoolRoster = resolveRoster(fixture.userId, fixture.projectId, autoPoolDraft)
+  assert.equal(autoPoolRoster.length, 5)
+  assert.equal(autoPoolRoster.filter((member) => member.role === 'main').length, 1)
+  assert.equal(autoPoolRoster.filter((member) => member.role === 'worker').length, 4)
+  assert.equal(new Set(autoPoolRoster.map((member) => member.member_key)).size, 5)
+  const autoPoolEstimate = estimateHarnessRun(
+    fixture.userId,
+    autoPoolDraft,
+    autoPoolRoster.map((member) => ({ id: member.profile.id, definition: member.profile.definition })),
+  )
+  const autoPoolRun = createHarnessRun(fixture.userId, fixture.projectId, {
+    ...autoPoolDraft,
+    request_id: 'create-auto-worker-pool',
+    acknowledged_estimate: {
+      estimate_id: autoPoolEstimate.estimate_id,
+      shown_cost_usd_range: autoPoolEstimate.estimated_cost_usd_range,
+    },
+  })
+  assert.equal(autoPoolRun.members.length, 5)
+  assert.equal(autoPoolRun.run.policy.max_nodes, 5)
+  assert.equal(autoPoolRun.run.policy.max_concurrent_subharnesses, 4)
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM harness_events WHERE run_id=? AND type='run.roster_auto_expanded'").get(autoPoolRun.run.id).count, 1)
   assert.throws(
     () => createHarnessRun(fixture.userId, fixture.projectId, {
       ...request,

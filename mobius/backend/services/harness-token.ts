@@ -3,7 +3,7 @@ import { JWT_SECRET } from '../config';
 import type { HarnessInternalTokenPayload, HarnessMemberRole } from '../types/harness';
 
 const ACTIONS_BY_ROLE: Record<HarnessMemberRole, string[]> = {
-  main: ['create_task_for_member', 'progress', 'complete', 'fail', 'read_roster', 'read_events'],
+  main: ['create_task_for_member', 'progress', 'complete', 'fail', 'read_roster', 'read_events', 'ack_result'],
   worker: ['progress', 'complete', 'fail'],
   evaluator: ['progress', 'complete', 'fail'],
 };

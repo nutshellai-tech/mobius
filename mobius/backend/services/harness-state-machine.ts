@@ -44,7 +44,7 @@ const NODE_RULES: Readonly<Record<HarnessNodeState, ReadonlySet<HarnessNodeState
   running: new Set(['waiting_input', 'submitted', 'failed', 'timed_out', 'interrupted', 'orphaned', 'cancelling']),
   waiting_input: new Set(['queued', 'cancelled', 'failed', 'cancelling']),
   submitted: new Set(['verifying', 'failed', 'cancelling']),
-  verifying: new Set(['succeeded', 'queued', 'failed', 'cancelling']),
+  verifying: new Set(['running', 'succeeded', 'queued', 'failed', 'cancelling']),
   succeeded: new Set([]),
   failed: new Set(['queued', 'cancelling']),
   timed_out: new Set(['queued', 'cancelling']),

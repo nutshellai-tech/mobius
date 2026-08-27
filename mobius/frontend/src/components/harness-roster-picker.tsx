@@ -5,12 +5,15 @@ import {
   MAX_HARNESS_AGENTS,
   createHarnessRun,
   estimateHarnessRun,
+  getHarnessFeatures,
   getHarnessRun,
   isHarnessRunTerminal,
   listHarnessProfiles,
   listHarnessRuns,
   type HarnessEstimate,
+  type HarnessCollaborationShape,
   type HarnessExecutionMode,
+  type HarnessFeatures,
   type HarnessProfile,
   type HarnessRosterMemberDraft,
   type HarnessRunDraft,
@@ -48,6 +51,7 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
   const [profiles, setProfiles] = useState<HarnessProfile[]>([])
   const [runs, setRuns] = useState<HarnessRunRecord[]>([])
   const [mode, setMode] = useState<HarnessExecutionMode>('single')
+  const [features, setFeatures] = useState<HarnessFeatures>({ adaptive_scheduling_enabled: true, batch_create_enabled: true, max_parallel_subs: 4, root_result_wake_enabled: true, result_ack_required: true, notification_digest_enabled: false })
   const [goal, setGoal] = useState(defaultGoal)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [mainId, setMainId] = useState('')
@@ -62,12 +66,14 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
   const [error, setError] = useState('')
 
   const loadProfilesAndRuns = useCallback(async (signal?: AbortSignal) => {
-    const [profileRows, runRows] = await Promise.all([
+    const [profileRows, runRows, featureFlags] = await Promise.all([
       listHarnessProfiles(projectId, signal),
       listHarnessRuns(issueId, signal),
+      getHarnessFeatures(signal),
     ])
     setProfiles(profileRows)
     setRuns(runRows)
+    setFeatures(featureFlags)
     setSelectedIds((current) => current.length ? current.filter((id) => profileRows.some((profile) => profile.id === id)) : (profileRows[0] ? [profileRows[0].id] : []))
     setMainId((current) => current && profileRows.some((profile) => profile.id === current) ? current : (profileRows.find((profile) => profile.definition.capabilities.can_main)?.id || ''))
     setSelectedRunId((current) => current || runRows[0]?.id || '')
@@ -99,6 +105,11 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
   }, [defaultGoal, issueId])
 
   const selectedProfiles = useMemo(() => selectedIds.map((id) => profiles.find((profile) => profile.id === id)).filter(Boolean) as HarnessProfile[], [profiles, selectedIds])
+  // Multi mode reserves an adaptive Worker instance pool server-side. Profile
+  // selection chooses models/capabilities; it no longer caps Agent instances.
+  const concurrencyLimit = Math.max(1, Math.min(4, features.max_parallel_subs, MAX_HARNESS_AGENTS - 1))
+  const effectiveShape: HarnessCollaborationShape = mode === 'multi' ? 'adaptive' : 'pipeline'
+  const effectiveConcurrency = (effectiveShape === 'pipeline' ? 1 : concurrencyLimit) as 1 | 2 | 3 | 4
   const draft = useMemo<HarnessRunDraft>(() => ({
     anchor_type: 'issue',
     issue_id: issueId,
@@ -106,13 +117,23 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
     execution_mode: mode,
     roster: {
       main_member_key: memberKey(mainId),
+      ...(mode === 'multi' ? { auto_expand: true } : {}),
       members: selectedProfiles.map<HarnessRosterMemberDraft>((profile) => ({
         member_key: memberKey(profile.id),
         profile_id: profile.id,
         ...(profile.id !== mainId ? { purpose: purposes[profile.id] || 'worker' } : {}),
       })),
     },
-  }), [goal, issueId, mainId, mode, purposes, selectedProfiles])
+    ...(mode === 'multi' ? {
+      policy: {
+        schema_version: '1.1',
+        topology_selection_mode: 'auto_safe',
+        collaboration_shape: 'adaptive',
+        max_concurrent_subharnesses: effectiveConcurrency,
+        parallel_read_only_only: true,
+      },
+    } : {}),
+  }), [effectiveConcurrency, goal, issueId, mainId, mode, purposes, selectedProfiles])
 
   const invalidateEstimate = () => {
     setEstimate(null)
@@ -140,7 +161,7 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
       return
     }
     if (selectedIds.includes(profile.id)) {
-      if (selectedIds.length <= 2) return
+      if (selectedIds.length <= 1) return
       const next = selectedIds.filter((id) => id !== profile.id)
       setSelectedIds(next)
       if (mainId === profile.id) setMainId(next.find((id) => profiles.find((item) => item.id === id)?.definition.capabilities.can_main) || '')
@@ -158,7 +179,7 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
   }
 
   const validRoster = !!mainId && selectedIds.includes(mainId)
-    && (mode === 'single' ? selectedIds.length === 1 : selectedIds.length >= 2 && selectedIds.length <= MAX_HARNESS_AGENTS)
+    && (mode === 'single' ? selectedIds.length === 1 : selectedIds.length >= 1 && selectedIds.length <= MAX_HARNESS_AGENTS)
   const canSubmit = !!goal.trim() && validRoster && !creating && (mode === 'single' || (!!estimate && estimateConfirmed))
 
   const handleEstimate = async () => {
@@ -202,7 +223,7 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
             <Users className="h-4 w-4" style={{ color: 'var(--accent-primary)' }} />
             <h2 id="harness-heading" className="text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>Main/Sub Harness</h2>
           </div>
-          <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>Phase 1 固定为最多 {MAX_HARNESS_AGENTS} 节点的只读串行流水线</p>
+          <p className="mt-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>多 Harness 始终由 AI 智能调度；低风险、只读且相互独立的任务会自动并行</p>
         </div>
         {runs.length > 0 && (
           <label className="relative min-w-[190px]">
@@ -237,14 +258,14 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{mode === 'single' ? '一个 Main 独立完成任务' : 'Main 按顺序分派给已选成员'}</p>
+            <p className="mt-1.5 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>{mode === 'single' ? '一个 Main 独立完成任务' : 'Main 自动决定任务拓扑与并行度'}</p>
           </fieldset>
         </div>
 
         <fieldset className="mt-4">
           <legend className="flex items-center justify-between gap-3 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-            <span>阵容与唯一 Main</span>
-            <span className="font-normal" style={{ color: 'var(--text-muted)' }}>{selectedIds.length}/{mode === 'single' ? 1 : MAX_HARNESS_AGENTS}</span>
+            <span>模型与唯一 Main</span>
+            <span className="font-normal" style={{ color: 'var(--text-muted)' }}>{selectedIds.length} 个模型</span>
           </legend>
           {loading ? (
             <div className="mt-2 flex h-20 items-center justify-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><Loader2 className="h-4 w-4 animate-spin" />加载 Profile</div>
@@ -313,12 +334,17 @@ export function HarnessRosterPicker({ issueId, projectId, defaultGoal }: {
                   <div className="rounded border px-3 py-2" style={{ borderColor: 'var(--border-color)' }}><div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>预计时长</div><div className="mt-0.5 text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>{formatDuration(estimate.estimated_duration_seconds_range[0])} - {formatDuration(estimate.estimated_duration_seconds_range[1])}</div></div>
                   <div className="rounded border px-3 py-2" style={{ borderColor: 'var(--border-color)' }}><div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>预计成本</div><div className="mt-0.5 text-[12px] font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>${estimate.estimated_cost_usd_range[0].toFixed(2)} - ${estimate.estimated_cost_usd_range[1].toFixed(2)}</div></div>
                 </div>
+                {estimate.estimated_parallel_speedup > 1 && (
+                  <p className="mt-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    串行基线约 {formatDuration(estimate.estimated_serial_duration_seconds_range[0])} - {formatDuration(estimate.estimated_serial_duration_seconds_range[1])}；当前策略预计最高约 {estimate.estimated_parallel_speedup.toFixed(2)}× 加速，并包含额外综合与重复上下文成本。
+                  </p>
+                )}
                 <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-2 text-[11px] leading-5" style={{ color: 'var(--text-secondary)' }}>
                   <input type="checkbox" checked={estimateConfirmed} onChange={(event) => setEstimateConfirmed(event.target.checked)} className="mt-1 accent-sky-500" />
-                  <span>我已查看本次只读流水线的时长与成本预估，并确认按当前阵容创建。</span>
+                  <span>我已查看本次只读 {effectiveShape === 'pipeline' ? '流水线' : '智能调度'}的时长、成本与系统并发上限，并确认按当前阵容创建。</span>
                 </label>
               </div>
-            ) : <p className="mt-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>选定至少 2 名成员和唯一 Main 后生成预估。阵容或目标变化会要求重新确认。</p>}
+            ) : <p className="mt-2 text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>选定 Main 和可用模型后生成预估。系统会自动预留最多 {Math.min(4, features.max_parallel_subs)} 个 Worker 实例，Main 决定实际启用数量。</p>}
           </div>
         )}
 

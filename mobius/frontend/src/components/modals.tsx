@@ -55,9 +55,11 @@ import {
   MAX_HARNESS_AGENTS,
   createHarnessRun,
   estimateHarnessRun,
+  getHarnessFeatures,
   listHarnessProfiles,
   waitForHarnessMainSession,
   type HarnessEstimate,
+  type HarnessFeatures,
   type HarnessProfile,
   type HarnessRunDraft,
 } from '../services/harness'
@@ -2427,6 +2429,7 @@ export function NewSessionModal({
   const harnessMainSlot = harnessRosterSlots.find((slot) => slot.id === harnessMainSlotId) || harnessRosterSlots[0] || null
   const harnessMainModelKey = harnessMainSlot?.modelKey || resolvedDefaultModel
   const [harnessEstimate, setHarnessEstimate] = useState<HarnessEstimate | null>(null)
+  const [harnessFeatures, setHarnessFeatures] = useState<HarnessFeatures>({ adaptive_scheduling_enabled: true, batch_create_enabled: true, max_parallel_subs: 4, root_result_wake_enabled: true, result_ack_required: true, notification_digest_enabled: false })
   const [createdHarnessRunId, setCreatedHarnessRunId] = useState('')
   const harnessRosterTouchedRef = useRef(!!(initialDraft?.harness_roster_slots?.length || initialDraft?.harness_model_keys?.length))
   useEffect(() => {
@@ -2521,6 +2524,8 @@ export function NewSessionModal({
     return result
   }, [harnessProfiles, modelOptions])
   const isMultiHarness = supportsHarnessRoster && harnessModelKeys.length > 1
+  const harnessConcurrencyLimit = Math.max(1, Math.min(4, harnessFeatures.max_parallel_subs, harnessModelKeys.length - 1))
+  const effectiveHarnessConcurrency = harnessConcurrencyLimit as 1 | 2 | 3 | 4
   const selectedHarnessMembers = useMemo(() => harnessRosterSlots.map((slot) => ({
     slot,
     option: modelOptions.find((option) => option.key === slot.modelKey),
@@ -2553,7 +2558,16 @@ export function NewSessionModal({
         ...(slot.id !== harnessMainSlotId ? { purpose: 'worker' as const } : {}),
       })),
     },
-  }), [attachments, excludedMemories, excludedSkills, harnessMainSlotId, issueId, language, mainHarnessMember, name, selectedHarnessMembers, submittedDescription])
+    ...(isMultiHarness ? {
+      policy: {
+        schema_version: '1.1',
+        topology_selection_mode: 'auto_safe',
+        collaboration_shape: 'adaptive',
+        max_concurrent_subharnesses: effectiveHarnessConcurrency,
+        parallel_read_only_only: true,
+      },
+    } : {}),
+  }), [attachments, effectiveHarnessConcurrency, excludedMemories, excludedSkills, harnessMainSlotId, isMultiHarness, issueId, language, mainHarnessMember, name, selectedHarnessMembers, submittedDescription])
 
   useEffect(() => {
     let alive = true
@@ -2574,8 +2588,11 @@ export function NewSessionModal({
     if (!supportsHarnessRoster || !projectId) return
     const controller = new AbortController()
     setHarnessProfilesLoading(true)
-    listHarnessProfiles(projectId, controller.signal)
-      .then((rows) => setHarnessProfiles(Array.isArray(rows) ? rows : []))
+    Promise.all([listHarnessProfiles(projectId, controller.signal), getHarnessFeatures(controller.signal)])
+      .then(([rows, featureFlags]) => {
+        setHarnessProfiles(Array.isArray(rows) ? rows : [])
+        setHarnessFeatures(featureFlags)
+      })
       .catch((cause: any) => {
         if (cause?.name !== 'AbortError') setErr(cause?.message || 'Harness Agent 加载失败')
       })
@@ -3723,7 +3740,7 @@ export function NewSessionModal({
                 <div className="min-w-0">
                   <h4 className="text-[14px] font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>确认 Multi Harness 阵容</h4>
                   <p className="mt-1 text-[11px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
-                    Main Agent 负责拆解目标、调度成员并汇总结果；其余成员默认作为 Worker。
+                    Main Agent 负责拆解目标、调度成员并汇总结果；由 AI 自动决定任务拓扑与并行度，系统并发上限为 {effectiveHarnessConcurrency}。
                   </p>
                 </div>
               </div>
@@ -3772,11 +3789,16 @@ export function NewSessionModal({
                     <div><div className="text-[10px]" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>预计成本</div><div className="text-[13px] font-semibold tabular-nums" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>${harnessEstimate.estimated_cost_usd_range[0].toFixed(2)} - ${harnessEstimate.estimated_cost_usd_range[1].toFixed(2)}</div></div>
                   </div>
                 </div>
+                {harnessEstimate.estimated_parallel_speedup > 1 && (
+                  <div className="mt-3 text-[10px] leading-relaxed" style={{ color: isDark ? '#9ca3af' : '#64748b' }}>
+                    串行基线约 {harnessDuration(harnessEstimate.estimated_serial_duration_seconds_range[0])} - {harnessDuration(harnessEstimate.estimated_serial_duration_seconds_range[1])}；当前策略预计最高约 {harnessEstimate.estimated_parallel_speedup.toFixed(2)}× 加速，并包含 Main 综合与重复上下文开销。
+                  </div>
+                )}
               </section>
 
               <div className="rounded-lg border px-3 py-2 text-[11px] leading-relaxed"
                 style={{ background: isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)', borderColor: isDark ? 'rgba(59,130,246,0.28)' : 'rgba(59,130,246,0.22)', color: isDark ? '#bfdbfe' : '#1d4ed8' }}>
-                当前 Multi Harness 以只读方式串行协作，不会直接修改工作区。创建后将自动进入 Main Agent 会话。
+                Multi Harness 会自动并行低风险、只读且相互独立的任务；依赖与安全约束由服务端校验。创建后将自动进入 Main Agent 会话。
               </div>
             </div>
             {err && <ErrBanner>{err}</ErrBanner>}

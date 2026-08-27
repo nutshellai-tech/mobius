@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { db } from '../../db';
+import { MAX_HARNESS_AGENTS } from '../types/harness';
 import type {
   HarnessCreateRunRequestV1,
   HarnessEstimateRequestV1,
@@ -22,6 +23,8 @@ import {
 } from '../services/harness-schema';
 import { evaluateNodeTransition, evaluateRunTransition } from '../services/harness-state-machine';
 import { normalizedPhase1Policy, verifyHarnessEstimate } from '../services/harness-estimator';
+import { harnessDagNodeStates } from '../services/harness-dag';
+import { harnessCapacity } from '../services/harness-features';
 import * as modelRegistry from '../services/model-registry';
 
 type AnyRow = Record<string, any>;
@@ -236,7 +239,9 @@ export function resolveRoster(userId: string, projectId: string, request: Harnes
   const visible = new Map(listVisibleHarnessProfiles(userId, projectId).map((profile) => [profile.id, profile]));
   const keys = new Set<string>();
   if (request.execution_mode === 'single' && request.roster.members.length !== 1) throw inputError('单 Harness 模式必须恰好选择一个成员', 'single_roster_invalid');
-  if (request.execution_mode === 'multi' && request.roster.members.length < 2) throw inputError('多 Harness 模式至少选择两个成员', 'multi_roster_invalid');
+  if (request.execution_mode === 'multi' && request.roster.members.length < 2 && !request.roster.auto_expand) {
+    throw inputError('多 Harness 模式至少选择两个成员，或启用自动 Worker 池', 'multi_roster_invalid');
+  }
   const members = request.roster.members.map((member) => {
     if (keys.has(member.member_key)) throw inputError(`Roster member_key 重复: ${member.member_key}`, 'duplicate_member_key');
     keys.add(member.member_key);
@@ -252,6 +257,34 @@ export function resolveRoster(userId: string, projectId: string, request: Harnes
   });
   if (members.filter((member) => member.role === 'main').length !== 1) throw inputError('Roster 必须指定唯一 Main', 'unique_main_required');
   if (request.execution_mode === 'single' && members[0].role !== 'main') throw inputError('单 Harness 成员必须同时是 Main', 'single_main_required');
+  if (request.execution_mode === 'multi' && request.roster.auto_expand) {
+    const desiredSize = Math.min(
+      MAX_HARNESS_AGENTS,
+      1 + harnessCapacity('HARNESS_MAX_PARALLEL_SUBS', 4, MAX_HARNESS_AGENTS - 1),
+    );
+    const workerTemplates = members.filter((member) => member.role === 'worker' && member.profile.definition.capabilities.can_work);
+    const main = members.find((member) => member.role === 'main')!;
+    if (workerTemplates.length === 0 && main.profile.definition.capabilities.can_work) {
+      workerTemplates.push({ member_key: main.member_key, profile: main.profile, role: 'worker' });
+    }
+    if (workerTemplates.length === 0) {
+      throw inputError('自动 Worker 池至少需要一个可执行任务的 Profile', 'auto_worker_profile_required');
+    }
+    let templateIndex = 0;
+    let generatedIndex = 1;
+    while (members.length < desiredSize) {
+      const template = workerTemplates[templateIndex % workerTemplates.length];
+      let memberKey = `auto_worker_${generatedIndex}`;
+      while (keys.has(memberKey)) {
+        generatedIndex += 1;
+        memberKey = `auto_worker_${generatedIndex}`;
+      }
+      keys.add(memberKey);
+      members.push({ member_key: memberKey, profile: template.profile, role: 'worker' });
+      templateIndex += 1;
+      generatedIndex += 1;
+    }
+  }
   return members;
 }
 
@@ -278,8 +311,11 @@ export function createHarnessRun(userId: string, projectId: string, request: Har
   const transaction = db.transaction(() => {
     const existing = db.prepare('SELECT id FROM harness_runs WHERE id = ?').get(runId) as AnyRow | undefined;
     if (existing) return;
-    const policy = normalizedPhase1Policy(request);
     const members = resolveRoster(userId, projectId, request);
+    const policy = normalizedPhase1Policy(request, members.length);
+    if (policy.evaluator_policy === 'always' && !members.some((member) => member.role === 'evaluator')) {
+      throw inputError('evaluator_policy=always 时，锁定 Roster 必须包含 Evaluator', 'evaluator_member_required');
+    }
     let acknowledgedEstimate: { cost_range: [number, number]; duration_range: [number, number]; relative_to_single: number } | null = null;
     if (request.execution_mode === 'multi') {
       if (!request.acknowledged_estimate) throw Object.assign(new Error('多 Harness 模式必须先查看并确认成本预估'), { status: 409, code: 'estimate_required' });
@@ -341,6 +377,29 @@ export function createHarnessRun(userId: string, projectId: string, request: Har
       requestId: request.request_id,
     });
     appendHarnessEvent({ runId, type: 'run.roster_locked', payload: { main_member_id: main.id, members: memberRows.map((member) => ({ id: member.id, member_key: member.member_key, role: member.role, profile_id: member.profile.id })) } });
+    if (request.roster.auto_expand) {
+      appendHarnessEvent({
+        runId,
+        type: 'run.roster_auto_enabled',
+        payload: {
+          requested_members: request.roster.members.length,
+          effective_members: memberRows.length,
+          worker_instances: memberRows.filter((member) => member.role === 'worker').length,
+        },
+      });
+    }
+    if (memberRows.length > request.roster.members.length) {
+      appendHarnessEvent({
+        runId,
+        type: 'run.roster_auto_expanded',
+        payload: {
+          requested_members: request.roster.members.length,
+          effective_members: memberRows.length,
+          worker_instances: memberRows.filter((member) => member.role === 'worker').length,
+          max_concurrency: policy.max_concurrent_subharnesses,
+        },
+      });
+    }
     appendHarnessEvent({ runId, type: 'node.queued', fromNodeId: rootNodeId, payload: { path: 'root' } });
     db.prepare(`INSERT INTO harness_dispatches
       (id, run_id, node_id, event_id, kind, status, request_id, receipt_marker)
@@ -393,12 +452,15 @@ export function getHarnessRunSnapshot(runId: string): AnyRow | null {
   const sessionByNode = new Map((db.prepare(`SELECT node_id, session_id FROM harness_node_sessions
     WHERE status = 'active' AND node_id IN (SELECT id FROM harness_nodes WHERE run_id = ?)
     ORDER BY generation DESC`).all(runId) as AnyRow[]).map((row) => [row.node_id, row.session_id]));
+  const dagStates = harnessDagNodeStates(runId);
   const nodes = (db.prepare('SELECT * FROM harness_nodes WHERE run_id = ? ORDER BY depth, created_at').all(runId) as AnyRow[])
     .map(parseNodeRow)
     .map((node) => {
       const telemetry = costByNode.get(node.id) || { session_count: 0, actual_cost_usd: 0 };
       return {
         ...node,
+        ready: dagStates.get(node.id)?.ready || false,
+        blocked_by: dagStates.get(node.id)?.blocked_by || [],
         session_id: sessionByNode.get(node.id) || null,
         ...telemetry,
         cost_telemetry_status: telemetry.session_count === 0 ? 'not_started' : telemetry.actual_cost_usd > 0 ? 'reported' : 'zero_or_unreported',

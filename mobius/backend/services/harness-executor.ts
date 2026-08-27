@@ -7,6 +7,7 @@ export interface HarnessSessionSpec {
 }
 
 export interface HarnessDispatchInput {
+  kind: 'start' | 'message' | 'followup' | 'interrupt' | 'verify';
   runId: string;
   nodeId: string;
   sessionId: string;
@@ -14,6 +15,7 @@ export interface HarnessDispatchInput {
   prompt: string;
   receiptMarker: string;
   scopedToken: string;
+  causationEventId?: string | null;
 }
 
 export type HarnessDeliveryEvidence = 'observed' | 'inferred' | 'absent' | 'unknown';

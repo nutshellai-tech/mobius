@@ -241,15 +241,16 @@ async function runSessionMessage({
   const normalizedRequestId = typeof requestId === 'string' ? requestId : null;
   const normalizedInputText = hasInputText ? String(inputText || '') : '';
   const isExternalEvent = !!externalEvent;
+  const harnessInternalSources = new Set(['harness.dispatch', 'harness.result_notification']);
 
-  if (initialContextMode === 'provided' && source !== 'harness.dispatch') {
+  if (initialContextMode === 'provided' && !harnessInternalSources.has(source)) {
     throw httpError(
       'provided initial context 仅允许 Harness 内部 dispatch 使用',
       403,
       'initial_context_mode_forbidden',
     );
   }
-  if (runtimeEnv !== undefined && source !== 'harness.dispatch') {
+  if (runtimeEnv !== undefined && !harnessInternalSources.has(source)) {
     throw httpError('runtimeEnv 仅允许 Harness 内部 dispatch 使用', 403, 'runtime_env_forbidden');
   }
 

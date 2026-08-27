@@ -1,20 +1,34 @@
 import crypto from 'crypto';
 import { db } from '../../db';
 import { appendHarnessEvent } from '../repositories/harness';
-import { parseHarnessNodeResult, parseHarnessTaskContract, parseJsonColumn } from './harness-schema';
+import {
+  harnessNodeResultDeliverableReasons,
+  parseHarnessNodeResult,
+  parseHarnessTaskContract,
+  parseJsonColumn,
+} from './harness-schema';
 import { HarnessExecutorRegistry } from './harness-executor';
 import { MobiusSessionHarnessExecutor } from './harness-executor-session';
 import {
   claimNextHarnessDispatch,
-  deliverClaimedHarnessDispatch,
+  deliverClaimedHarnessDispatchBatch,
+  nextHarnessNotificationDigestDelayMs,
   queueReadyHarnessNodes,
   reconcileExpiredHarnessDispatch,
 } from './harness-dispatcher';
+import { enqueueRootResultNotification, structuredVerificationReasons } from './harness-result-notification';
+import {
+  finalizePreconditionReasons,
+  finalizeTerminalVerificationReasons,
+} from './harness-finalize-gate';
 import { evaluateNodeTransition, evaluateRunTransition } from './harness-state-machine';
+import { enforceHarnessCostLimits, enforceHarnessNodeTimeouts } from './harness-runtime-policy';
+import { harnessCapacity } from './harness-features';
+import { applyHarnessFailurePolicies, processHarnessCancellations } from './harness-control';
 
 type AnyRow = Record<string, any>;
 
-const ACTIVE_RUN_STATES = "'planning','running','waiting_input','verifying','synthesizing'";
+const ACTIVE_RUN_STATES = "'planning','running','waiting_input','verifying','synthesizing','cancelling'";
 const owner = `harness-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 const registry = new HarnessExecutorRegistry();
 registry.register(new MobiusSessionHarnessExecutor());
@@ -22,7 +36,15 @@ registry.register(new MobiusSessionHarnessExecutor());
 let scanning = false;
 let scanRequested = false;
 let timer: NodeJS.Timeout | null = null;
+let digestTimer: NodeJS.Timeout | null = null;
 let started = false;
+
+function hasHarnessWork(): boolean {
+  const activeRuns = Number((db.prepare(`SELECT COUNT(*) AS count FROM harness_runs
+    WHERE status IN (${ACTIVE_RUN_STATES})`).get() as AnyRow).count);
+  if (activeRuns > 0) return true;
+  return Number((db.prepare("SELECT COUNT(*) AS count FROM harness_nodes WHERE status='cancelling'").get() as AnyRow).count) > 0;
+}
 
 function enabled(name: string, fallback = true): boolean {
   const raw = process.env[name];
@@ -30,7 +52,7 @@ function enabled(name: string, fallback = true): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
-function verificationDecision(node: AnyRow): { accepted: boolean; reasons: string[]; result: AnyRow } {
+export function verificationDecision(node: AnyRow): { accepted: boolean; reasons: string[]; result: AnyRow } {
   const contract = parseJsonColumn(node.task_contract_json, 'harness_nodes.task_contract_json', parseHarnessTaskContract);
   const result = parseJsonColumn(node.result_json, 'harness_nodes.result_json', parseHarnessNodeResult);
   const reasons: string[] = [];
@@ -59,33 +81,11 @@ function verificationDecision(node: AnyRow): { accepted: boolean; reasons: strin
   if (result.artifact_ids.length > 0 || result.acceptance_results.some((item) => item.evidence_artifact_ids.length > 0)) {
     reasons.push('Phase 1 不接受未注册的 Artifact 引用');
   }
+  reasons.push(...harnessNodeResultDeliverableReasons(result, contract));
   const unsupportedDeliverable = contract.deliverables.find((item) => item.required && !['report', 'structured_data'].includes(item.kind));
   if (unsupportedDeliverable) reasons.push(`Phase 1 不支持必需交付物类型: ${unsupportedDeliverable.kind}`);
   if (contract.risk_level !== 'low') reasons.push('Phase 1 只验证 low risk 只读节点');
   return { accepted: reasons.length === 0, reasons, result };
-}
-
-function finalizeGate(run: AnyRow, rootNode: AnyRow, result: AnyRow): string[] {
-  const reasons: string[] = [];
-  const requiredNodes = db.prepare('SELECT * FROM harness_nodes WHERE run_id=? AND required=1 AND id!=?').all(run.id, rootNode.id) as AnyRow[];
-  for (const node of requiredNodes) {
-    const waived = ['failed', 'cancelled'].includes(node.status) && node.waived_at && node.waiver_reason;
-    if (node.status !== 'succeeded' && !waived) reasons.push(`必需节点 ${node.id} 尚未成功且没有 waiver`);
-  }
-  const approval = db.prepare("SELECT id FROM harness_approvals WHERE run_id=? AND status='pending' LIMIT 1").get(run.id) as AnyRow | undefined;
-  if (approval) reasons.push(`仍有待审批项 ${approval.id}`);
-  const pendingDispatch = db.prepare(`SELECT id, status FROM harness_dispatches WHERE run_id=?
-    AND status IN ('queued','leased','dispatching','uncertain') LIMIT 1`).get(run.id) as AnyRow | undefined;
-  if (pendingDispatch) reasons.push(`Dispatch ${pendingDispatch.id} 仍处于 ${pendingDispatch.status}`);
-  if (result.artifact_ids.length > 0) {
-    const placeholders = result.artifact_ids.map(() => '?').join(',');
-    const owned = db.prepare(`SELECT COUNT(*) AS count FROM harness_artifacts WHERE run_id=? AND id IN (${placeholders})`)
-      .get(run.id, ...result.artifact_ids) as AnyRow;
-    if (Number(owned.count) !== result.artifact_ids.length) reasons.push('最终结果引用了不属于本 Run 的 Artifact');
-  }
-  const highRisk = db.prepare("SELECT id FROM harness_nodes WHERE run_id=? AND risk_level='high' LIMIT 1").get(run.id) as AnyRow | undefined;
-  if (highRisk) reasons.push(`Phase 1 无法满足高风险节点 ${highRisk.id} 的验收层级`);
-  return reasons;
 }
 
 export function verifySubmittedHarnessNode(nodeId: string): void {
@@ -105,24 +105,65 @@ export function verifySubmittedHarnessNode(nodeId: string): void {
     appendHarnessEvent({ runId: run.id, type: 'node.verifying', fromNodeId: node.id, payload: { node_id: node.id } });
 
     if (node.node_type === 'root' && decision.accepted) {
-      decision.reasons.push(...finalizeGate(run, node, decision.result));
+      decision.reasons.push(...finalizeTerminalVerificationReasons(run, decision.result));
       decision.accepted = decision.reasons.length === 0;
+      if (decision.accepted) {
+        const gateReasons = finalizePreconditionReasons(run, node, decision.result);
+        if (gateReasons.length > 0) {
+          const retry = evaluateNodeTransition({ from: 'verifying', to: 'running', actor: 'orchestrator' });
+          if (!retry.accepted) throw new Error(retry.reason);
+          const restored = db.prepare(`UPDATE harness_nodes SET status='running', result_json=NULL,
+            submitted_at=NULL, completed_at=NULL, failure_json=NULL, version=version+1
+            WHERE id=? AND status='verifying'`).run(node.id);
+          if (restored.changes !== 1) {
+            throw Object.assign(new Error('Finalize 竞态恢复 root 状态时发生版本冲突'), {
+              code: 'version_conflict',
+            });
+          }
+          appendHarnessEvent({
+            runId: run.id,
+            type: 'node.finalize_not_ready',
+            fromNodeId: node.id,
+            payload: {
+              node_id: node.id,
+              reasons: gateReasons,
+              retryable: true,
+              retry_requires_new_request_id: true,
+            },
+          });
+          return;
+        }
+      }
     }
     const target = decision.accepted ? 'succeeded' : 'failed';
+    // Verification failures are deterministic contract failures. Retrying the
+    // same submitted payload would only spend another turn without changing
+    // the evidence, so they require an explicit user retry after correction.
+    const retryable = false;
     const finish = evaluateNodeTransition({ from: 'verifying', to: target, actor: 'orchestrator' });
     if (!finish.accepted) throw new Error(finish.reason);
     db.prepare(`UPDATE harness_nodes SET status=?, failure_json=?, completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
       version=version+1 WHERE id=? AND status='verifying'`)
-      .run(target, decision.accepted ? null : JSON.stringify({ category: 'verification', reasons: decision.reasons }), node.id);
+      .run(target, decision.accepted ? null : JSON.stringify({
+        category: 'verification',
+        reasons: decision.reasons,
+        retryable,
+      }), node.id);
     appendHarnessEvent({ runId: run.id, type: decision.accepted ? 'node.succeeded' : 'node.failed', fromNodeId: node.id,
       payload: { node_id: node.id, verification: { accepted: decision.accepted, reasons: decision.reasons } } });
 
-    if (node.node_type !== 'root') {
-      const root = db.prepare("SELECT id FROM harness_nodes WHERE run_id=? AND node_type='root'").get(run.id) as AnyRow;
-      appendHarnessEvent({ runId: run.id, type: decision.accepted ? 'member.task_completed' : 'member.task_failed',
-        fromNodeId: node.id, toNodeId: root.id, payload: { node_id: node.id, result: decision.result, reasons: decision.reasons } });
+    if (node.node_type !== 'root' && !retryable) {
+      enqueueRootResultNotification({
+        run,
+        childNode: node,
+        outcome: decision.accepted ? 'completed' : 'failed',
+        result: decision.result,
+        failureSource: decision.accepted ? undefined : 'verification',
+        reasons: decision.accepted ? [] : structuredVerificationReasons(decision.reasons),
+      });
       return;
     }
+    if (retryable) return;
     if (!decision.accepted) {
       const failRun = evaluateRunTransition({ from: run.status, to: 'failed', actor: 'system' });
       if (failRun.accepted) {
@@ -165,9 +206,13 @@ async function recoverExpiredDispatches(): Promise<void> {
 }
 
 export async function runHarnessScanOnce(): Promise<{ active: boolean }> {
-  const active = Number((db.prepare(`SELECT COUNT(*) AS count FROM harness_runs WHERE status IN (${ACTIVE_RUN_STATES})`).get() as AnyRow).count) > 0;
+  const active = hasHarnessWork();
   if (!active || !enabled('HARNESS_ORCHESTRATOR_ENABLED')) return { active };
   await recoverExpiredDispatches();
+  await enforceHarnessNodeTimeouts(registry);
+  enforceHarnessCostLimits();
+  applyHarnessFailurePolicies();
+  await processHarnessCancellations(registry);
   if (enabled('HARNESS_VERIFICATION_ENABLED')) {
     const submitted = db.prepare("SELECT id FROM harness_nodes WHERE status='submitted' ORDER BY submitted_at LIMIT 20").all() as AnyRow[];
     for (const node of submitted) verifySubmittedHarnessNode(node.id);
@@ -175,11 +220,25 @@ export async function runHarnessScanOnce(): Promise<{ active: boolean }> {
   const runs = db.prepare(`SELECT id FROM harness_runs WHERE status IN (${ACTIVE_RUN_STATES}) ORDER BY updated_at`).all() as AnyRow[];
   for (const run of runs) queueReadyHarnessNodes(run.id);
   if (enabled('HARNESS_DISPATCH_ENABLED')) {
-    for (let index = 0; index < 3; index += 1) {
+    const dispatchBatchSize = harnessCapacity(
+      'HARNESS_DISPATCH_BATCH_SIZE',
+      harnessCapacity('HARNESS_MAX_PARALLEL_SUBS', 4),
+      16,
+    );
+    const claims: Array<NonNullable<ReturnType<typeof claimNextHarnessDispatch>>> = [];
+    for (let index = 0; index < dispatchBatchSize; index += 1) {
       const claim = claimNextHarnessDispatch(owner);
       if (!claim) break;
-      await deliverClaimedHarnessDispatch(claim, registry);
+      claims.push(claim);
     }
+    await deliverClaimedHarnessDispatchBatch(claims, registry);
+    const digestDelay = nextHarnessNotificationDigestDelayMs();
+    if (digestTimer) clearTimeout(digestTimer);
+    digestTimer = digestDelay === null ? null : setTimeout(() => {
+      digestTimer = null;
+      requestHarnessScan();
+    }, Math.max(1, digestDelay));
+    digestTimer?.unref();
   }
   return { active: true };
 }
@@ -204,7 +263,7 @@ async function scan(): Promise<void> {
 
 function schedule(): void {
   if (!started) return;
-  const active = Number((db.prepare(`SELECT COUNT(*) AS count FROM harness_runs WHERE status IN (${ACTIVE_RUN_STATES})`).get() as AnyRow).count) > 0;
+  const active = hasHarnessWork();
   timer = setTimeout(async () => {
     await scan();
     schedule();
@@ -229,7 +288,9 @@ export function startHarnessOrchestrator(): void {
 export function stopHarnessOrchestrator(): void {
   started = false;
   if (timer) clearTimeout(timer);
+  if (digestTimer) clearTimeout(digestTimer);
   timer = null;
+  digestTimer = null;
 }
 
 export function harnessExecutorRegistry(): HarnessExecutorRegistry {
