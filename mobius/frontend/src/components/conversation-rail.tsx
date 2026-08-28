@@ -241,18 +241,13 @@ export function ConversationRail({
 
   const folderIsExpanded = (folder: ProjectFolder) => {
     if (normalizedQuery) return true
-    const containsActiveSession = Boolean(activeSessionId)
-      && folder.items.some(item => item.session_id === activeSessionId)
-    if (containsActiveSession || folder.runningCount > 0) return true
     const storedCollapseState = projectCollapseState[projectFolderKey(folder.projectId)]
     if (storedCollapseState !== undefined) return !storedCollapseState
     return true
   }
 
   const toggleFolder = (folder: ProjectFolder) => {
-    const containsActiveSession = Boolean(activeSessionId)
-      && folder.items.some(item => item.session_id === activeSessionId)
-    if (normalizedQuery || containsActiveSession || folder.runningCount > 0) return
+    if (normalizedQuery) return
     const folderKey = projectFolderKey(folder.projectId)
     const nextCollapsed = folderIsExpanded(folder)
     setProjectCollapseState(current => {
