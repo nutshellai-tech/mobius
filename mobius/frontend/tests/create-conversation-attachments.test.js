@@ -32,5 +32,6 @@ test('createDefaultConversation 的任务、会话描述和首条消息共用拼
   assert.match(createSource, /const userPrompt = args\.prompt\.trim\(\)[\s\S]*const prompt = composeConversationPrompt\(userPrompt, args\.attachments\)/)
   assert.match(createSource, /const title = conciseTitle\(userPrompt\)/)
   assert.equal((createSource.match(/description: prompt/g) || []).length, 3)
-  assert.match(createSource, /body: JSON\.stringify\(\{ content: prompt, request_id:/)
+  assert.match(createSource, /initial_message: \{[\s\S]*content: prompt,[\s\S]*request_id: checkpoint\.requestId/)
+  assert.doesNotMatch(createSource, /\/api\/sessions\/\$\{checkpoint\.sessionId\}\/messages/, '首条消息必须由 Session 创建接口后台接管，前端不得等待单独的消息请求')
 })

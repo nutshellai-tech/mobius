@@ -159,6 +159,19 @@ function pathSegmentCount(path: string) {
   return normalizeSeparators(path).split('/').filter(Boolean).length
 }
 
+/**
+ * Inline code often contains a whole command, for example `python3 start.py`.
+ * Looking only at the final extension turns that command into a bogus file
+ * target. A real path containing spaces is still accepted when its path shape
+ * is explicit (`docs/My Guide.md`, `./My File.ts`, an absolute/Windows path).
+ */
+function hasCommandLikeLeadingToken(path: string) {
+  const firstWhitespace = path.search(/\s/)
+  if (firstWhitespace < 0) return false
+  const firstSeparator = path.search(/[\\/]/)
+  return firstSeparator < 0 || firstWhitespace < firstSeparator
+}
+
 export function isUnambiguousFileCandidate(raw: string, context: FileCandidateContext = 'text') {
   const value = trimWrappingPunctuation(raw)
   if (!value || value.startsWith('#') || (!/^file:\/\//i.test(value) && value.includes('://')) || /^https?:\/\//i.test(value) || /^mailto:/i.test(value) || /^thread:/i.test(value)) return false
@@ -176,6 +189,7 @@ export function isUnambiguousFileCandidate(raw: string, context: FileCandidateCo
   const path = normalizeSeparators(location.path.trim())
   if (!path || /[?#]/.test(path)) return false
   if (context === 'trusted') return true
+  if (hasCommandLikeLeadingToken(path)) return false
   const basename = path.split('/').filter(Boolean).at(-1) || ''
   if (NUMERIC_DOTTED_BASENAME.test(basename)) return false
   const extensionIndex = basename.lastIndexOf('.')

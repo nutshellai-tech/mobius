@@ -7873,14 +7873,26 @@ body.mobius-resizing .mobius-resizable-handle {
   display: flex;
   max-width: 34rem;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.55rem;
   margin: 3rem auto;
-  padding: 1rem;
+  padding: 1.15rem;
   color: var(--status-danger);
   background: var(--status-danger-soft);
   border: 1px solid var(--status-danger-border);
   border-radius: var(--radius-panel, 10px);
   font-size: 0.76rem;
+}
+.code-artifact-preview__error.is-missing {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border-color: var(--border-default);
+}
+.code-artifact-preview__error-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.82rem;
 }
 .code-artifact-preview__error code { overflow-wrap: anywhere; color: var(--text-secondary); }
 .code-artifact-preview__lines {

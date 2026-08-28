@@ -141,6 +141,19 @@ test('linkifies text and inline-friendly file names without touching web URLs', 
   assert.ok(parseFileTarget('README.md', { context: 'inline-code' }))
 })
 
+test('keeps shell commands as code instead of bogus file targets', () => {
+  for (const command of [
+    'python3 start.py',
+    'python scripts/start.py',
+    'git diff src/components/chat.tsx',
+    'cat /tmp/output.log',
+  ]) {
+    assert.equal(parseFileTarget(command, { context: 'inline-code' }), null)
+  }
+  assert.ok(parseFileTarget('docs/My Guide.md', { context: 'inline-code' }))
+  assert.ok(parseFileTarget('./My File.ts', { context: 'inline-code' }))
+})
+
 test('remark file targets skips fenced code and converts inline code', () => {
   const tree: any = {
     type: 'root',
@@ -153,6 +166,18 @@ test('remark file targets skips fenced code and converts inline code', () => {
   assert.equal(tree.children[0].children[0].type, 'link')
   assert.match(tree.children[0].children[0].data.hProperties['data-file-target'], /%22endLine%22%3A4/)
   assert.equal(tree.children[1].type, 'code')
+})
+
+test('remark file targets leaves an inline shell command intact', () => {
+  const tree: any = {
+    type: 'root',
+    children: [
+      { type: 'paragraph', children: [{ type: 'inlineCode', value: 'python3 start.py' }] },
+    ],
+  }
+  remarkFileTargets()(tree)
+  assert.equal(tree.children[0].children[0].type, 'inlineCode')
+  assert.equal(tree.children[0].children[0].value, 'python3 start.py')
 })
 
 test('keeps preview targets inside the selected project', () => {

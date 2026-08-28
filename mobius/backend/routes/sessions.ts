@@ -87,6 +87,7 @@ import {
 import {
   readJobFlagState,
   safeRemoveRunningFlag,
+  safeWriteFailedFlag,
   safeWriteRunningFlag,
 } from '../utils/session-flags';
 // @ts-ignore — service 仍是 .js
@@ -1938,6 +1939,11 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
     name_human_edited: nameHumanEdited,
   } as any);
   const pendingMentions = SessionPendingMentions.save(sessionId, req.body?.mentions);
+  const initialMessage = req.body?.initial_message && typeof req.body.initial_message === 'object'
+    ? req.body.initial_message as Record<string, any>
+    : null;
+  const initialMessageContent = typeof initialMessage?.content === 'string' ? initialMessage.content : '';
+  let initialMessageAccepted = false;
   if (sourceSession && transferResult?.paths?.full) {
     try {
       Messages.insertSystem(
@@ -2035,8 +2041,54 @@ issueScoped.post('/', auth, async (req: express.Request, res: express.Response) 
   }
   recordAdminAuditIfCrossUser(user, 'create_session', 'issue', issue.id, issue.created_by);
   Issues.touchActiveAndIncrement(issueId);
+
+  // 首页快捷创建把首条消息随 Session 一起提交。先预写 running.flag，再调用 runner：
+  // runner 会在第一次 await 之前同步完成用户消息落库，随后才等待 Agent spawn/投递。
+  // 这里故意不 await，让 HTTP 立即返回，前端可以马上进入会话或开启其他任务；
+  // 后台启动失败会通过 failed.flag + 会话错误状态在目标会话里反馈。
+  if (!sourceSession && initialMessageContent.trim()) {
+    let initialFlagRoot: string | null = null;
+    try {
+      const initialProject = Projects.findById(issue.project_id) as any;
+      initialFlagRoot = initialProject?.bind_path ? path.resolve(initialProject.bind_path) : null;
+    } catch {}
+    if (initialFlagRoot) {
+      try { safeWriteRunningFlag(initialFlagRoot, sessionId, { backend: 'session-initial-message' }, 'sessions/create'); } catch {}
+    }
+    const directMentions = Array.isArray(initialMessage?.mentions) ? initialMessage.mentions : [];
+    const effectiveMentions = pendingMentions.length > 0
+      ? [...pendingMentions, ...directMentions]
+      : directMentions;
+    const initialRequestId = typeof initialMessage?.request_id === 'string'
+      ? initialMessage.request_id
+      : `create-${sessionId}-${Date.now()}`;
+    initialMessageAccepted = true;
+    void runSessionMessage({
+      user,
+      sessionId,
+      content: initialMessageContent,
+      requestId: initialRequestId,
+      mentions: effectiveMentions,
+      source: 'http.session.create_initial_message',
+      logger: console,
+    } as any).then(() => {
+      if (pendingMentions.length > 0) {
+        try { SessionPendingMentions.clear(sessionId); } catch {}
+      }
+      try { auditSessionAccess(user, 'send_session_message', Sessions.findById(sessionId) as any); } catch {}
+    }).catch((e) => {
+      const reason = (e as Error).message || '后台启动失败';
+      console.warn(`[sessions] initial message background start failed (${sessionId}): ${reason}`);
+      if (initialFlagRoot) {
+        try { safeRemoveRunningFlag(initialFlagRoot, sessionId, 'sessions/create-cleanup'); } catch {}
+        try { safeWriteFailedFlag(initialFlagRoot, sessionId, { backend: 'session-initial-message', reason }, 'sessions/create'); } catch {}
+      }
+    });
+  }
+
   res.json({
     ...(withSessionProxyState(Sessions.findById(sessionId)) as any),
+    initial_message_accepted: initialMessageAccepted,
     continue_from_session_id: sourceSession?.session_id || null,
     transfer_path: transferResult?.paths?.full || null,
     transfer_paths: transferResult?.paths || null,

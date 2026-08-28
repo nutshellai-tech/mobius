@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Copy, ExternalLink, FileDiff, Loader2, Quote, RefreshCw, X } from 'lucide-react'
+import { Copy, ExternalLink, FileDiff, FileQuestion, Loader2, Quote, RefreshCw, X } from 'lucide-react'
 import { api } from '../../store'
 import { buildVscodeUrl, fileIcon } from '../project-files'
 import { useWorkbenchShellSlot } from '../workbench-shell'
@@ -422,6 +422,7 @@ export function FilePreviewLayer({
   }
 
   const editorAvailable = !loading && !error && !!data && (!!onOpenEditor || !!editorUrl)
+  const fileMissing = !loading && error === '项目里找不到这个文件'
   const editorTitle = loading
     ? '文件解析完成后可在编辑器打开'
     : error || !data
@@ -535,9 +536,12 @@ export function FilePreviewLayer({
             <div className="code-artifact-preview__state"><Loader2 className="h-5 w-5 animate-spin" />正在读取文件…</div>
           )}
           {!loading && error && (
-            <div ref={errorRef} tabIndex={-1} className="code-artifact-preview__error" role="alert">
-              <strong>无法预览文件</strong>
-              <span>{error}</span>
+            <div ref={errorRef} tabIndex={-1} className={`code-artifact-preview__error${fileMissing ? ' is-missing' : ''}`} role="alert">
+              <div className="code-artifact-preview__error-heading">
+                <FileQuestion className="h-5 w-5" aria-hidden="true" />
+                <strong>{fileMissing ? '未找到文件' : '无法预览文件'}</strong>
+              </div>
+              <span>{fileMissing ? '该引用不是当前项目中的文件，可能是命令、旧路径，或文件已被移动。可从右侧项目文件中选择正确文件。' : error}</span>
               <code>{safeToolPathLabel(activeRequest.target.path)}</code>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" className="code-artifact-preview__action" onClick={() => {
@@ -545,10 +549,13 @@ export function FilePreviewLayer({
                   cacheRef.current.delete(activeKey)
                   setReloadKey(value => value + 1)
                 }}>
-                  <RefreshCw className="h-3.5 w-3.5" />Retry
+                  <RefreshCw className="h-3.5 w-3.5" />重新读取
                 </button>
                 <button type="button" className="code-artifact-preview__action" onClick={() => void handleCopyPath()}>
-                  <Copy className="h-3.5 w-3.5" />{copied ? '已复制' : 'Copy path'}
+                  <Copy className="h-3.5 w-3.5" />{copied ? '已复制' : '复制路径'}
+                </button>
+                <button type="button" className="code-artifact-preview__action" onClick={closeWorkspace}>
+                  <X className="h-3.5 w-3.5" />关闭预览
                 </button>
               </div>
             </div>

@@ -4,7 +4,7 @@ import { composeConversationPrompt, type ConversationPromptAttachment } from './
 export { composeConversationPrompt }
 export type { ConversationPromptAttachment }
 
-export type ConversationCreationStage = 'issue' | 'session' | 'message'
+export type ConversationCreationStage = 'issue' | 'session'
 
 export type ConversationCreationCheckpoint = {
   projectId: string
@@ -24,7 +24,7 @@ export class ConversationCreationError extends Error {
 
   constructor(stage: ConversationCreationStage, checkpoint: ConversationCreationCheckpoint, cause: unknown) {
     const causeMessage = cause instanceof Error ? cause.message : String(cause || '未知错误')
-    const stageLabel = stage === 'issue' ? '创建默认任务' : stage === 'session' ? '创建会话' : '提交首条消息'
+    const stageLabel = stage === 'issue' ? '创建默认任务' : '创建会话'
     super(`${stageLabel}失败：${causeMessage}`)
     this.name = 'ConversationCreationError'
     this.stage = stage
@@ -129,6 +129,13 @@ export async function createDefaultConversation(args: {
           language,
           excluded_skill_ids: Array.isArray(defaults.excluded_skill_ids) ? defaults.excluded_skill_ids : [],
           excluded_memory_ids: Array.isArray(defaults.excluded_memory_ids) ? defaults.excluded_memory_ids : [],
+          // Session 和首条用户消息一并落库；后端收到后异步唤醒 Agent，
+          // 因此本请求只等待“会话可打开”，不再等待耗时的进程启动。
+          initial_message: {
+            content: prompt,
+            request_id: checkpoint.requestId,
+            mentions: [],
+          },
         }),
       })
       if (!session?.session_id) throw new Error(session?.error || '服务未返回会话 ID')
@@ -136,15 +143,6 @@ export async function createDefaultConversation(args: {
     } catch (error) {
       throw new ConversationCreationError('session', checkpoint, error)
     }
-  }
-
-  try {
-    await api(`/api/sessions/${checkpoint.sessionId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content: prompt, request_id: checkpoint.requestId, mentions: [] }),
-    })
-  } catch (error) {
-    throw new ConversationCreationError('message', checkpoint, error)
   }
 
   return checkpoint as CreatedConversation
